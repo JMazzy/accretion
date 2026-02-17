@@ -75,7 +75,7 @@ pub fn nbody_gravity_system(
     mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
 ) {
     let gravity_const = 2.0;  // Very gentle to allow contact without velocity blowup
-    let min_dist = 2.0;  // Minimum distance before clamping
+    let min_gravity_dist = 20.0;  // Skip gravity entirely if asteroids are closer than this - prevents runaway acceleration
     let max_gravity_dist = 300.0; // Shorter range
 
     // Collect positions
@@ -92,12 +92,12 @@ pub fn nbody_gravity_system(
             let delta = pos_j - pos_i;
             let dist = delta.length();
             
-            // Skip gravity if asteroids are too far apart (prevents phantom forces from distant asteroids)
-            if dist > max_gravity_dist {
+            // Skip gravity if asteroids are too close or too far (prevents both singularities and phantom forces)
+            if dist < min_gravity_dist || dist > max_gravity_dist {
                 continue;
             }
             
-            let dist_sq = (dist * dist).max(min_dist * min_dist);
+            let dist_sq = dist * dist;
             let force_mag = gravity_const / dist_sq;
             let force = delta.normalize_or_zero() * force_mag;
 

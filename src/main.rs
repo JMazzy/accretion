@@ -7,7 +7,7 @@ mod graphics;
 mod simulation;
 mod testing;
 
-use testing::{TestConfig, spawn_test_two_triangles, spawn_test_three_triangles, spawn_test_gravity};
+use testing::{TestConfig, spawn_test_two_triangles, spawn_test_three_triangles, spawn_test_gravity, spawn_test_high_speed_collision, spawn_test_near_miss, spawn_test_gentle_approach, spawn_test_culling_verification, spawn_test_mixed_size_asteroids, spawn_test_large_small_pair, spawn_test_gravity_boundary};
 
 fn main() {
     // Check for test mode
@@ -44,6 +44,13 @@ fn main() {
             "two_triangles" => app.add_systems(Startup, spawn_test_two_triangles.after(graphics::setup_camera)),
             "three_triangles" => app.add_systems(Startup, spawn_test_three_triangles.after(graphics::setup_camera)),
             "gravity" => app.add_systems(Startup, spawn_test_gravity.after(graphics::setup_camera)),
+            "high_speed_collision" => app.add_systems(Startup, spawn_test_high_speed_collision.after(graphics::setup_camera)),
+            "near_miss" => app.add_systems(Startup, spawn_test_near_miss.after(graphics::setup_camera)),
+            "gentle_approach" => app.add_systems(Startup, spawn_test_gentle_approach.after(graphics::setup_camera)),
+            "culling_verification" => app.add_systems(Startup, spawn_test_culling_verification.after(graphics::setup_camera)),
+            "mixed_size_asteroids" => app.add_systems(Startup, spawn_test_mixed_size_asteroids.after(graphics::setup_camera)),
+            "large_small_pair" => app.add_systems(Startup, spawn_test_large_small_pair.after(graphics::setup_camera)),
+            "gravity_boundary" => app.add_systems(Startup, spawn_test_gravity_boundary.after(graphics::setup_camera)),
             _ => app.add_systems(Startup, spawn_test_two_triangles.after(graphics::setup_camera)),
         };
         
