@@ -8,89 +8,108 @@
 
 ## Architecture
 
-The "particle" project is organized as a Rust project with the following structure:
+The "grav-sim" project is an ECS-based **asteroid simulation engine** built on **Bevy** with physics powered by **Rapier2D**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
 
-- **Purpose**: A particle simulation engine featuring emergent structure formation through particle-to-particle gravity, collision physics, and locking mechanisms. Particles naturally aggregate and form complex structures through N-body gravitational interactions.
-- **Core Components**:
-  - `particle.rs` - Core particle struct with position, velocity, and resting state
-  - `simulation.rs` - Main simulation engine with particle-to-particle gravity, collision detection, and culling
-  - `graphics.rs` - Framebuffer renderer for visualizing particles
-  - `main.rs` - Event loop and user interaction (paint/explode particles)
-  - `rigid_body.rs` - Rigid body physics with convex hull geometry and rotational dynamics
-- **Service Boundaries**: Clean separation between physics (simulation), rendering (graphics), and data structures (particle)
-- **Data Flow**: 
-  - User input → particle spawning/explosions
-  - Simulation calculates gravitational forces and particle updates
-  - Collisions lock particles together when both drop below velocity threshold
-  - Particles are culled when far off-screen
-  - Results are rendered each frame
+- **Purpose**: Pure asteroid-based simulation where small asteroids (triangles) naturally aggregate through gravitational attraction and collision to form larger composite asteroids (polygons) that visually rotate based on physics.
+- **Framework**: 
+  - **Bevy 0.13**: Game engine providing ECS architecture, rendering, and event handling
+  - **Rapier2D 0.18**: Physics engine for collision detection, rigid body dynamics, and impulse-based response
+- **Core Modules**:
+  - `asteroid.rs` - Unified asteroid components and spawn functions for small (triangles) and large (polygons) asteroids
+  - `simulation.rs` - Physics systems: N-body gravity (with distance limits), velocity syncing, cluster detection, composite formation, culling with damping, and user input
+  - `graphics.rs` - Camera setup for 2D rendering
+  - `main.rs` - Bevy app setup, window configuration, and plugin initialization
+- **Entity Types**: 
+  - **Small Asteroids**: Equilateral triangles, 2.0 unit ball colliders, spawn via left-click
+  - **Large Asteroids**: Convex polygons (wireframe with white outlines), polygon colliders, formed when 2+ small asteroids cluster together
+- **ECS Systems** (Execution Order):
+  1. **Culling** - Removes asteroids beyond 1000 units; applies damping beyond viewport
+  2. **Neighbor counting** - Counts nearby asteroids for environmental damping eligibility
+  3. **N-body gravity** - Applies mutual attraction only to nearby asteroids (< 800 units)
+  4. **Velocity syncing** - Synchronizes velocities of touching slow-moving asteroids
+  5. **Environmental damping** - Applies slight friction to tightly packed clusters (>6 neighbors within 3 units)
+  6. **Cluster formation** - Detects clusters of 2+ touching slow (< 1.0 u/s) small asteroids and merges into composites
+  7. **User input** - Left-click spawns triangle asteroids at cursor position
+  8. **Gizmo rendering** - Renders asteroid wireframes with rotation applied
 
 ## Physics Rules
 
-### Particle Collisions
-- **Detection**: Particles collide when distance < collision_distance (4.0)
-- **Locking**: Particles lock together when:
-  - Both are moving slower than velocity_threshold (5.0)
-  - Distance ≤ sum of radii (contact)
-  - They maintain relative offset constraints
-- **Restitution**: 0.5 coefficient of restitution (bouncy, space-like)
-- **Group System**: Locked particles join groups (group_id) to move/lock together
-- **Breaking**: Groups break apart when impact force exceeds break_force_threshold (20.0)
+### Small Asteroid Properties (Triangles)
+- **Shape**: Equilateral triangle (relative vertices stored, rotated by transform)
+- **Collider**: 2.0 unit ball
+- **Mass**: 1.0 unit
+- **Restitution**: 0.5 (50% bouncy, space-like)
+- **Color**: Random grey shade (0.3–0.9) per asteroid
+- **Damping**: No linear or angular damping by default
 
-### Rigid Body Formation
-- **Formation**: When >= 3 particles in a group remain locked and at rest, convert to rigid body
-- **Geometry**: 
-  - Shape is the convex hull of the outermost particles
-  - Bounding radius calculated from hull vertices (not inflated from particle offsets)
-  - Hull vertices used for collision detection boundary
-- **Mass**: Sum of all particle masses (each particle = mass 1.0)
-- **Moment of Inertia**: Calculated from particle offsets: I = Σ(mass * distance²)
-- **Particle Absorption**: Slow particles (< velocity_threshold) colliding with rigid body boundary get absorbed:
-  - Center of mass recalculated
-  - All particle offsets recomputed relative to new center
-  - Convex hull and bounding radius regenerated
-  - Colors blended
-- **Rotation**: Generated naturally from contact point impulses in collisions
+### Large Asteroid Properties (Polygons)
+- **Formation**: Created when 2+ small asteroids touch and move < 1.0 u/s
+- **Shape**: Convex hull of constituent asteroids (computed via gift wrapping algorithm)
+- **Collider**: Exact convex polygon from physics engine
+- **Mass**: Sum of constituent masses
+- **Restitution**: 0.7 (70% bouncy)
+- **Color**: Random grey shade (0.3–0.9)
+- **Rendering**: White wireframe outline, vertices rotated by transform's rotation
+- **Velocity**: Inherits averaged linear and angular velocity from constituents
 
-### Rigid Body Collisions
-- **Contact Points**: Calculated on each body's surface at collision normal
-- **Velocity at Contact**: v_contact = linear_velocity + (angular_velocity × r_contact)
-- **Impulse Calculation**: Accounts for both linear and rotational inertia
-- **Restitution**: 0.7 coefficient of restitution (bouncy, space-like)
-- **Collision Damping**: 3% velocity damping post-collision (minimal, space physics)
-- **Merging**: Two rigid bodies merge when:
-  - Both linear speeds < velocity_threshold (5.0)
-  - Both angular speeds < 1.0 rad/s
-  - Distance < bounding_radius_sum * 1.1 (touching)
-  - Merging converts back to locked particle groups
+### N-Body Gravity
+- **Constant**: 15.0 (strong mutual attraction)
+- **Minimum distance threshold**: 150.0 units (reduces instability when touching)
+- **Maximum gravity distance**: 800.0 units (prevents phantom forces from distant asteroids)
+- **Application**: Applied uniformly between all asteroid pairs within range
 
-### Space Physics
-- **No Global Damping**: Objects maintain momentum indefinitely (frictionless space)
-- **Minimal Environmental Damping**: 
-  - Only applies when particles very tightly packed (>6 neighbors within 3.0 units)
-  - Base damping: 0.5% to prevent tunneling
-- **Gravity**: 
-  - Particle-to-particle: 15.0 (N-body attraction)
-  - Minimum distance threshold: 100.0 (prevents singularities)
-  - Applies uniformly to all bodies
-- **Culling**: Both particles and rigid bodies culled when > 200 units off-screen
+### Velocity Synchronization
+- **Activation**: When two asteroids touch and both move < 5.0 u/s
+- **Effect**: Velocities averaged between them (linear and angular)
+- **Purpose**: Prepares asteroids for smooth composite formation
 
-## Build and Test
+### Cluster Formation & Merging
+- **Detection**: Every frame, find all small asteroids touching each other that move < 1.0 u/s
+- **Threshold**: 2+ asteroids in a cluster triggers merging
+- **Process**:
+  1. Compute center of mass and average velocities
+  2. Calculate convex hull from constituent positions
+  3. Spawn large asteroid inheriting averaged velocity
+  4. **Immediately despawn** all constituent small asteroids
+- **Prevention**: Processed asteroids tracked each frame to prevent duplicate merging
 
-Include the exact commands agents should use:
+### Environmental Damping
+- **Activation**: Applied to asteroids with >6 neighbors within 3.0 units
+- **Damping factor**: 0.5% per frame (factor: 0.995)
+- **Purpose**: Prevents numerical instability in extreme density clusters
+
+### Culling & Damping
+- **Damping zone**: Asteroids beyond 600 units from origin experience increasing damping
+- **Culling distance**: 1000 units (asteroids removed when exceeding this)
+- **Damping ramp**: Smoothly increases from 0% to 5% over 400-unit range
+- **Purpose**: Prevents asteroids from flying indefinitely; cleans up far objects
+
+## User Interaction
+
+- **Left-click**: Spawns a small triangle asteroid at cursor position
+- **No automatic spawning**: Simulation starts empty; user drives all spawning
+- **Coordinate system**: Screen (0,0) top-left → World (0,0) center; X right, Y up
+
+## Current Implementation
+- ✅ Pure asteroid-only system (no particle/rigid_body distinction)
+- ✅ Direct cluster-based formation (no GroupId state tracking)
+- ✅ Wireframe rendering with rotation
+- ✅ Velocity inheritance on composite formation
+- ✅ Long-range gravity distance limits (prevents phantom forces)
+- ✅ Culling with distance-based damping
+- ✅ Click-only user control for clean testing
+
+## Development Commands
 
 ```bash
 # Build the project
 cargo build
 
-# Build in release mode
+# Build in release mode (optimized)
 cargo build --release
 
-# Run tests
-cargo test
-
-# Run tests with output
-cargo test -- --nocapture
+# Run the simulation
+cargo run --release
 
 # Format code
 cargo fmt
@@ -100,31 +119,36 @@ cargo clippy -- -D warnings
 
 # Check without building artifacts
 cargo check
-
-# Run a binary/example
-cargo run --bin <name>
 ```
 
 ## Project Conventions
 
-Document patterns specific to this project that differ from common defaults:
-
-- **File Structure**: Standard Rust layout with `src/` for library code, `src/main.rs` for binaries, `tests/` for integration tests, and `examples/` for example code.
-- **Naming Conventions**: Use `snake_case` for functions, variables, and modules; `PascalCase` for types, structs, enums, and traits; `SCREAMING_SNAKE_CASE` for constants.
-- **Configuration**: [How is the project configured? Environment variables? Config files?]
-- **Error Handling**: Prefer `Result<T, E>` for fallible operations and `Option<T>` for optional values. Use custom error types with `thiserror` or `anyhow` crates when applicable.
+- **File Structure**: Standard Rust layout:
+  - `src/` - library and binary code
+  - `src/main.rs` - Bevy app main entry
+  - `src/asteroid.rs` - Core asteroid definitions and spawn functions
+  - `src/simulation.rs` - All ECS systems
+  - `src/graphics.rs` - Camera/rendering setup
+- **Naming Conventions**: 
+  - `snake_case` for functions, variables, modules
+  - `PascalCase` for types, structs, enums, traits
+  - `SCREAMING_SNAKE_CASE` for constants
+- **Physics Tuning**: Constants defined at top of physics system functions:
+  - Gravity constant and distance thresholds in `nbody_gravity_system`
+  - Velocity thresholds in `particle_locking_system` and `asteroid_formation_system`
+  - Damping factors in `environmental_damping_system` and `culling_system`
 
 ## Integration Points
 
-- **External APIs**: None - the simulation is self-contained
+- **External APIs**: None - fully self-contained simulation
 - **Dependencies**: 
-  - `minifb` - Window creation and rendering (displays framebuffer to screen)
-  - `glam` - Math library for 2D vectors and physics calculations
-  - `rand` - Random number generation for particle spawning
-- **Cross-Component Communication**: Graphics module receives particle state from simulation; main loop drives both
-
-## Security
-
-- **Authentication**: Not applicable - single-user simulation
-- **Sensitive Data**: None - purely computational
-- **Secret Management**: Not applicable
+  - `bevy` (0.13) - ECS engine, rendering, windowing
+  - `bevy_rapier2d` (0.25) - Physics engine integration for Bevy
+  - `rapier2d` (0.18) - Core physics via SIMD-optimized convex hulls and collision detection
+  - `rand` (0.8) - Random grey shades for asteroid coloring
+  - `glam` - Math library (Vec2, Quat) via Bevy
+- **Cross-Component Communication**: 
+  - Components: `Asteroid`, `AsteroidSize`, `Vertices`, plus Rapier/Bevy physics components
+  - Systems read/write components; Rapier applies physics automatically
+  - Gizmos system reads transforms and vertices for rendering
+  - User input system spawns via `Commands`

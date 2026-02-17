@@ -1,186 +1,140 @@
 //! Simulation plugin and systems for Bevy ECS
 
-use crate::particle::{spawn_particle, GroupId, Locked, NeighborCount, Particle};
-use crate::rigid_body::rigid_body_formation_system;
+use crate::asteroid::{blend_colors, compute_convex_hull, Asteroid, NeighborCount, Vertices};
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
-use rand::Rng;
 
 pub struct SimulationPlugin;
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, spawn_initial_particles)
-            .add_systems(
-                Update,
-                (
-                    crate::graphics::debug_simulation_state,
-                    random_particle_spawn_system,
-                    neighbor_counting_system,
-                    nbody_gravity_system,
-                    collision_response_system,
-                    particle_locking_system,
-                    environmental_damping_system,
-                    culling_system,
-                    user_input_system,
-                    rigid_body_formation_system,
-                ),
-            );
-    }
-}
-
-// System: Spawns a batch of initial particles randomly distributed
-pub fn spawn_initial_particles(mut commands: Commands) {
-    let mut rng = rand::thread_rng();
-    eprintln!("[SPAWN] Starting initial particle spawn...");
-    for _ in 0..200 {
-        let x = rng.gen_range(-100.0..100.0);
-        let y = rng.gen_range(-80.0..80.0);
-        let color = Color::rgb(
-            rng.gen_range(0.3..1.0),
-            rng.gen_range(0.3..1.0),
-            rng.gen_range(0.3..1.0),
+        app.add_systems(
+            Update,
+            (
+                culling_system,                // FIRST: Remove far asteroids before physics
+                neighbor_counting_system,
+                nbody_gravity_system,
+                particle_locking_system,
+                environmental_damping_system,
+                asteroid_formation_system,
+                user_input_system,
+                gizmo_rendering_system,
+            ),
         );
-        spawn_particle(&mut commands, Vec2::new(x, y), color, 0);
-    }
-    eprintln!("[SPAWN] Created 200 particles");
-}
-
-// System: Spawns a particle at random every second (for demo/testing)
-pub fn random_particle_spawn_system(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut timer: Local<Timer>,
-) {
-    if timer.tick(time.delta()).just_finished() {
-        let mut rng = rand::thread_rng();
-        let x = rng.gen_range(-120.0..120.0);
-        let y = rng.gen_range(-100.0..100.0);
-        let color = Color::rgb(
-            rng.gen_range(0.3..1.0),
-            rng.gen_range(0.3..1.0),
-            rng.gen_range(0.3..1.0),
-        );
-        spawn_particle(&mut commands, Vec2::new(x, y), color, 0);
     }
 }
 
-// System: lock particles together when slow and in contact
+/// Lock and merge asteroids when they're slow and touching
+/// This replaces the grouping system with direct pairwise merging
 pub fn particle_locking_system(
-    mut query: Query<(Entity, &mut Velocity, &mut Locked, &mut GroupId), With<Particle>>,
+    mut query: Query<(Entity, &Transform, &mut Velocity), With<Asteroid>>,
     rapier_context: Res<RapierContext>,
 ) {
     let velocity_threshold = 5.0;
-    let mut group_counter = 1u32;
-    let mut locked_pairs = Vec::new();
-    let entities: Vec<_> = query
-        .iter_mut()
-        .map(|(e, v, l, g)| (e, v.linvel.length(), l.0, g.0))
-        .collect();
+    let mut pairs_to_merge: Vec<(Entity, Entity)> = Vec::new();
 
-    #[allow(clippy::needless_range_loop)]
+    // Find touching asteroids that are slow enough to merge
+    let entities: Vec<_> = query.iter().map(|(e, _, _)| e).collect();
+    
     for i in 0..entities.len() {
-        let (e1, v1, _l1, _g1) = entities[i];
+        let e1 = entities[i];
         for j in (i + 1)..entities.len() {
-            let (e2, v2, _l2, _g2) = entities[j];
-            if v1 < velocity_threshold && v2 < velocity_threshold {
-                if let Some(contact) = rapier_context.contact_pair(e1, e2) {
-                    if contact.has_any_active_contacts() {
-                        locked_pairs.push((e1, e2));
+            let e2 = entities[j];
+            
+            if let (Ok((_, _, v1)), Ok((_, _, v2))) = (query.get(e1), query.get(e2)) {
+                if v1.linvel.length() < velocity_threshold && v2.linvel.length() < velocity_threshold {
+                    if let Some(contact) = rapier_context.contact_pair(e1, e2) {
+                        if contact.has_any_active_contacts() {
+                            pairs_to_merge.push((e1, e2));
+                        }
                     }
                 }
             }
         }
     }
-    for (e1, e2) in locked_pairs {
-        if let Ok([(_, mut _v1, mut l1, mut g1), (_, mut _v2, mut l2, mut g2)]) =
-            query.get_many_mut([e1, e2])
-        {
-            l1.0 = true;
-            l2.0 = true;
-            if g1.0 == 0 && g2.0 == 0 {
-                g1.0 = group_counter;
-                g2.0 = group_counter;
-                group_counter += 1;
-            } else if g1.0 == 0 {
-                g1.0 = g2.0;
-            } else if g2.0 == 0 {
-                g2.0 = g1.0;
-            }
+
+    // Merge pairs: sync velocities
+    for (e1, e2) in pairs_to_merge {
+        if let Ok([(_, _, mut v1), (_, _, mut v2)]) = query.get_many_mut([e1, e2]) {
+            let avg_linvel = (v1.linvel + v2.linvel) * 0.5;
+            let avg_angvel = (v1.angvel + v2.angvel) * 0.5;
+            v1.linvel = avg_linvel;
+            v1.angvel = avg_angvel;
+            v2.linvel = avg_linvel;
+            v2.angvel = avg_angvel;
         }
     }
 }
 
-// N-body gravity system: applies custom gravity between all particles
+/// N-body gravity system: applies custom gravity between all asteroids
+/// Only asteroids within viewport + buffer zone apply gravity
 pub fn nbody_gravity_system(
-    mut query: Query<(Entity, &Transform, &mut ExternalForce, Option<&GroupId>), With<Particle>>,
+    mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
 ) {
-    let gravity_const = 15.0;
-    let min_dist = 100.0;
-    let mut entities: Vec<(Entity, Vec2, Option<GroupId>)> = Vec::new();
-    for (entity, transform, _force, group) in query.iter_mut() {
-        entities.push((entity, transform.translation.truncate(), group.copied()));
+    let gravity_const = 10.0;  // Reduced from 15.0 to prevent runaway acceleration
+    let min_dist = 150.0;  // Increased to reduce instability at contact ranges
+    let max_gravity_dist = 800.0; // Only apply gravity to nearby asteroids
+
+    // Collect positions
+    let mut entities: Vec<(Entity, Vec2)> = Vec::new();
+    for (entity, transform, _) in query.iter_mut() {
+        entities.push((entity, transform.translation.truncate()));
     }
-    #[allow(clippy::needless_range_loop)]
+
+    // Apply gravity between nearby asteroid pairs only
     for i in 0..entities.len() {
-        let (entity_i, pos_i, _group_i) = entities[i];
+        let (entity_i, pos_i) = entities[i];
         for j in (i + 1)..entities.len() {
-            let (entity_j, pos_j, _group_j) = entities[j];
+            let (entity_j, pos_j) = entities[j];
             let delta = pos_j - pos_i;
-            let dist_sq = delta.length_squared().max(min_dist * min_dist);
+            let dist = delta.length();
+            
+            // Skip gravity if asteroids are too far apart (prevents phantom forces from distant asteroids)
+            if dist > max_gravity_dist {
+                continue;
+            }
+            
+            let dist_sq = (dist * dist).max(min_dist * min_dist);
             let force_mag = gravity_const / dist_sq;
             let force = delta.normalize_or_zero() * force_mag;
-            if let Ok((_, _, mut force_i, _)) = query.get_mut(entity_i) {
+
+            if let Ok((_, _, mut force_i)) = query.get_mut(entity_i) {
                 force_i.force += force;
             }
-            if let Ok((_, _, mut force_j, _)) = query.get_mut(entity_j) {
+            if let Ok((_, _, mut force_j)) = query.get_mut(entity_j) {
                 force_j.force -= force;
             }
         }
     }
 }
 
-// System: handle user input for spawning and explosions
+/// Handle user input for spawning asteroids (click only)
 pub fn user_input_system(
     mut commands: Commands,
     buttons: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window>,
-    mut query: Query<(&Transform, &mut Velocity), With<Particle>>,
 ) {
     let window = windows.single();
     if let Some(cursor_pos) = window.cursor_position() {
-        let world_pos = Vec2::new(
-            cursor_pos.x - window.width() / 2.0,
-            cursor_pos.y - window.height() / 2.0,
-        );
+        // Convert from screen coordinates to world coordinates
+        let world_x = cursor_pos.x - window.width() / 2.0;
+        let world_y = -(cursor_pos.y - window.height() / 2.0);
+        let world_pos = Vec2::new(world_x, world_y);
+
         if buttons.just_pressed(MouseButton::Left) {
-            spawn_particle(&mut commands, world_pos, Color::rgb(1.0, 0.8, 0.8), 0);
-        }
-        if buttons.just_pressed(MouseButton::Right) {
-            // Apply explosion force to nearby particles
-            let explosion_force = 100.0;
-            let explosion_radius = 50.0;
-            for (transform, mut velocity) in query.iter_mut() {
-                let particle_pos = transform.translation.truncate();
-                let diff = particle_pos - world_pos;
-                let dist = diff.length();
-                if dist < explosion_radius && dist > 0.1 {
-                    let force = (diff.normalize() * explosion_force) / (1.0 + dist / 10.0);
-                    velocity.linvel += force;
-                }
-            }
+            crate::asteroid::spawn_asteroid(&mut commands, world_pos, Color::WHITE, 0);
         }
     }
 }
 
-// System: count neighbors for each particle (for environmental damping)
+/// Count neighbors for each asteroid (for environmental damping)
 pub fn neighbor_counting_system(
-    mut query: Query<(Entity, &Transform, &mut NeighborCount), With<Particle>>,
+    mut query: Query<(Entity, &Transform, &mut NeighborCount), With<Asteroid>>,
 ) {
     let neighbor_threshold = 3.0;
 
-    // Collect all positions and entities
+    // Collect all positions
     let particles: Vec<(Entity, Vec2)> = query
         .iter()
         .map(|(e, t, _)| (e, t.translation.truncate()))
@@ -200,11 +154,11 @@ pub fn neighbor_counting_system(
     }
 }
 
-// System: apply environmental damping to tightly packed particles
+/// Apply environmental damping to tightly packed asteroids
 pub fn environmental_damping_system(
-    mut query: Query<(&NeighborCount, &mut Velocity), With<Particle>>,
+    mut query: Query<(&NeighborCount, &mut Velocity), With<Asteroid>>,
 ) {
-    let tight_packing_threshold = 6; // If >6 neighbors within 3.0 units
+    let tight_packing_threshold = 6;
     let base_damping = 0.005; // 0.5% damping
 
     for (neighbor_count, mut velocity) in query.iter_mut() {
@@ -215,30 +169,163 @@ pub fn environmental_damping_system(
     }
 }
 
-// System: cull particles far off-screen
-pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform), With<Particle>>) {
-    let cull_distance = 200.0;
-    for (entity, transform) in query.iter() {
-        if transform.translation.truncate().length() > cull_distance {
+/// Cull asteroids far off-screen and apply damping to distant ones
+pub fn culling_system(mut commands: Commands, mut query: Query<(Entity, &Transform, &mut Velocity), With<Asteroid>>) {
+    let cull_distance = 1000.0;  // Reduced to prevent accumulation
+    let damping_distance = 400.0; // Start damping asteroids beyond viewport
+    
+    for (entity, transform, mut velocity) in query.iter_mut() {
+        let dist = transform.translation.truncate().length();
+        
+        // Cull asteroids that are very far
+        if dist > cull_distance {
             commands.entity(entity).despawn();
+        }
+        // Apply exponential damping to distant asteroids to prevent them from flying too far
+        // This prevents asteroids from coasting indefinitely if they gain velocity from gravity
+        else if dist > damping_distance {
+            // Exponential ramp: starts at ~7% and reaches ~30% damping
+            let t = (dist - damping_distance) / (cull_distance - damping_distance);
+            let damping_factor = (0.93 * t * t) + (0.97 * (1.0 - t)); // Smooth exponential transition
+            velocity.linvel *= damping_factor;
+            velocity.angvel *= damping_factor;
         }
     }
 }
 
-// System: handle collision responses (restitution, minimal damping)
-pub fn collision_response_system(
+/// Form large asteroids by detecting clusters of touching asteroids
+/// and converting them into larger polygons
+pub fn asteroid_formation_system(
+    mut commands: Commands,
+    query: Query<(Entity, &Transform, &Velocity, &crate::asteroid::AsteroidSize), With<Asteroid>>,
     rapier_context: Res<RapierContext>,
-    mut query: Query<(&Transform, &mut Velocity, &Restitution), With<Particle>>,
 ) {
-    let mut collisions = Vec::new();
-    for contact_pair in rapier_context.contact_pairs() {
-        if contact_pair.has_any_active_contacts() {
-            collisions.push((contact_pair.collider1(), contact_pair.collider2()));
+    // Find clusters of slow-moving asteroids that are touching
+    let velocity_threshold = 2.5; // Increased from 1.0 to make combining easier
+    let mut processed = std::collections::HashSet::new();
+    
+    let asteroids: Vec<_> = query.iter().collect();
+    
+    for i in 0..asteroids.len() {
+        if processed.contains(&asteroids[i].0) {
+            continue; // Already processed/merged
+        }
+        
+        let (e1, t1, v1, s1) = asteroids[i];
+        
+        // Only start clusters from small asteroids
+        if !matches!(s1, crate::asteroid::AsteroidSize::Small) {
+            continue;
+        }
+        
+        if v1.linvel.length() > velocity_threshold {
+            continue; // Too fast to merge
+        }
+        
+        // Find all asteroids touching this one
+        let mut cluster = vec![(e1, t1.translation.truncate(), *v1, s1)];
+        
+        for j in (i + 1)..asteroids.len() {
+            if processed.contains(&asteroids[j].0) {
+                continue;
+            }
+            
+            let (e2, t2, v2, s2) = asteroids[j];
+            
+            // Only cluster small asteroids
+            if !matches!(s2, crate::asteroid::AsteroidSize::Small) {
+                continue;
+            }
+            
+            if v2.linvel.length() > velocity_threshold {
+                continue;
+            }
+            
+            // Check if they're touching
+            if let Some(contact) = rapier_context.contact_pair(e1, e2) {
+                if contact.has_any_active_contacts() {
+                    cluster.push((e2, t2.translation.truncate(), *v2, s2));
+                }
+            }
+        }
+        
+        // If we have 2+ asteroids in the cluster, merge them
+        if cluster.len() >= 2 {
+            // Mark all as processed
+            for (entity, _, _, _) in &cluster {
+                processed.insert(*entity);
+            }
+            
+            // Compute center and average velocity
+            let mut center = Vec2::ZERO;
+            let mut avg_linvel = Vec2::ZERO;
+            let mut avg_angvel = 0.0;
+            
+            for (_, pos, vel, _) in &cluster {
+                center += *pos;
+                avg_linvel += vel.linvel;
+                avg_angvel += vel.angvel;
+            }
+            
+            let count = cluster.len() as f32;
+            center /= count;
+            avg_linvel /= count;
+            avg_angvel /= count;
+            
+            // Build hull from cluster positions
+            let positions: Vec<(Entity, Vec2, Color)> = cluster
+                .iter()
+                .map(|(entity, pos, _, _)| (*entity, *pos, Color::rgb(0.5, 0.5, 0.5)))
+                .collect();
+            
+            // Compute convex hull
+            if let Some(hull) = compute_convex_hull(&positions) {
+                if hull.len() >= 2 {
+                    let avg_color = blend_colors(&positions);
+                    
+                    // Spawn composite
+                    let composite = crate::asteroid::spawn_large_asteroid(&mut commands, center, &hull, avg_color);
+                    if let Some(mut cmd) = commands.get_entity(composite) {
+                        cmd.insert(Velocity {
+                            linvel: avg_linvel,
+                            angvel: avg_angvel,
+                        });
+                    }
+                    
+                    // Despawn all source asteroids
+                    for (entity, _, _, _) in cluster {
+                        commands.entity(entity).despawn();
+                    }
+                }
+            }
         }
     }
+}
 
-    // Apply post-collision damping (3% as per spec)
-    for (_, mut velocity, _restitution) in query.iter_mut() {
-        velocity.linvel *= 0.97; // 3% damping
+/// Render asteroid outlines using gizmos (wireframe visualization with rotation)
+pub fn gizmo_rendering_system(
+    mut gizmos: Gizmos,
+    query: Query<(&Transform, &Vertices), With<Asteroid>>,
+) {
+    for (transform, vertices) in query.iter() {
+        let pos = transform.translation.truncate();
+        if vertices.0.len() < 2 {
+            continue;
+        }
+
+        // Extract rotation from transform
+        let rotation = transform.rotation;
+        
+        // Draw polygon outline with rotation applied
+        for i in 0..vertices.0.len() {
+            let v1 = vertices.0[i];
+            let v2 = vertices.0[(i + 1) % vertices.0.len()];
+            
+            // Rotate vertices by transform rotation
+            let p1 = pos + rotation.mul_vec3(v1.extend(0.0)).truncate();
+            let p2 = pos + rotation.mul_vec3(v2.extend(0.0)).truncate();
+            
+            gizmos.line_2d(p1, p2, Color::WHITE);
+        }
     }
 }
