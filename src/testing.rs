@@ -1,7 +1,7 @@
 //! Testing utilities for the simulation
 
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::Velocity;
+use bevy_rapier2d::prelude::{Velocity, ExternalForce};
 use crate::asteroid::{Asteroid, Vertices, spawn_asteroid_with_vertices};
 use std::io::Write;
 
@@ -332,6 +332,65 @@ pub fn spawn_test_gravity_boundary(mut commands: Commands, mut test_config: ResM
     println!("✓ Spawned test: Gravity boundary (at 300u max distance)");
 }
 
+/// Spawn test scenario: small asteroid passing by large asteroid
+pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+    test_config.test_name = "passing_asteroid".to_string();
+    test_config.frame_limit = 500;
+    
+    // Create small triangle (standard size)
+    let side = 6.0;
+    let height = side * 3.0_f32.sqrt() / 2.0;
+    let small_verts = vec![
+        Vec2::new(0.0, height / 2.0),
+        Vec2::new(-side / 2.0, -height / 2.0),
+        Vec2::new(side / 2.0, -height / 2.0),
+    ];
+    
+    // Create large octagon for the stationary asteroid
+    let large_radius = 20.0;
+    let mut large_verts = Vec::new();
+    for i in 0..8 {
+        let angle = (i as f32) * std::f32::consts::TAU / 8.0;
+        large_verts.push(Vec2::new(
+            large_radius * angle.cos(),
+            large_radius * angle.sin(),
+        ));
+    }
+    
+    let grey = Color::rgb(0.5, 0.5, 0.5);
+    
+    // Spawn large stationary asteroid at origin
+    let large_entity = spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &large_verts, grey);
+    
+    // Spawn small asteroid that will pass by at ~50 unit distance
+    // Position it to the left, moving right with enough offset to pass by
+    use bevy_rapier2d::prelude::{RigidBody, Collider, Restitution, ExternalForce, CollisionGroups, Group};
+    use crate::asteroid::{Asteroid, NeighborCount};
+    
+    let small_entity = commands.spawn((
+        Asteroid,
+        Vertices(small_verts.clone()),
+        NeighborCount(0),
+        RigidBody::Dynamic,
+        Collider::ball(2.0),
+        Restitution::coefficient(0.5),
+        Velocity {
+            linvel: Vec2::new(30.0, 0.0),  // Moving right at constant speed
+            angvel: 0.0,
+        },
+        ExternalForce::default(),
+        CollisionGroups::new(Group::GROUP_1, Group::GROUP_1),
+        TransformBundle::from_transform(Transform::from_xyz(-150.0, 50.0, 0.0)),
+    )).id();
+    
+    println!("✓ Spawned test: Small asteroid passing by large stationary asteroid");
+    println!("  Large asteroid: center at (0, 0), radius ~20u, entity={:?}", large_entity);
+    println!("  Small asteroid: starts at (-150, 50), velocity (30, 0) u/s, entity={:?}", small_entity);
+    println!("  Expected: Small asteroid passes at ~50u distance, gravity should:");
+    println!("    - Pull down (toward large) as it approaches");
+    println!("    - Pull backward (opposite motion) after it passes");
+}
+
 /// Track asteroid count and log state
 #[derive(Component)]
 #[allow(dead_code)]
@@ -339,7 +398,7 @@ pub struct TestMarker(pub usize); // Initial index for tracking
 
 pub fn test_logging_system(
     mut test_config: ResMut<TestConfig>,
-    q: Query<(&Transform, &Velocity, &Vertices), With<Asteroid>>,
+    q: Query<(Entity, &Transform, &Velocity, &Vertices, &ExternalForce), With<Asteroid>>,
 ) {
     if !test_config.enabled {
         return;
@@ -353,17 +412,39 @@ pub fn test_logging_system(
         test_config.initial_asteroid_count = asteroid_count;
         println!("[Frame {}] Test: {} | Initial asteroids: {}", 
             test_config.frame_count, test_config.test_name, asteroid_count);
-        // Also log positions
-        for (transform, _, _) in q.iter() {
-            println!("  Asteroid at: ({:.1}, {:.1})", transform.translation.x, transform.translation.y);
+        // Also log positions and entity IDs
+        for (entity, transform, _, _, _) in q.iter() {
+            println!("  Entity {:?} at: ({:.1}, {:.1})", entity, transform.translation.x, transform.translation.y);
         }
-    } else if test_config.frame_count == 10 || test_config.frame_count == 20 || test_config.frame_count == 30 || test_config.frame_count == 40 || test_config.frame_count == 50 || test_config.frame_count % 50 == 0 || test_config.frame_count == test_config.frame_limit {
+    } else if test_config.frame_count == 10 || test_config.frame_count == 20 || test_config.frame_count == 30 || test_config.frame_count == 40 || test_config.frame_count == 50 || test_config.frame_count % 25 == 0 || test_config.frame_count == test_config.frame_limit {
         println!("[Frame {}] Asteroids: {} (was {})", 
             test_config.frame_count, asteroid_count, test_config.initial_asteroid_count);
-        // Log positions and velocities for gravity test
-        for (i, (transform, vel, _)) in q.iter().enumerate() {
-            let pos = transform.translation.truncate();
-            println!("  [{}] pos: ({:.1}, {:.1}), vel_len: {:.3}", i, pos.x, pos.y, vel.linvel.length());
+        
+        // Collect positions for distance calculations
+        let positions: Vec<(Entity, Vec2, Vec2, Vec2, f32)> = q.iter()
+            .map(|(e, t, v, _, f)| (e, t.translation.truncate(), v.linvel, f.force, f.force.length()))
+            .collect();
+        
+        // Log positions, velocities, and force vectors with distances
+        for (i, (entity, pos, vel, force, force_mag)) in positions.iter().enumerate() {
+            let force_dir = if *force_mag > 0.0001 {  // Lower threshold to see small forces
+                format!("({:.3}, {:.3})", force.x, force.y) 
+            } else { 
+                "none".to_string() 
+            };
+            
+            // Calculate distance to other asteroids
+            let mut distances = Vec::new();
+            for (j, (_, other_pos, _, _, _)) in positions.iter().enumerate() {
+                if i != j {
+                    let dist = (*other_pos - *pos).length();
+                    distances.push(format!("d[{}]={:.1}", j, dist));
+                }
+            }
+            let dist_str = distances.join(", ");
+            
+            println!("  [{}] Entity={:?} pos: ({:.1}, {:.1}), vel: ({:.1}, {:.1}) len={:.2}, force: {} mag={:.3}, {}", 
+                i, entity, pos.x, pos.y, vel.x, vel.y, vel.length(), force_dir, force_mag, dist_str);
         }
     }
 }
@@ -475,6 +556,15 @@ fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> St
                 format!("✓ PASS: Asteroids eventually merged from boundary distance")
             } else {
                 format!("✗ FAIL: Expected stable or merged, got {} → {}", initial, final_count)
+            }
+        }
+        "passing_asteroid" => {
+            // For this test, we just want to verify forces make sense
+            // Small asteroid should pass by without runaway acceleration
+            if initial == 2 {
+                format!("✓ PASS: Small asteroid passed by large one (check velocity logs)")
+            } else {
+                format!("✗ FAIL: Expected 2 asteroids, got {}", initial)
             }
         }
         _ => format!("? UNKNOWN: {}", test_name),

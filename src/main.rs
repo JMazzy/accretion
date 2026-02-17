@@ -7,7 +7,7 @@ mod graphics;
 mod simulation;
 mod testing;
 
-use testing::{TestConfig, spawn_test_two_triangles, spawn_test_three_triangles, spawn_test_gravity, spawn_test_high_speed_collision, spawn_test_near_miss, spawn_test_gentle_approach, spawn_test_culling_verification, spawn_test_mixed_size_asteroids, spawn_test_large_small_pair, spawn_test_gravity_boundary};
+use testing::{TestConfig, spawn_test_two_triangles, spawn_test_three_triangles, spawn_test_gravity, spawn_test_high_speed_collision, spawn_test_near_miss, spawn_test_gentle_approach, spawn_test_culling_verification, spawn_test_mixed_size_asteroids, spawn_test_large_small_pair, spawn_test_gravity_boundary, spawn_test_passing_asteroid};
 
 fn main() {
     // Check for test mode
@@ -30,7 +30,10 @@ fn main() {
         ..Default::default()
     })
     .add_plugins(simulation::SimulationPlugin)
-    .add_systems(Startup, graphics::setup_camera);
+    .add_systems(Startup, (
+        graphics::setup_camera,
+        simulation::setup_stats_text.after(graphics::setup_camera),
+    ));
     
     // Add testing systems if in test mode
     if let Some(test_name) = test_mode {
@@ -51,6 +54,7 @@ fn main() {
             "mixed_size_asteroids" => app.add_systems(Startup, spawn_test_mixed_size_asteroids.after(graphics::setup_camera)),
             "large_small_pair" => app.add_systems(Startup, spawn_test_large_small_pair.after(graphics::setup_camera)),
             "gravity_boundary" => app.add_systems(Startup, spawn_test_gravity_boundary.after(graphics::setup_camera)),
+            "passing_asteroid" => app.add_systems(Startup, spawn_test_passing_asteroid.after(graphics::setup_camera)),
             _ => app.add_systems(Startup, spawn_test_two_triangles.after(graphics::setup_camera)),
         };
         

@@ -2,26 +2,55 @@
 
 use crate::asteroid::{compute_convex_hull_from_points, Asteroid, NeighborCount, Vertices};
 use bevy::input::ButtonInput;
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+
+/// Tracks simulation statistics: active asteroids, culled count, merged count
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct SimulationStats {
+    pub live_count: u32,
+    pub culled_total: u32,
+    pub merged_total: u32,
+}
+
+/// Camera state for pan/zoom controls
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct CameraState {
+    pub pan_x: f32,
+    pub pan_y: f32,
+    pub zoom: f32,
+}
+
+const MAX_PAN_DISTANCE: f32 = 600.0;
+const MIN_ZOOM: f32 = 0.5;  // 0.5 scale = see full ~2000u circle
+const MAX_ZOOM: f32 = 8.0;   // 8.0 scale = 4x magnification
+const ZOOM_SPEED: f32 = 0.1; // Speed of zoom per scroll
 
 pub struct SimulationPlugin;
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        app.insert_resource(SimulationStats::default())
+           .insert_resource(CameraState { pan_x: 0.0, pan_y: 0.0, zoom: 1.0 })
+           .add_systems(
             Update,
             (
-                culling_system,                // FIRST: Remove far asteroids before physics
+                stats_counting_system,         // FIRST: Count asteroids for tracking
+                culling_system,                // Remove far asteroids before physics
                 neighbor_counting_system,
-                nbody_gravity_system,
                 settling_damping_system,       // Apply settling damping to slow asteroids
                 particle_locking_system,
                 environmental_damping_system,
-                user_input_system,
-                gizmo_rendering_system,
+                user_input_system,             // Now handles keyboard + mouse input
+                camera_pan_system,             // Update camera position from input
+                camera_zoom_system,            // Update camera zoom from input
+                gizmo_rendering_system,        // Render asteroids + boundary
+                stats_display_system,          // Render stats text
             ),
         )
+        // Run gravity in FixedUpdate (same schedule as Rapier physics) to prevent force accumulation
+        .add_systems(FixedUpdate, nbody_gravity_system)
         // Move asteroid_formation_system to PostUpdate so it runs AFTER Rapier physics computes contacts
         .add_systems(PostUpdate, asteroid_formation_system);
     }
@@ -74,9 +103,16 @@ pub fn particle_locking_system(
 pub fn nbody_gravity_system(
     mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
 ) {
-    let gravity_const = 2.0;  // Very gentle to allow contact without velocity blowup
-    let min_gravity_dist = 20.0;  // Skip gravity entirely if asteroids are closer than this - prevents runaway acceleration
+    let gravity_const = 10.0;  // Increased for more noticeable attraction
+    let min_gravity_dist = 5.0;  // Skip gravity entirely if asteroids are closer than this - prevents runaway acceleration
     let max_gravity_dist = 300.0; // Shorter range
+
+    // CRITICAL: Reset all forces to zero first, then calculate fresh
+    // This prevents accumulation bugs and ensures forces reflect current positions
+    for (_, _, mut force) in query.iter_mut() {
+        force.force = Vec2::ZERO;
+        force.torque = 0.0;
+    }
 
     // Collect positions
     let mut entities: Vec<(Entity, Vec2)> = Vec::new();
@@ -111,23 +147,68 @@ pub fn nbody_gravity_system(
     }
 }
 
-/// Handle user input for spawning asteroids (click only)
+/// Handle user input: spawning (left-click), camera pan (arrow keys), zoom (mouse wheel)
 pub fn user_input_system(
     mut commands: Commands,
+    mut camera_state: ResMut<CameraState>,
     buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut scroll_evr: EventReader<MouseWheel>,
     windows: Query<&Window>,
 ) {
     let window = windows.single();
+    
+    // Spawning: left-click with camera-aware coordinates
     if let Some(cursor_pos) = window.cursor_position() {
-        // Convert from screen coordinates to world coordinates
-        let world_x = cursor_pos.x - window.width() / 2.0;
-        let world_y = -(cursor_pos.y - window.height() / 2.0);
+        // Convert from screen coordinates to world coordinates, accounting for camera pan and zoom
+        let norm_x = (cursor_pos.x - window.width() / 2.0) * camera_state.zoom;
+        let norm_y = -(cursor_pos.y - window.height() / 2.0) * camera_state.zoom;
+        let world_x = norm_x + camera_state.pan_x;
+        let world_y = norm_y + camera_state.pan_y;
         let world_pos = Vec2::new(world_x, world_y);
 
         if buttons.just_pressed(MouseButton::Left) {
             crate::asteroid::spawn_asteroid(&mut commands, world_pos, Color::WHITE, 0);
         }
     }
+    
+    // Camera panning: arrow keys
+    let pan_speed = 5.0;
+    if keys.pressed(KeyCode::ArrowUp) {
+        camera_state.pan_y = (camera_state.pan_y + pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
+    }
+    if keys.pressed(KeyCode::ArrowDown) {
+        camera_state.pan_y = (camera_state.pan_y - pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
+    }
+    if keys.pressed(KeyCode::ArrowLeft) {
+        camera_state.pan_x = (camera_state.pan_x - pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
+    }
+    if keys.pressed(KeyCode::ArrowRight) {
+        camera_state.pan_x = (camera_state.pan_x + pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
+    }
+    
+    // Zoom: mouse wheel
+    for ev in scroll_evr.read() {
+        // In Bevy 0.13, MouseWheel has y field for scroll delta
+        let delta = ev.y;
+        camera_state.zoom = (camera_state.zoom - (delta * ZOOM_SPEED)).clamp(MIN_ZOOM, MAX_ZOOM);
+    }
+}
+
+/// Apply camera pan/zoom state to the camera entity
+pub fn camera_pan_system(
+    camera_state: Res<CameraState>,
+    mut camera_query: Query<&mut Transform, With<Camera>>,
+) {
+    for mut transform in camera_query.iter_mut() {
+        transform.translation = Vec3::new(camera_state.pan_x, camera_state.pan_y, transform.translation.z);
+        transform.scale = Vec3::new(camera_state.zoom, camera_state.zoom, 1.0);
+    }
+}
+
+/// Process zoom changes (handled in camera_pan_system)
+pub fn camera_zoom_system() {
+    // Zoom is now applied directly in camera_pan_system via transform.scale
 }
 
 /// Count neighbors for each asteroid (for environmental damping)
@@ -187,6 +268,30 @@ pub fn environmental_damping_system(
     }
 }
 
+/// Track statistics: live count, culled count, merged count
+/// Must run BEFORE culling_system to detect which asteroids are about to be culled
+pub fn stats_counting_system(
+    mut stats: ResMut<SimulationStats>,
+    query: Query<(Entity, &Transform), With<Asteroid>>,
+) {
+    let cull_distance = 1000.0;
+    let mut live_count = 0;
+    let mut culled_this_frame = 0;
+    
+    // Count live asteroids and identify those about to be culled
+    for (_, transform) in query.iter() {
+        let dist = transform.translation.truncate().length();
+        if dist <= cull_distance {
+            live_count += 1;
+        } else {
+            culled_this_frame += 1;
+        }
+    }
+    
+    stats.live_count = live_count;
+    stats.culled_total += culled_this_frame;
+}
+
 /// Cull asteroids far off-screen
 pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform), With<Asteroid>>) {
     let cull_distance = 1000.0; // Cull just beyond the gravity interaction range
@@ -201,12 +306,54 @@ pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform),
     }
 }
 
+/// Check if a point is inside a convex polygon using cross product method
+/// Assumes vertices are in counter-clockwise order
+fn is_point_in_convex_polygon(point: &Vec2, polygon: &[Vec2]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    
+    // For a convex polygon, the point is inside if it's on the same side
+    // of all edges (all cross products have the same sign)
+    let mut sign = None;
+    
+    for i in 0..polygon.len() {
+        let v1 = polygon[i];
+        let v2 = polygon[(i + 1) % polygon.len()];
+        
+        // Edge vector
+        let edge = v2 - v1;
+        // Vector from edge start to point
+        let to_point = *point - v1;
+        
+        // Cross product (2D: returns scalar)
+        let cross = edge.x * to_point.y - edge.y * to_point.x;
+        
+        // Skip edges that are colinear with the point
+        if cross.abs() < 0.0001 {
+            continue;
+        }
+        
+        match sign {
+            None => sign = Some(cross > 0.0),
+            Some(positive) => {
+                if (cross > 0.0) != positive {
+                    return false;  // Point is outside
+                }
+            }
+        }
+    }
+    
+    true  // Point is inside (or on boundary)
+}
+
 /// Form large asteroids by detecting clusters of touching asteroids
 /// and converting them into larger polygons
 pub fn asteroid_formation_system(
     mut commands: Commands,
     query: Query<(Entity, &Transform, &Velocity, &Vertices), With<Asteroid>>,
     rapier_context: Res<RapierContext>,
+    mut stats: ResMut<SimulationStats>,
 ) {
     // Find clusters of slow-moving asteroids that are touching
     let velocity_threshold = 10.0;
@@ -304,8 +451,52 @@ pub fn asteroid_formation_system(
             if let Some(hull) = compute_convex_hull_from_points(&world_vertices) {
                 // Need at least 3 vertices for a valid composite asteroid
                 if hull.len() >= 3 {
+                    // IMPORTANT: Check if any other asteroids are inside this hull
+                    // If so, add them to the cluster to prevent flinging
+                    let mut additional_count = 0;
+                    for j in 0..asteroids.len() {
+                        let (e_check, t_check, v_check, verts_check) = asteroids[j];
+                        
+                        // Skip if already in cluster or processed
+                        if processed.contains(&e_check) || cluster.iter().any(|(e, _, _)| *e == e_check) {
+                            continue;
+                        }
+                        
+                        // Check if this asteroid's center is inside the hull
+                        let check_pos = t_check.translation.truncate();
+                        if is_point_in_convex_polygon(&check_pos, &hull) {
+                            // Mark as processed and add to cluster
+                            processed.insert(e_check);
+                            cluster.push((e_check, t_check, verts_check));
+                            
+                            // Add its vertices to the hull computation
+                            let rotation = t_check.rotation;
+                            let offset = t_check.translation.truncate();
+                            for local_v in &verts_check.0 {
+                                let world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate();
+                                world_vertices.push(world_v);
+                            }
+                            
+                            // Update center and velocity averages with incremental formula
+                            let current_count = count + additional_count as f32;
+                            let new_count = current_count + 1.0;
+                            center = (center * current_count + check_pos) / new_count;
+                            avg_linvel = (avg_linvel * current_count + v_check.linvel) / new_count;
+                            avg_angvel = (avg_angvel * current_count + v_check.angvel) / new_count;
+                            
+                            additional_count += 1;
+                        }
+                    }
+                    
+                    // If we found additional asteroids inside, recompute hull with all vertices
+                    let final_hull = if additional_count > 0 {
+                        compute_convex_hull_from_points(&world_vertices).unwrap_or(hull.clone())
+                    } else {
+                        hull.clone()
+                    };
+                    
                     // Convert hull back to local-space relative to center
-                    let hull_local: Vec<Vec2> = hull.iter()
+                    let hull_local: Vec<Vec2> = final_hull.iter()
                         .map(|v| *v - center)
                         .collect();
                     
@@ -320,6 +511,10 @@ pub fn asteroid_formation_system(
                         });
                     }
                     
+                    // Track merge: N asteroids became 1, so we merged (N-1) asteroids
+                    let merge_count = (cluster.len() - 1) as u32;
+                    stats.merged_total += merge_count;
+                    
                     // Despawn all source asteroids
                     for (entity, _, _) in cluster {
                         commands.entity(entity).despawn();
@@ -333,9 +528,10 @@ pub fn asteroid_formation_system(
 /// Render asteroid outlines using gizmos (wireframe visualization with rotation)
 pub fn gizmo_rendering_system(
     mut gizmos: Gizmos,
-    query: Query<(&Transform, &Vertices), With<Asteroid>>,
+    query: Query<(&Transform, &Vertices, &ExternalForce), With<Asteroid>>,
 ) {
-    for (transform, vertices) in query.iter() {
+    // Draw asteroids
+    for (transform, vertices, force) in query.iter() {
         let pos = transform.translation.truncate();
         if vertices.0.len() < 2 {
             continue;
@@ -354,6 +550,68 @@ pub fn gizmo_rendering_system(
             let p2 = pos + rotation.mul_vec3(v2.extend(0.0)).truncate();
             
             gizmos.line_2d(p1, p2, Color::WHITE);
+        }
+        
+        // Draw force vector (red line from asteroid center showing current force)
+        // Scale the force vector for visibility (multiply by 80 for better visibility)
+        let force_vec = force.force * 80.0;
+        if force_vec.length() > 0.1 {  // Only draw if force is significant
+            gizmos.line_2d(pos, pos + force_vec, Color::rgb(1.0, 0.0, 0.0));
+        }
+    }
+    
+    // Draw culling boundary circle at origin (yellow)
+    let cull_distance = 1000.0;
+    gizmos.circle_2d(Vec2::ZERO, cull_distance, Color::rgb(1.0, 1.0, 0.0));
+}
+
+/// Marker component for the stats text display
+#[derive(Component)]
+pub struct StatsTextDisplay;
+
+/// Initialize stats text display entity on startup
+pub fn setup_stats_text(
+    mut commands: Commands,
+) {
+    // Create UI text that stays fixed on screen (unaffected by camera zoom/pan)
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                top: Val::Px(10.0),
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn(TextBundle::from_section(
+                "Live: 0 | Culled: 0 | Merged: 0",
+                TextStyle {
+                    font: Handle::default(),
+                    font_size: 20.0,
+                    color: Color::rgb(0.0, 1.0, 1.0),
+                },
+            ));
+        })
+        .insert(StatsTextDisplay);
+}
+
+/// Update stats text display each frame (content only - position is fixed in screen space)
+pub fn stats_display_system(
+    stats: Res<SimulationStats>,
+    parent_query: Query<&Children, With<StatsTextDisplay>>,
+    mut text_query: Query<&mut Text>,
+) {
+    // Find the Text child of our StatsTextDisplay parent node
+    for children in parent_query.iter() {
+        for &child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                text.sections[0].value = format!(
+                    "Live: {} | Culled: {} | Merged: {}",
+                    stats.live_count, stats.culled_total, stats.merged_total
+                );
+            }
         }
     }
 }
