@@ -1,0 +1,23 @@
+[package]
+name = "particle"
+version = "0.1.0"
+edition = "2021"
+authors = ["Joshua"]
+description = "A simulation video game based on particle-based destructible environments"
+
+
+[dependencies]
+bevy = { version = "0.13", features = ["dynamic_linking"] }
+bevy_rapier2d = { version = "0.25", features = ["simd-stable"] }
+rand = "0.8"
+rapier2d = { version = "0.18", features = ["simd-stable"] }
+
+[dev-dependencies]
+
+[[bin]]
+name = "particle"
+path = "src/main.rs"
+
+[lib]
+name = "particle"
+path = "src/lib.rs"
