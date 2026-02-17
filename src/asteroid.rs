@@ -1,7 +1,8 @@
 //! Unified asteroid component and utilities
 //!
-//! All simulation entities are asteroids. Smaller ones are triangles,
-//! larger ones are convex polygons formed from groups.
+//! All simulation entities are asteroids - they're defined by their polygon shape.
+//! Any two asteroids can combine if touching and slow, forming a new asteroid with
+//! the convex hull of their combined shapes.
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -11,34 +12,27 @@ use rand::Rng;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Asteroid;
 
-/// Size classification: Small = spawned triangles, Large = formed from groups
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AsteroidSize {
-    Small,
-    Large,
-}
-
-/// Optional grouping for asteroids that are locked together
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GroupId(pub u32);
-
-/// Whether this asteroid is locked to others in its group
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Locked(pub bool);
-
 /// Count of nearby asteroids for environmental damping calculation
 #[derive(Component, Debug, Clone, Copy)]
 pub struct NeighborCount(pub usize);
 
-/// Polygon vertices for wireframe rendering
+/// Polygon vertices for wireframe rendering (stored in local space)
 #[derive(Component, Debug, Clone)]
 pub struct Vertices(pub Vec<Vec2>);
 
-/// Spawns a small asteroid as an equilateral triangle at the given position
-pub fn spawn_asteroid(commands: &mut Commands, position: Vec2, _color: Color, group_id: u32) {
+/// Spawns a triangle asteroid at the given position (user click)
+pub fn spawn_asteroid(commands: &mut Commands, position: Vec2, _color: Color, _group_id: u32) {
     // Generate a random grey shade for variety
     let grey = rand::random::<f32>() * 0.6 + 0.3;
     let color = Color::rgb(grey, grey, grey);
+
+    // Add small random offset to prevent stacking when clicking repeatedly in same spot
+    let mut rng = rand::thread_rng();
+    let offset = Vec2::new(
+        rng.gen_range(-2.0..2.0),
+        rng.gen_range(-2.0..2.0),
+    );
+    let spawn_pos = position + offset;
 
     // Create equilateral triangle (6 unit side length)
     let side = 6.0;
@@ -49,80 +43,45 @@ pub fn spawn_asteroid(commands: &mut Commands, position: Vec2, _color: Color, gr
         Vec2::new(side / 2.0, -height / 2.0),               // Bottom-right
     ];
 
-    commands.spawn((
-        // Rendering - small grey triangle (stored as vertices for wireframe)
-        SpriteBundle {
-            sprite: Sprite {
-                color,
-                custom_size: Some(Vec2::splat(3.0)),
-                ..Default::default()
-            },
-            transform: Transform::from_translation(position.extend(0.1)),
-            ..Default::default()
-        },
-        // Marker and classification
-        Asteroid,
-        AsteroidSize::Small,
-        GroupId(group_id),
-        Locked(false),
-        NeighborCount(0),
-        Vertices(vertices),
-        // Physics
-        RigidBody::Dynamic,
-        Collider::ball(2.0),
-        Restitution::coefficient(0.5),
-        Friction::coefficient(0.3),
-        Velocity::zero(),
-        Damping {
-            linear_damping: 0.0,
-            angular_damping: 0.0,
-        },
-        ExternalForce {
-            force: Vec2::ZERO,
-            torque: 0.0,
-        },
-        Sleeping::disabled(),
-    ));
+    spawn_asteroid_with_vertices(commands, spawn_pos, &vertices, color);
 }
 
-/// Spawns a large asteroid from locked group (polygon formed from combined asteroids)
-pub fn spawn_large_asteroid(
+/// Spawns an asteroid with arbitrary polygon vertices
+pub fn spawn_asteroid_with_vertices(
     commands: &mut Commands,
     center: Vec2,
     hull: &[Vec2],
-    _avg_color: Color,
+    _color: Color,
 ) -> Entity {
-    // Create polygon collider from convex hull
-    let hull_relative: Vec<Vec2> = hull.iter().map(|p| *p - center).collect();
-    let collider = if let Some(col) = Collider::convex_hull(&hull_relative) {
-        col
+    // Ensure we have valid vertices (need at least 3 for a polygon, minimum 2 for safety)
+    if hull.is_empty() {
+        panic!("Cannot spawn asteroid with no vertices");
+    }
+
+    // Create polygon collider from convex hull (vertices are already local-space)
+    // For 2 vertices, use a capsule-like shape; for 3+, use polygon
+    let collider = if hull.len() >= 3 {
+        Collider::convex_hull(hull).unwrap_or_else(|| Collider::ball(5.0))
+    } else if hull.len() == 2 {
+        // For 2 vertices, estimate a bounding ball
+        let radius = ((hull[0] - hull[1]).length() / 2.0).max(2.0);
+        Collider::ball(radius)
     } else {
-        Collider::ball(5.0)
+        // Single vertex, use ball
+        Collider::ball(2.0)
     };
 
-    // Generate grey color
-    let mut rng = rand::thread_rng();
-    let grey = rng.gen_range(0.3..0.9);
-    let grey_color = Color::rgb(grey, grey, grey);
-
-    // Spawn large asteroid as polygon with vertices for wireframe rendering
+    // Spawn asteroid with just transform and physics - wireframe rendering via gizmos
     let entity = commands.spawn((
-        SpriteBundle {
-            sprite: Sprite {
-                color: grey_color,
-                custom_size: Some(Vec2::splat(10.0)), // Placeholder visual size
-                ..Default::default()
-            },
-            transform: Transform::from_translation(center.extend(0.05)),
-            ..Default::default()
-        },
+        Transform::from_translation(center.extend(0.05)),
+        GlobalTransform::default(),
         Asteroid,
-        AsteroidSize::Large,
-        Vertices(hull.to_vec()),
+        NeighborCount(0),
+        Vertices(hull.to_vec()),  // Store as LOCAL-SPACE vertices
         RigidBody::Dynamic,
         collider,
-        Restitution::coefficient(0.7),
-        Friction::coefficient(0.4),
+        Restitution::coefficient(0.0),
+        Friction::coefficient(1.0),
         Velocity::zero(),
         Damping {
             linear_damping: 0.0,
@@ -139,12 +98,51 @@ pub fn spawn_large_asteroid(
 }
 
 /// Compute convex hull using gift wrapping algorithm
+#[allow(dead_code)]
 pub fn compute_convex_hull(particles: &[(Entity, Vec2, Color)]) -> Option<Vec<Vec2>> {
-    if particles.len() < 3 {
+    if particles.len() < 2 {
         return None;
     }
 
     let points: Vec<Vec2> = particles.iter().map(|(_, p, _)| *p).collect();
+
+    // Find leftmost point
+    let mut min_idx = 0;
+    for i in 1..points.len() {
+        if points[i].x < points[min_idx].x
+            || (points[i].x == points[min_idx].x && points[i].y < points[min_idx].y)
+        {
+            min_idx = i;
+        }
+    }
+
+    let mut hull = Vec::new();
+    let mut current = min_idx;
+
+    loop {
+        hull.push(points[current]);
+        let mut next = (current + 1) % points.len();
+
+        for i in 0..points.len() {
+            if cross_product(points[current], points[next], points[i]) > 0.0 {
+                next = i;
+            }
+        }
+
+        current = next;
+        if current == min_idx {
+            break;
+        }
+    }
+
+    Some(hull)
+}
+
+/// Compute convex hull from a list of points using gift wrapping algorithm
+pub fn compute_convex_hull_from_points(points: &[Vec2]) -> Option<Vec<Vec2>> {
+    if points.len() < 2 {
+        return None;
+    }
 
     // Find leftmost point
     let mut min_idx = 0;
@@ -184,6 +182,7 @@ fn cross_product(o: Vec2, a: Vec2, b: Vec2) -> f32 {
 }
 
 /// Blend colors by averaging RGB values
+#[allow(dead_code)]
 pub fn blend_colors(particles: &[(Entity, Vec2, Color)]) -> Color {
     let mut r = 0.0;
     let mut g = 0.0;

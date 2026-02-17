@@ -1,6 +1,6 @@
 //! Simulation plugin and systems for Bevy ECS
 
-use crate::asteroid::{blend_colors, compute_convex_hull, Asteroid, NeighborCount, Vertices};
+use crate::asteroid::{compute_convex_hull_from_points, Asteroid, NeighborCount, Vertices};
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -15,13 +15,15 @@ impl Plugin for SimulationPlugin {
                 culling_system,                // FIRST: Remove far asteroids before physics
                 neighbor_counting_system,
                 nbody_gravity_system,
+                settling_damping_system,       // Apply settling damping to slow asteroids
                 particle_locking_system,
                 environmental_damping_system,
-                asteroid_formation_system,
                 user_input_system,
                 gizmo_rendering_system,
             ),
-        );
+        )
+        // Move asteroid_formation_system to PostUpdate so it runs AFTER Rapier physics computes contacts
+        .add_systems(PostUpdate, asteroid_formation_system);
     }
 }
 
@@ -72,9 +74,9 @@ pub fn particle_locking_system(
 pub fn nbody_gravity_system(
     mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
 ) {
-    let gravity_const = 10.0;  // Reduced from 15.0 to prevent runaway acceleration
-    let min_dist = 150.0;  // Increased to reduce instability at contact ranges
-    let max_gravity_dist = 800.0; // Only apply gravity to nearby asteroids
+    let gravity_const = 2.0;  // Very gentle to allow contact without velocity blowup
+    let min_dist = 2.0;  // Minimum distance before clamping
+    let max_gravity_dist = 300.0; // Shorter range
 
     // Collect positions
     let mut entities: Vec<(Entity, Vec2)> = Vec::new();
@@ -154,6 +156,22 @@ pub fn neighbor_counting_system(
     }
 }
 
+/// Apply settling damping to slow asteroids to reduce spinning and help them settle into clusters
+pub fn settling_damping_system(
+    mut query: Query<&mut Velocity, With<Asteroid>>,
+) {
+    let slow_threshold = 3.0; // Asteroids moving slower than this experience settling damping
+    let settling_damping = 0.01; // 1% velocity reduction per frame (much gentler)
+
+    for mut velocity in query.iter_mut() {
+        if velocity.linvel.length() < slow_threshold {
+            // Slow asteroids lose energy through "settling"
+            velocity.linvel *= 1.0 - settling_damping;
+            velocity.angvel *= 1.0 - settling_damping;
+        }
+    }
+}
+
 /// Apply environmental damping to tightly packed asteroids
 pub fn environmental_damping_system(
     mut query: Query<(&NeighborCount, &mut Velocity), With<Asteroid>>,
@@ -169,26 +187,16 @@ pub fn environmental_damping_system(
     }
 }
 
-/// Cull asteroids far off-screen and apply damping to distant ones
-pub fn culling_system(mut commands: Commands, mut query: Query<(Entity, &Transform, &mut Velocity), With<Asteroid>>) {
-    let cull_distance = 1000.0;  // Reduced to prevent accumulation
-    let damping_distance = 400.0; // Start damping asteroids beyond viewport
+/// Cull asteroids far off-screen
+pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform), With<Asteroid>>) {
+    let cull_distance = 1000.0; // Cull just beyond the gravity interaction range
     
-    for (entity, transform, mut velocity) in query.iter_mut() {
+    for (entity, transform) in query.iter() {
         let dist = transform.translation.truncate().length();
         
-        // Cull asteroids that are very far
+        // Cull asteroids that drift very far
         if dist > cull_distance {
             commands.entity(entity).despawn();
-        }
-        // Apply exponential damping to distant asteroids to prevent them from flying too far
-        // This prevents asteroids from coasting indefinitely if they gain velocity from gravity
-        else if dist > damping_distance {
-            // Exponential ramp: starts at ~7% and reaches ~30% damping
-            let t = (dist - damping_distance) / (cull_distance - damping_distance);
-            let damping_factor = (0.93 * t * t) + (0.97 * (1.0 - t)); // Smooth exponential transition
-            velocity.linvel *= damping_factor;
-            velocity.angvel *= damping_factor;
         }
     }
 }
@@ -197,54 +205,54 @@ pub fn culling_system(mut commands: Commands, mut query: Query<(Entity, &Transfo
 /// and converting them into larger polygons
 pub fn asteroid_formation_system(
     mut commands: Commands,
-    query: Query<(Entity, &Transform, &Velocity, &crate::asteroid::AsteroidSize), With<Asteroid>>,
+    query: Query<(Entity, &Transform, &Velocity, &Vertices), With<Asteroid>>,
     rapier_context: Res<RapierContext>,
 ) {
     // Find clusters of slow-moving asteroids that are touching
-    let velocity_threshold = 2.5; // Increased from 1.0 to make combining easier
+    let velocity_threshold = 10.0;
     let mut processed = std::collections::HashSet::new();
     
     let asteroids: Vec<_> = query.iter().collect();
     
     for i in 0..asteroids.len() {
-        if processed.contains(&asteroids[i].0) {
-            continue; // Already processed/merged
-        }
+        let (e1, t1, v1, _verts1) = asteroids[i];
         
-        let (e1, t1, v1, s1) = asteroids[i];
-        
-        // Only start clusters from small asteroids
-        if !matches!(s1, crate::asteroid::AsteroidSize::Small) {
+        if processed.contains(&e1) {
             continue;
         }
         
+        // Only start clusters from slow asteroids
         if v1.linvel.length() > velocity_threshold {
-            continue; // Too fast to merge
+            continue;
         }
         
-        // Find all asteroids touching this one
-        let mut cluster = vec![(e1, t1.translation.truncate(), *v1, s1)];
+        // Flood-fill to find all connected slow asteroids
+        // Store: (entity, transform, vertices)
+        let mut cluster: Vec<(Entity, &Transform, &Vertices)> = vec![(e1, t1, _verts1)];
+        let mut queue = vec![e1];
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(e1);
         
-        for j in (i + 1)..asteroids.len() {
-            if processed.contains(&asteroids[j].0) {
-                continue;
-            }
-            
-            let (e2, t2, v2, s2) = asteroids[j];
-            
-            // Only cluster small asteroids
-            if !matches!(s2, crate::asteroid::AsteroidSize::Small) {
-                continue;
-            }
-            
-            if v2.linvel.length() > velocity_threshold {
-                continue;
-            }
-            
-            // Check if they're touching
-            if let Some(contact) = rapier_context.contact_pair(e1, e2) {
-                if contact.has_any_active_contacts() {
-                    cluster.push((e2, t2.translation.truncate(), *v2, s2));
+        while let Some(current) = queue.pop() {
+            for j in 0..asteroids.len() {
+                let (e2, t2, v2, verts2) = asteroids[j];
+                
+                if visited.contains(&e2) || processed.contains(&e2) {
+                    continue;
+                }
+                
+                // Only combine if slow
+                if v2.linvel.length() > velocity_threshold {
+                    continue;
+                }
+                
+                // Check if they're touching via Rapier contact
+                if let Some(contact) = rapier_context.contact_pair(current, e2) {
+                    if contact.has_any_active_contacts() {
+                        visited.insert(e2);
+                        queue.push(e2);
+                        cluster.push((e2, t2, verts2));
+                    }
                 }
             }
         }
@@ -252,19 +260,26 @@ pub fn asteroid_formation_system(
         // If we have 2+ asteroids in the cluster, merge them
         if cluster.len() >= 2 {
             // Mark all as processed
-            for (entity, _, _, _) in &cluster {
+            for (entity, _, _) in &cluster {
                 processed.insert(*entity);
             }
             
-            // Compute center and average velocity
+            // Compute center position
             let mut center = Vec2::ZERO;
             let mut avg_linvel = Vec2::ZERO;
             let mut avg_angvel = 0.0;
             
-            for (_, pos, vel, _) in &cluster {
-                center += *pos;
-                avg_linvel += vel.linvel;
-                avg_angvel += vel.angvel;
+            for (entity, t, _) in &cluster {
+                let pos = t.translation.truncate();
+                center += pos;
+                // Get velocity from the cached query data
+                for (e, _, vel, _) in &asteroids {
+                    if e == entity {
+                        avg_linvel += vel.linvel;
+                        avg_angvel += vel.angvel;
+                        break;
+                    }
+                }
             }
             
             let count = cluster.len() as f32;
@@ -272,20 +287,33 @@ pub fn asteroid_formation_system(
             avg_linvel /= count;
             avg_angvel /= count;
             
-            // Build hull from cluster positions
-            let positions: Vec<(Entity, Vec2, Color)> = cluster
-                .iter()
-                .map(|(entity, pos, _, _)| (*entity, *pos, Color::rgb(0.5, 0.5, 0.5)))
-                .collect();
+            // Collect ALL vertices from ALL cluster members in world-space
+            let mut world_vertices = Vec::new();
+            for (_entity, transform, vertices) in &cluster {
+                let rotation = transform.rotation;
+                let offset = transform.translation.truncate();
+                
+                for local_v in &vertices.0 {
+                    // Rotate local vertex by transform rotation
+                    let world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate();
+                    world_vertices.push(world_v);
+                }
+            }
             
-            // Compute convex hull
-            if let Some(hull) = compute_convex_hull(&positions) {
-                if hull.len() >= 2 {
-                    let avg_color = blend_colors(&positions);
+            // Compute convex hull from all world-space vertices
+            if let Some(hull) = compute_convex_hull_from_points(&world_vertices) {
+                // Need at least 3 vertices for a valid composite asteroid
+                if hull.len() >= 3 {
+                    // Convert hull back to local-space relative to center
+                    let hull_local: Vec<Vec2> = hull.iter()
+                        .map(|v| *v - center)
+                        .collect();
                     
-                    // Spawn composite
-                    let composite = crate::asteroid::spawn_large_asteroid(&mut commands, center, &hull, avg_color);
-                    if let Some(mut cmd) = commands.get_entity(composite) {
+                    let avg_color = Color::rgb(0.5, 0.5, 0.5);
+                    let _composite = crate::asteroid::spawn_asteroid_with_vertices(&mut commands, center, &hull_local, avg_color);
+                    
+                    // Update velocity
+                    if let Some(mut cmd) = commands.get_entity(_composite) {
                         cmd.insert(Velocity {
                             linvel: avg_linvel,
                             angvel: avg_angvel,
@@ -293,7 +321,7 @@ pub fn asteroid_formation_system(
                     }
                     
                     // Despawn all source asteroids
-                    for (entity, _, _, _) in cluster {
+                    for (entity, _, _) in cluster {
                         commands.entity(entity).despawn();
                     }
                 }

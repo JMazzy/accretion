@@ -10,27 +10,32 @@
 
 The "grav-sim" project is an ECS-based **asteroid simulation engine** built on **Bevy** with physics powered by **Rapier2D**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
 
-- **Purpose**: Pure asteroid-based simulation where small asteroids (triangles) naturally aggregate through gravitational attraction and collision to form larger composite asteroids (polygons) that visually rotate based on physics.
+- **Purpose**: Pure asteroid-based simulation where asteroids naturally aggregate through gravitational attraction and collision to form larger composite asteroids (polygons) that visually rotate based on physics.
 - **Framework**: 
-  - **Bevy 0.13**: Game engine providing ECS architecture, rendering, and event handling
+  - **Bevy 0.14**: Game engine providing ECS architecture, rendering, and event handling
   - **Rapier2D 0.18**: Physics engine for collision detection, rigid body dynamics, and impulse-based response
 - **Core Modules**:
-  - `asteroid.rs` - Unified asteroid components and spawn functions for small (triangles) and large (polygons) asteroids
-  - `simulation.rs` - Physics systems: N-body gravity (with distance limits), velocity syncing, cluster detection, composite formation, culling with damping, and user input
+  - `asteroid.rs` - Unified asteroid components and spawn functions; convex hull computation
+  - `simulation.rs` - Physics systems: N-body gravity, cluster detection, composite formation
   - `graphics.rs` - Camera setup for 2D rendering
-  - `main.rs` - Bevy app setup, window configuration, and plugin initialization
-- **Entity Types**: 
-  - **Small Asteroids**: Equilateral triangles, 2.0 unit ball colliders, spawn via left-click
-  - **Large Asteroids**: Convex polygons (wireframe with white outlines), polygon colliders, formed when 2+ small asteroids cluster together
-- **ECS Systems** (Execution Order):
-  1. **Culling** - Removes asteroids beyond 1000 units; applies damping beyond viewport
-  2. **Neighbor counting** - Counts nearby asteroids for environmental damping eligibility
-  3. **N-body gravity** - Applies mutual attraction only to nearby asteroids (< 800 units)
-  4. **Velocity syncing** - Synchronizes velocities of touching slow-moving asteroids
-  5. **Environmental damping** - Applies slight friction to tightly packed clusters (>6 neighbors within 3 units)
-  6. **Cluster formation** - Detects clusters of 2+ touching slow (< 1.0 u/s) small asteroids and merges into composites
-  7. **User input** - Left-click spawns triangle asteroids at cursor position
-  8. **Gizmo rendering** - Renders asteroid wireframes with rotation applied
+  - `testing.rs` - Automated test scenarios for physics validation
+  - `main.rs` - Bevy app setup, window configuration, and test mode routing
+- **Entity Types**: All asteroids are unified entities with local-space vertices
+  - Spawn as triangles or polygons depending on configuration
+  - Composite asteroids formed when 2+ asteroids touch and merge
+- **ECS Systems** (Execution Order - CRITICAL):
+  - **Update Schedule**:
+    1. **Culling** - Removes asteroids beyond 1000 units
+    2. **Neighbor counting** - Counts nearby asteroids
+    3. **N-body gravity** - Applies mutual attraction
+    4. **Settling damping** - Applies friction to slow asteroids
+    5. **Particle locking** - Velocity synchronization for slow asteroids
+    6. **Environmental damping** - Stabilizes dense clusters
+    7. **User input** - Left-click spawns asteroids
+    8. **Gizmo rendering** - Renders wireframe outlines
+  - **PostUpdate Schedule**:
+    9. **Asteroid formation** - MUST run AFTER Rapier physics (FixedUpdate) populates contacts
+    10. **Test logging & verification** - MUST run after formation to see merged results
 
 ## Physics Rules
 
@@ -53,25 +58,29 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Velocity**: Inherits averaged linear and angular velocity from constituents
 
 ### N-Body Gravity
-- **Constant**: 15.0 (strong mutual attraction)
-- **Minimum distance threshold**: 150.0 units (reduces instability when touching)
-- **Maximum gravity distance**: 800.0 units (prevents phantom forces from distant asteroids)
+- **Constant**: 2.0 (gentle mutual attraction to avoid velocity blowup)
+- **Minimum distance threshold**: 2.0 units (clamps distance-squared to prevent singularities)
+- **Maximum gravity distance**: 300.0 units (prevents phantom forces from distant asteroids)
 - **Application**: Applied uniformly between all asteroid pairs within range
+- **Observed Behavior**: Asteroids at 100 units apart attract over ~350 frames, reach velocities ~28+ m/s, then collide and merge
 
 ### Velocity Synchronization
 - **Activation**: When two asteroids touch and both move < 5.0 u/s
 - **Effect**: Velocities averaged between them (linear and angular)
 - **Purpose**: Prepares asteroids for smooth composite formation
 
-### Cluster Formation & Merging
-- **Detection**: Every frame, find all small asteroids touching each other that move < 1.0 u/s
-- **Threshold**: 2+ asteroids in a cluster triggers merging
-- **Process**:
-  1. Compute center of mass and average velocities
-  2. Calculate convex hull from constituent positions
-  3. Spawn large asteroid inheriting averaged velocity
-  4. **Immediately despawn** all constituent small asteroids
-- **Prevention**: Processed asteroids tracked each frame to prevent duplicate merging
+### Cluster Formation & Merging (CRITICAL IMPLEMENTATION)
+- **Detection**: Flood-fill algorithm through Rapier contact manifolds
+- **Contact query**: MUST run in PostUpdate after Rapier FixedUpdate populates contacts
+- **Velocity threshold**: 10.0 u/s (allows faster asteroids to merge if in contact)
+- **Hull computation**: 
+  - Collect ALL vertices from cluster members in WORLD-SPACE
+  - Apply transform rotation to local vertices: `world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate()`
+  - Compute convex hull from complete world-space vertex set
+  - Convert hull back to LOCAL-SPACE: `hull_local = hull.iter().map(|v| v - center).collect()`
+  - Spawn composite with local-space hull for correct rendering
+- **Velocity inheritance**: Average linear and angular velocity from cluster members
+- **Prevention**: Processed asteroids tracked per-frame to prevent duplicate merging
 
 ### Environmental Damping
 - **Activation**: Applied to asteroids with >6 neighbors within 3.0 units
@@ -90,14 +99,50 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **No automatic spawning**: Simulation starts empty; user drives all spawning
 - **Coordinate system**: Screen (0,0) top-left → World (0,0) center; X right, Y up
 
-## Current Implementation
-- ✅ Pure asteroid-only system (no particle/rigid_body distinction)
-- ✅ Direct cluster-based formation (no GroupId state tracking)
-- ✅ Wireframe rendering with rotation
-- ✅ Velocity inheritance on composite formation
-- ✅ Long-range gravity distance limits (prevents phantom forces)
-- ✅ Culling with distance-based damping
-- ✅ Click-only user control for clean testing
+## Current Implementation Status
+- ✅ Pure asteroid-only unified system (all entities equal)
+- ✅ Cluster-based formation with flood-fill contact detection
+- ✅ Wireframe rendering with rotation (no sprite overlays)
+- ✅ Velocity inheritance and composite stability
+- ✅ Convex hull composition from all constituent vertices
+- ✅ Gravity attraction → collision → merging pipeline
+- ✅ Automated test framework with environment variable triggering
+- ✅ PostUpdate system scheduling for physics-aware logic
+
+## Testing Strategy (Session-Learned Best Practices)
+
+### Test Framework
+- **Environment Variable**: `GRAV_SIM_TEST=<test_name>` triggers test mode from `main.rs`
+- **Available Tests**:
+  - `two_triangles`: Verifies 2 touching asteroids merge into 1 composite
+  - `three_triangles`: Verifies 3-asteroid cluster merges into 1 composite
+  - `gravity`: Verifies distant asteroids attract, collide, and merge over time
+- **Test Config Resource**: Tracks frame count, asteroid counts, test name for automated verification
+
+### Test Logging Strategy
+- Log at key frames: 1, 10, 30, 50, 100, 150, 200, 250, 300, etc.
+- Log both **positions** and **velocities** to understand physics behavior
+- Example output: `[Frame 300] pos: (-11.3, 0.0), vel_len: 28.565` for gravity test
+- This reveals whether asteroids are attracting (velocity increasing, distance decreasing) or repelling
+
+### Test Verification
+- Compare `initial_asteroid_count` vs `final_asteroid_count`
+- For merging tests: expect `final < initial` AND `final >= 1`
+- Use frame logging to debug: if asteroids don't merge, watch velocity and position trends
+
+### Physics Debugging via Tests
+1. **Spawn asteroids precisely** (not randomly) to reproduce behavior
+2. **Log positions/velocities** across frames to see trends
+3. **Use consistent test runs** (same spawn positions) for reproducible results
+4. **Adjust constants** (gravity_const, velocity_threshold) and re-run same test
+5. **Watch for phase changes**: attraction → collision → merge
+
+### Common Pitfalls Found
+- **System scheduling**: Formation system must run AFTER physics updates contacts
+- **Hull computation**: Must use constituent vertex positions, not just center positions
+- **Overlapping spawns**: Cause Rapier separation impulses; spawn touching but not overlapping
+- **Local vs world space**: Vertices must be stored local, but hull computation in world space
+- **Contact detection timing**: Contacts aren't available in same frame entities spawn; need 1+ frame delay
 
 ## Development Commands
 
@@ -148,7 +193,30 @@ cargo check
   - `rand` (0.8) - Random grey shades for asteroid coloring
   - `glam` - Math library (Vec2, Quat) via Bevy
 - **Cross-Component Communication**: 
-  - Components: `Asteroid`, `AsteroidSize`, `Vertices`, plus Rapier/Bevy physics components
-  - Systems read/write components; Rapier applies physics automatically
-  - Gizmos system reads transforms and vertices for rendering
+  - Components: `Asteroid`, `Vertices` (local-space), `NeighborCount`, plus Rapier/Bevy physics components
+  - Systems read/write components; Rapier applies physics automatically in FixedUpdate
+  - Formation system queries Rapier context for contacts (requires PostUpdate scheduling)
+  - Gizmos system reads transforms and locally-stored vertices for rendering
   - User input system spawns via `Commands`
+
+## Critical Implementation Notes
+
+### Vertex Storage (LOCAL-SPACE Essential)
+- **Why local-space?**: Enables correct rotation rendering; simplifies physics collider creation
+- **Storage**: `Vertices(Vec<Vec2>)` component stores vertices relative to entity position
+- **Rendering**: Gizmos system rotates local vertices by transform rotation before drawing
+- **Hull Composition**: When merging, convert local vertices to world-space, compute hull, convert back to local
+
+### System Scheduling Constraints
+- **Rapier Physics**: Runs in FixedUpdate; solves all physics, populates contact manifolds
+- **Formation System**: Must run in PostUpdate; queries populated contact manifolds
+- **Test Systems**: Must run in PostUpdate after formation; sees results of merging
+- **Violation Consequences**: If formation runs before physics, no contacts detected → no merging
+
+### Gravity Constant Tuning
+- **Tested range**: 2.0 works well; too high (15.0+) causes instability
+- **Observable metrics**:
+  - At 100 units separation: ~350 frames to collision
+  - Velocity reaches ~28-30 m/s at collision
+  - Collided asteroids merge immediately into stable composite
+- **Indicates system is healthy**: Smooth acceleration, no bouncing apart after contact
