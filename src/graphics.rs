@@ -1,8 +1,9 @@
-use bevy::prelude::*;
 use crate::particle::{Particle, ParticleColor};
-use crate::rigid_body::{RigidBodyGroup, RigidBodyColor};
+use crate::rigid_body::{RigidBodyColor, RigidBodyGroup};
+use bevy::prelude::*;
 
 /// System: spawn a sprite for each particle (if not present)
+#[allow(clippy::type_complexity)]
 pub fn particle_rendering_system(
     mut commands: Commands,
     particle_query: Query<(Entity, &ParticleColor), (With<Particle>, Without<Sprite>)>,
@@ -15,7 +16,7 @@ pub fn particle_rendering_system(
             ..Default::default()
         });
     }
-    
+
     for (entity, color) in rigid_query.iter() {
         commands.entity(entity).insert(Sprite {
             color: color.0,

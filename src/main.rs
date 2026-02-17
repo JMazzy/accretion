@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
-mod particle;
-mod simulation;
-mod rigid_body;
 mod graphics;
+mod particle;
+mod rigid_body;
+mod simulation;
 
 fn main() {
     App::new()

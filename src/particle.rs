@@ -48,7 +48,10 @@ pub fn spawn_particle(commands: &mut Commands, position: Vec2, color: Color, gro
         Transform::from_translation(position.extend(0.0)),
         GlobalTransform::default(),
         Velocity::zero(),
-        Damping { linear_damping: 0.0, angular_damping: 0.0 },
+        Damping {
+            linear_damping: 0.0,
+            angular_damping: 0.0,
+        },
         ExternalForce {
             force: Vec2::ZERO,
             torque: 0.0,
@@ -57,5 +60,5 @@ pub fn spawn_particle(commands: &mut Commands, position: Vec2, color: Color, gro
     ));
 }
 
-    // ...existing code...
+// ...existing code...
 // (Obsolete impls and trailing code removed for ECS migration)
