@@ -105,7 +105,7 @@ pub fn nbody_gravity_system(
 ) {
     let gravity_const = 10.0;  // Increased for more noticeable attraction
     let min_gravity_dist = 5.0;  // Skip gravity entirely if asteroids are closer than this - prevents runaway acceleration
-    let max_gravity_dist = 300.0; // Shorter range
+    let max_gravity_dist = 1000.0; // Match culling distance - gravity works across entire simulation
 
     // CRITICAL: Reset all forces to zero first, then calculate fresh
     // This prevents accumulation bugs and ensures forces reflect current positions
