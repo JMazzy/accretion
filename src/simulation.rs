@@ -15,6 +15,7 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 Update,
                 (
+                    crate::graphics::debug_simulation_state,
                     random_particle_spawn_system,
                     neighbor_counting_system,
                     nbody_gravity_system,
@@ -32,16 +33,18 @@ impl Plugin for SimulationPlugin {
 // System: Spawns a batch of initial particles randomly distributed
 pub fn spawn_initial_particles(mut commands: Commands) {
     let mut rng = rand::thread_rng();
+    eprintln!("[SPAWN] Starting initial particle spawn...");
     for _ in 0..200 {
-        let x = rng.gen_range(-600.0..600.0);
-        let y = rng.gen_range(-340.0..340.0);
+        let x = rng.gen_range(-100.0..100.0);
+        let y = rng.gen_range(-80.0..80.0);
         let color = Color::rgb(
-            rng.gen_range(0.7..1.0),
-            rng.gen_range(0.7..1.0),
-            rng.gen_range(0.7..1.0),
+            rng.gen_range(0.3..1.0),
+            rng.gen_range(0.3..1.0),
+            rng.gen_range(0.3..1.0),
         );
         spawn_particle(&mut commands, Vec2::new(x, y), color, 0);
     }
+    eprintln!("[SPAWN] Created 200 particles");
 }
 
 // System: Spawns a particle at random every second (for demo/testing)
@@ -52,12 +55,12 @@ pub fn random_particle_spawn_system(
 ) {
     if timer.tick(time.delta()).just_finished() {
         let mut rng = rand::thread_rng();
-        let x = rng.gen_range(-600.0..600.0);
-        let y = rng.gen_range(-340.0..340.0);
+        let x = rng.gen_range(-120.0..120.0);
+        let y = rng.gen_range(-100.0..100.0);
         let color = Color::rgb(
-            rng.gen_range(0.5..1.0),
-            rng.gen_range(0.5..1.0),
-            rng.gen_range(0.5..1.0),
+            rng.gen_range(0.3..1.0),
+            rng.gen_range(0.3..1.0),
+            rng.gen_range(0.3..1.0),
         );
         spawn_particle(&mut commands, Vec2::new(x, y), color, 0);
     }

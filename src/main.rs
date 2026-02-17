@@ -26,6 +26,6 @@ fn main() {
         })
         .add_plugins(simulation::SimulationPlugin)
         .add_systems(Startup, graphics::setup_camera)
-        .add_systems(Update, graphics::particle_rendering_system)
+        .add_systems(Update, graphics::rigid_body_rendering_system)
         .run();
 }

@@ -72,7 +72,7 @@ pub fn rigid_body_formation_system(
                     RigidBody::Dynamic,
                     Collider::ball(bounding_radius.max(2.0)),
                     Restitution::coefficient(0.7),
-                    Transform::from_translation(center.extend(0.0)),
+                    Transform::from_translation(center.extend(0.1)),
                     GlobalTransform::default(),
                     Velocity::zero(),
                     Damping {
@@ -82,6 +82,11 @@ pub fn rigid_body_formation_system(
                     ExternalForce {
                         force: Vec2::ZERO,
                         torque: 0.0,
+                    },
+                    Sprite {
+                        color: avg_color,
+                        custom_size: Some(Vec2::splat(24.0)),
+                        ..Default::default()
                     },
                 ));
 

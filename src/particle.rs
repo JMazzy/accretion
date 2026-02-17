@@ -37,15 +37,13 @@ pub struct RigidBodyMarker;
 pub fn spawn_particle(commands: &mut Commands, position: Vec2, color: Color, group_id: u32) {
     commands.spawn((
         Particle,
-        ParticleColor(color),
         GroupId(group_id),
         Locked(false),
         NeighborCount(0),
-        Resting(false),
         RigidBody::Dynamic,
         Collider::ball(2.0),
         Restitution::coefficient(0.5),
-        Transform::from_translation(position.extend(0.0)),
+        Transform::from_translation(position.extend(0.1)),
         GlobalTransform::default(),
         Velocity::zero(),
         Damping {
@@ -57,6 +55,11 @@ pub fn spawn_particle(commands: &mut Commands, position: Vec2, color: Color, gro
             torque: 0.0,
         },
         Sleeping::disabled(),
+        Sprite {
+            color,
+            custom_size: Some(Vec2::splat(6.0)),
+            ..Default::default()
+        },
     ));
 }
 
