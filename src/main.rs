@@ -10,7 +10,7 @@ mod testing;
 use testing::{TestConfig, spawn_test_two_triangles, spawn_test_three_triangles, spawn_test_gravity, spawn_test_high_speed_collision, spawn_test_near_miss, spawn_test_gentle_approach, spawn_test_culling_verification, spawn_test_mixed_size_asteroids, spawn_test_large_small_pair, spawn_test_gravity_boundary, spawn_test_passing_asteroid};
 
 fn spawn_initial_world(mut commands: Commands) {
-    asteroid::spawn_initial_asteroids(&mut commands, 200);
+    asteroid::spawn_initial_asteroids(&mut commands, 100);
 }
 
 fn main() {
