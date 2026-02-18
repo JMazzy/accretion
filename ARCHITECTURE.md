@@ -20,12 +20,13 @@ Pure asteroid-based simulation where asteroids naturally aggregate through gravi
 
 ```text
 src/
-├── main.rs          - Bevy app setup, window configuration, test mode routing
-├── asteroid.rs      - Unified asteroid components and spawn functions; convex hull computation
-├── simulation.rs    - Physics systems: N-body gravity, cluster detection, composite formation
-├── graphics.rs      - Camera setup for 2D rendering
-├── testing.rs       - Automated test scenarios for physics validation
-└── lib.rs           - Library exports
+├── main.rs               - Bevy app setup, window configuration, test mode routing
+├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
+├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
+├── spatial_partition.rs  - Spatial grid for O(1) neighbor lookup (replaces O(N²) brute-force)
+├── graphics.rs           - Camera setup for 2D rendering
+├── testing.rs            - Automated test scenarios for physics validation
+└── lib.rs                - Library exports
 ```
 
 ## Entity Types & Components
@@ -54,14 +55,14 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ### Gravity System (`nbody_gravity_system`)
 
-- **Constant**: `gravity_const = 2.0` (gentle mutual attraction)
-- **Minimum distance threshold**: `min_gravity_dist = 20.0` units
+- **Constant**: `gravity_const = 10.0` (mutual attraction)
+- **Minimum distance threshold**: `min_gravity_dist = 5.0` units
   - **Why**: Prevents energy injection during close encounters; Rapier handles collision physics below this range
-  - **If ≥ 20 units apart**: Skip gravity entirely (prevents unphysical high-speed acceleration)
-- **Maximum gravity distance**: `max_gravity_dist = 300.0` units (prevents phantom forces from distant asteroids)
-- **Force**: Applied uniformly between all asteroid pairs as `F = gravity_const / distance²`
+- **Maximum gravity distance**: `max_gravity_dist = 1000.0` units (matches cull distance)
+- **Force**: Applied between pairs as `F = gravity_const / distance²`
+- **Optimization**: Uses `SpatialGrid` for O(N·K) grid-based candidate lookup instead of O(N²) brute-force iteration
 - **Behavior**:
-  - Asteroids at 100 units apart attract smoothly with gravity_const=10.0
+  - Asteroids at 100 units apart attract smoothly
   - Reach collision speeds based on initial spacing
   - Collide and merge into stable composites
 
@@ -88,34 +89,33 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ### Environmental Damping
 
-- **Activation**: Applied to asteroids with >6 neighbors within 3.0 units
-- **Damping factor**: 0.5% per frame (multiply velocity by 0.995)
-- **Purpose**: Prevents numerical instability in extreme density clusters
+- **Removed**: Artificial environmental and settling damping has been removed.
+- **Philosophy**: Energy loss occurs only through natural physics: collision restitution (Rapier) and gravity dynamics.
+- Asteroids may spin and bounce indefinitely if no collision occurs — this is correct physical behavior.
 
 ### Culling & Boundary
 
 - **Culling distance**: 1000 units from origin
-- **Damping zone**: Asteroids beyond 600 units experience increasing damping
-- **Damping ramp**: Smoothly increases from 0% to 5% over 400-unit range
 - **Purpose**: Prevents asteroids from flying indefinitely; cleans up far objects
+- Note: artificial velocity damping ramps outside 600 units have been removed.
 
 ## ECS Systems Execution Order
 
-### Update Schedule (Key Physics)
+### Update Schedule
 
 1. **`stats_counting_system`** - Counts live/culled asteroids
-2. **`culling_system`** - Removes asteroids beyond 1000 units
-3. **`neighbor_counting_system`** - Counts nearby asteroids (<3 units)
-4. **`nbody_gravity_system`** - Applies mutual gravity forces (20-300 unit range)
-5. **`settling_damping_system`** - Applies friction to slow asteroids
-6. **`particle_locking_system`** - Synchronizes velocities of slow touching asteroids
-7. **`environmental_damping_system`** - Stabilizes dense clusters (>6 neighbors)
-8. **`user_input_system`** - Left-click spawns asteroids; arrow keys pan; wheel zooms
-9. **`gizmo_rendering_system`** - Renders wireframe outlines
+2. **`rebuild_spatial_grid_system`** - Rebuilds spatial grid from current positions (O(N))
+3. **`culling_system`** - Removes asteroids beyond 1000 units
+4. **`neighbor_counting_system`** - Counts nearby asteroids using grid (O(N·K))
+5. **`particle_locking_system`** - Synchronizes velocities of slow touching asteroids via Rapier contact_pairs iterator (O(C), C = active contacts)
+6. **`user_input_system`** - Left-click spawns asteroids; arrow keys pan; wheel zooms
+7. **`gizmo_rendering_system`** - Renders wireframe outlines; skips force vectors at >200 asteroids
 
-### FixedUpdate Schedule
+### FixedUpdate Schedule (chained in order)
 
-- **Rapier physics**: Solves all collision, integrates velocities, populates contact manifolds
+1. **`rebuild_spatial_grid_system`** - Rebuilds grid with physics-step positions
+2. **`nbody_gravity_system`** - Applies mutual gravity using spatial grid (O(N·K))
+3. **Rapier physics** - Solves all collision, integrates velocities, populates contact manifolds
 
 ### PostUpdate Schedule (CRITICAL TIMING)
 
@@ -123,6 +123,16 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 2. **`test_logging_system`** & **`test_verification_system`** - Runs after merging to see final states
 
 **Critical**: System scheduling ensures proper data consistency. Asteroid formation must run *after* physics updates contacts.
+
+## Spatial Grid (`spatial_partition.rs`)
+
+The `SpatialGrid` resource partitions world space into 100-unit cells for O(1) neighbor queries.
+
+- **Cell size**: 100 units (large enough to span typical gravity interaction distances)
+- **Lookup**: `get_neighbors_excluding(entity, pos, max_distance)` returns candidates from nearby cells
+- **Rebuild**: Called at the start of each Update and FixedUpdate frame
+- **Complexity**: O(N) rebuild, O(K) lookup where K = avg entities per cell neighborhood
+- **Impact**: Reduces N-body gravity and neighbor counting from O(N²) to O(N·K)
 
 ## Physics Constants Reference
 

@@ -28,19 +28,16 @@ pub fn spawn_asteroid(commands: &mut Commands, position: Vec2, _color: Color, _g
 
     // Add small random offset to prevent stacking when clicking repeatedly in same spot
     let mut rng = rand::thread_rng();
-    let offset = Vec2::new(
-        rng.gen_range(-2.0..2.0),
-        rng.gen_range(-2.0..2.0),
-    );
+    let offset = Vec2::new(rng.gen_range(-2.0..2.0), rng.gen_range(-2.0..2.0));
     let spawn_pos = position + offset;
 
     // Create equilateral triangle (6 unit side length)
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
     let vertices = vec![
-        Vec2::new(0.0, height / 2.0),                       // Top
-        Vec2::new(-side / 2.0, -height / 2.0),              // Bottom-left
-        Vec2::new(side / 2.0, -height / 2.0),               // Bottom-right
+        Vec2::new(0.0, height / 2.0),          // Top
+        Vec2::new(-side / 2.0, -height / 2.0), // Bottom-left
+        Vec2::new(side / 2.0, -height / 2.0),  // Bottom-right
     ];
 
     spawn_asteroid_with_vertices(commands, spawn_pos, &vertices, color);
@@ -51,37 +48,31 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
     let mut rng = rand::thread_rng();
     let width = 1200.0;
     let height = 680.0;
-    let margin = 150.0;  // Keep asteroids away from edges
+    let margin = 150.0; // Keep asteroids away from edges
     let min_x = -width / 2.0 + margin;
     let max_x = width / 2.0 - margin;
     let min_y = -height / 2.0 + margin;
     let max_y = height / 2.0 - margin;
-    
+
     for _ in 0..count {
         // Random position within simulation area
-        let position = Vec2::new(
-            rng.gen_range(min_x..max_x),
-            rng.gen_range(min_y..max_y),
-        );
-        
+        let position = Vec2::new(rng.gen_range(min_x..max_x), rng.gen_range(min_y..max_y));
+
         // Random size scale (0.5 to 1.5x)
         let size_scale = rng.gen_range(0.5..1.5);
-        
+
         // Random shape (triangle, square, pentagon, hexagon)
         let shape = rng.gen_range(0..4);
         let vertices = match shape {
-            0 => generate_triangle(size_scale),         // Triangle
-            1 => generate_square(size_scale),            // Square
-            2 => generate_pentagon(size_scale),          // Pentagon
-            _ => generate_hexagon(size_scale),           // Hexagon
+            0 => generate_triangle(size_scale), // Triangle
+            1 => generate_square(size_scale),   // Square
+            2 => generate_pentagon(size_scale), // Pentagon
+            _ => generate_hexagon(size_scale),  // Hexagon
         };
-        
+
         // Random velocity (gentle to avoid instant collisions)
-        let velocity = Vec2::new(
-            rng.gen_range(-15.0..15.0),
-            rng.gen_range(-15.0..15.0),
-        );
-        
+        let velocity = Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
+
         // Spawn the asteroid
         commands.spawn((
             Transform::from_translation(position.extend(0.05)),
@@ -91,21 +82,20 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
             Vertices(vertices.clone()),
             RigidBody::Dynamic,
             {
-                let collider = if vertices.len() >= 3 {
+                if vertices.len() >= 3 {
                     Collider::convex_hull(&vertices).unwrap_or_else(|| Collider::ball(5.0))
                 } else if vertices.len() == 2 {
                     let radius = ((vertices[0] - vertices[1]).length() / 2.0).max(2.0);
                     Collider::ball(radius)
                 } else {
                     Collider::ball(2.0)
-                };
-                collider
+                }
             },
             Restitution::coefficient(0.0),
             Friction::coefficient(1.0),
             Velocity {
                 linvel: velocity,
-                angvel: rng.gen_range(-5.0..5.0),  // Random angular velocity
+                angvel: rng.gen_range(-5.0..5.0), // Random angular velocity
             },
             Damping {
                 linear_damping: 0.0,
@@ -148,10 +138,7 @@ fn generate_pentagon(scale: f32) -> Vec<Vec2> {
     let mut vertices = Vec::new();
     for i in 0..5 {
         let angle = 2.0 * std::f32::consts::PI * i as f32 / 5.0;
-        vertices.push(Vec2::new(
-            radius * angle.cos(),
-            radius * angle.sin(),
-        ));
+        vertices.push(Vec2::new(radius * angle.cos(), radius * angle.sin()));
     }
     vertices
 }
@@ -162,10 +149,7 @@ fn generate_hexagon(scale: f32) -> Vec<Vec2> {
     let mut vertices = Vec::new();
     for i in 0..6 {
         let angle = 2.0 * std::f32::consts::PI * i as f32 / 6.0;
-        vertices.push(Vec2::new(
-            radius * angle.cos(),
-            radius * angle.sin(),
-        ));
+        vertices.push(Vec2::new(radius * angle.cos(), radius * angle.sin()));
     }
     vertices
 }
@@ -196,28 +180,30 @@ pub fn spawn_asteroid_with_vertices(
     };
 
     // Spawn asteroid with just transform and physics - wireframe rendering via gizmos
-    let entity = commands.spawn((
-        Transform::from_translation(center.extend(0.05)),
-        GlobalTransform::default(),
-        Asteroid,
-        NeighborCount(0),
-        Vertices(hull.to_vec()),  // Store as LOCAL-SPACE vertices
-        RigidBody::Dynamic,
-        collider,
-        Restitution::coefficient(0.0),
-        Friction::coefficient(1.0),
-        Velocity::zero(),
-        Damping {
-            linear_damping: 0.0,
-            angular_damping: 0.0,
-        },
-        ExternalForce {
-            force: Vec2::ZERO,
-            torque: 0.0,
-        },
-        Sleeping::disabled(),
-    )).id();
-    
+    let entity = commands
+        .spawn((
+            Transform::from_translation(center.extend(0.05)),
+            GlobalTransform::default(),
+            Asteroid,
+            NeighborCount(0),
+            Vertices(hull.to_vec()), // Store as LOCAL-SPACE vertices
+            RigidBody::Dynamic,
+            collider,
+            Restitution::coefficient(0.0),
+            Friction::coefficient(1.0),
+            Velocity::zero(),
+            Damping {
+                linear_damping: 0.0,
+                angular_damping: 0.0,
+            },
+            ExternalForce {
+                force: Vec2::ZERO,
+                torque: 0.0,
+            },
+            Sleeping::disabled(),
+        ))
+        .id();
+
     entity
 }
 

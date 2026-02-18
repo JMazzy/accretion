@@ -1,8 +1,8 @@
 //! Testing utilities for the simulation
 
+use crate::asteroid::{spawn_asteroid_with_vertices, Asteroid, Vertices};
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::{Velocity, ExternalForce};
-use crate::asteroid::{Asteroid, Vertices, spawn_asteroid_with_vertices};
+use bevy_rapier2d::prelude::{ExternalForce, Velocity};
 use std::io::Write;
 
 /// Test configuration
@@ -30,10 +30,10 @@ impl Default for TestConfig {
 /// Spawn test scenario: two triangles touching
 pub fn spawn_test_two_triangles(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     use crate::asteroid::spawn_asteroid_with_vertices;
-    
+
     test_config.test_name = "two_triangles_combine".to_string();
     test_config.frame_limit = 100;
-    
+
     // Create triangle vertices (side = 6.0, extends ±3 horizontally from center)
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -42,23 +42,23 @@ pub fn spawn_test_two_triangles(mut commands: Commands, mut test_config: ResMut<
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     // Spawn two triangles such that their edges ACTUALLY TOUCH at origin
     // Each extends ±3 units horizontally, so spawn at -3 and +3 to put edges at 0 and 0
     let grey = Color::rgb(0.5, 0.5, 0.5);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, 0.0), &vertices, grey);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, 0.0), &vertices, grey);
-    
+
     println!("✓ Spawned test: Two triangles touching at edges (centers at ±3)");
 }
 
 /// Spawn test scenario: three triangles in a cluster
 pub fn spawn_test_three_triangles(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     use crate::asteroid::spawn_asteroid_with_vertices;
-    
+
     test_config.test_name = "three_triangles_combine".to_string();
     test_config.frame_limit = 200;
-    
+
     // Create triangle vertices (side = 6.0, extends ±3 horizontally from center)
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -67,22 +67,22 @@ pub fn spawn_test_three_triangles(mut commands: Commands, mut test_config: ResMu
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     // Spawn three triangles at positions forming a touching triangle cluster
     // Each extends ±3 units horizontally, so position them to form a touching hexagon
     let grey = Color::rgb(0.5, 0.5, 0.5);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, -3.0), &vertices, grey);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, -3.0), &vertices, grey);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 3.0), &vertices, grey);
-    
+
     println!("✓ Spawned test: Three triangles touching in cluster formation");
 }
 
 /// Spawn test scenario: gravity test
 pub fn spawn_test_gravity(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     test_config.test_name = "gravity_attraction".to_string();
-    test_config.frame_limit = 500;  // Long enough to see collision behavior
-    
+    test_config.frame_limit = 500; // Long enough to see collision behavior
+
     // Create triangle vertices
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -91,22 +91,25 @@ pub fn spawn_test_gravity(mut commands: Commands, mut test_config: ResMut<TestCo
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     // Spawn two asteroids FAR APART to test gravity attraction
     let grey = Color::rgb(0.5, 0.5, 0.5);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(-50.0, 0.0), &vertices, grey);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(50.0, 0.0), &vertices, grey);
-    
+
     println!("✓ Spawned test: Two distant asteroids for gravity attraction test");
 }
 
 /// Spawn test scenario: high-speed head-on collision to test bouncing
-pub fn spawn_test_high_speed_collision(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+pub fn spawn_test_high_speed_collision(
+    mut commands: Commands,
+    mut test_config: ResMut<TestConfig>,
+) {
     use bevy_rapier2d::prelude::Velocity;
-    
+
     test_config.test_name = "high_speed_collision".to_string();
     test_config.frame_limit = 300;
-    
+
     // Create triangle vertices
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -115,12 +118,12 @@ pub fn spawn_test_high_speed_collision(mut commands: Commands, mut test_config: 
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     // Spawn two asteroids approaching each other at high speed
     let grey = Color::rgb(0.5, 0.5, 0.5);
     let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-30.0, 0.0), &vertices, grey);
     let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(30.0, 0.0), &vertices, grey);
-    
+
     // Give them high velocities toward each other (15 u/s each = 30 u/s closing speed)
     commands.entity(e1).insert(Velocity {
         linvel: Vec2::new(15.0, 0.0),
@@ -130,17 +133,17 @@ pub fn spawn_test_high_speed_collision(mut commands: Commands, mut test_config: 
         linvel: Vec2::new(-15.0, 0.0),
         angvel: 0.0,
     });
-    
+
     println!("✓ Spawned test: High-speed head-on collision");
 }
 
 /// Spawn test scenario: missed collision - asteroids pass near each other trying to merge
 pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     use bevy_rapier2d::prelude::Velocity;
-    
+
     test_config.test_name = "near_miss".to_string();
     test_config.frame_limit = 300;
-    
+
     // Create triangle vertices
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -149,12 +152,12 @@ pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<Test
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     // Spawn two asteroids that will pass very close but not touch
     let grey = Color::rgb(0.5, 0.5, 0.5);
     let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-40.0, 3.0), &vertices, grey);
     let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(40.0, -3.0), &vertices, grey);
-    
+
     // Give them velocities so they pass near each other
     commands.entity(e1).insert(Velocity {
         linvel: Vec2::new(20.0, 0.0),
@@ -164,7 +167,7 @@ pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<Test
         linvel: Vec2::new(-20.0, 0.0),
         angvel: 0.0,
     });
-    
+
     println!("✓ Spawned test: Near-miss high-speed pass");
 }
 
@@ -172,7 +175,7 @@ pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<Test
 pub fn spawn_test_gentle_approach(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     test_config.test_name = "gentle_approach".to_string();
     test_config.frame_limit = 400;
-    
+
     // Create triangle vertices
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -181,22 +184,25 @@ pub fn spawn_test_gentle_approach(mut commands: Commands, mut test_config: ResMu
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     // Spawn two asteroids closer together for faster gravity interaction
     let grey = Color::rgb(0.5, 0.5, 0.5);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(-25.0, 0.0), &vertices, grey);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(25.0, 0.0), &vertices, grey);
-    
+
     println!("✓ Spawned test: Slow gravity approach");
 }
 
 /// Spawn test scenario: verify culling and that culled asteroids stop exerting gravity
-pub fn spawn_test_culling_verification(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+pub fn spawn_test_culling_verification(
+    mut commands: Commands,
+    mut test_config: ResMut<TestConfig>,
+) {
     use bevy_rapier2d::prelude::Velocity;
-    
+
     test_config.test_name = "culling_verification".to_string();
     test_config.frame_limit = 350;
-    
+
     // Create triangle vertices
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -205,27 +211,30 @@ pub fn spawn_test_culling_verification(mut commands: Commands, mut test_config: 
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    
+
     // Spawn asteroid 1 at center (stationary)
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey);
-    
+
     // Spawn asteroid 2 far away moving outward (will be culled at 1000 units)
     let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(950.0, 0.0), &vertices, grey);
     commands.entity(e2).insert(Velocity {
-        linvel: Vec2::new(10.0, 0.0),  // Moving away from center
+        linvel: Vec2::new(10.0, 0.0), // Moving away from center
         angvel: 0.0,
     });
-    
+
     println!("✓ Spawned test: Culling verification (ast 1 at origin, ast 2 at 950u moving away)");
 }
 
 /// Spawn test scenario: large asteroid with several small ones at varying distances
-pub fn spawn_test_mixed_size_asteroids(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+pub fn spawn_test_mixed_size_asteroids(
+    mut commands: Commands,
+    mut test_config: ResMut<TestConfig>,
+) {
     test_config.test_name = "mixed_size_asteroids".to_string();
     test_config.frame_limit = 300;
-    
+
     // Create small triangle vertices (side = 6.0)
     let side_small = 6.0;
     let height_small = side_small * 3.0_f32.sqrt() / 2.0;
@@ -234,7 +243,7 @@ pub fn spawn_test_mixed_size_asteroids(mut commands: Commands, mut test_config: 
         Vec2::new(-side_small / 2.0, -height_small / 2.0),
         Vec2::new(side_small / 2.0, -height_small / 2.0),
     ];
-    
+
     // Create large square asteroid (manually defined)
     let vertices_large = vec![
         Vec2::new(-15.0, -15.0),
@@ -242,34 +251,59 @@ pub fn spawn_test_mixed_size_asteroids(mut commands: Commands, mut test_config: 
         Vec2::new(15.0, 15.0),
         Vec2::new(-15.0, 15.0),
     ];
-    
+
     let grey_dark = Color::rgb(0.3, 0.3, 0.3);
     let grey_light = Color::rgb(0.7, 0.7, 0.7);
-    
+
     // Spawn large asteroid at center
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices_large, grey_dark);
-    
+    spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(0.0, 0.0),
+        &vertices_large,
+        grey_dark,
+    );
+
     // Spawn small asteroids at various distances around the large one
     // Distance 25 (very close, should interact strongly)
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(25.0, 0.0), &vertices_small, grey_light);
-    
+    spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(25.0, 0.0),
+        &vertices_small,
+        grey_light,
+    );
+
     // Distance 50
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 50.0), &vertices_small, grey_light);
-    
+    spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(0.0, 50.0),
+        &vertices_small,
+        grey_light,
+    );
+
     // Distance 100 (within gravity range but far enough to have stable interaction)
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-100.0, 0.0), &vertices_small, grey_light);
-    
+    spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(-100.0, 0.0),
+        &vertices_small,
+        grey_light,
+    );
+
     // Distance 200 (far, minimal interaction)
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, -200.0), &vertices_small, grey_light);
-    
+    spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(0.0, -200.0),
+        &vertices_small,
+        grey_light,
+    );
+
     println!("✓ Spawned test: Mixed size asteroids (1 large + 4 small at distances 25/50/100/200)");
 }
 
 /// Spawn test scenario: simple large+small interaction
 pub fn spawn_test_large_small_pair(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     test_config.test_name = "large_small_pair".to_string();
-    test_config.frame_limit = 250;  // Increased to see merge
-    
+    test_config.frame_limit = 250; // Increased to see merge
+
     // Create small triangle vertices
     let side_small = 6.0;
     let height_small = side_small * 3.0_f32.sqrt() / 2.0;
@@ -278,7 +312,7 @@ pub fn spawn_test_large_small_pair(mut commands: Commands, mut test_config: ResM
         Vec2::new(-side_small / 2.0, -height_small / 2.0),
         Vec2::new(side_small / 2.0, -height_small / 2.0),
     ];
-    
+
     // Create large square asteroid
     let vertices_large = vec![
         Vec2::new(-15.0, -15.0),
@@ -286,26 +320,36 @@ pub fn spawn_test_large_small_pair(mut commands: Commands, mut test_config: ResM
         Vec2::new(15.0, 15.0),
         Vec2::new(-15.0, 15.0),
     ];
-    
+
     let grey_dark = Color::rgb(0.3, 0.3, 0.3);
     let grey_light = Color::rgb(0.7, 0.7, 0.7);
-    
+
     // Spawn large asteroid at center
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-30.0, 0.0), &vertices_large, grey_dark);
-    
+    spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(-30.0, 0.0),
+        &vertices_large,
+        grey_dark,
+    );
+
     // Spawn small asteroid at distance
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(30.0, 0.0), &vertices_small, grey_light);
-    
+    spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(30.0, 0.0),
+        &vertices_small,
+        grey_light,
+    );
+
     println!("✓ Spawned test: Large+small pair (60 units apart)");
 }
 
 /// Spawn test scenario: asteroids at boundary of gravity range
 pub fn spawn_test_gravity_boundary(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     use bevy_rapier2d::prelude::Velocity;
-    
+
     test_config.test_name = "gravity_boundary".to_string();
     test_config.frame_limit = 300;
-    
+
     // Create triangle vertices
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -314,21 +358,21 @@ pub fn spawn_test_gravity_boundary(mut commands: Commands, mut test_config: ResM
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    
+
     // Spawn asteroid 1 at center
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey);
-    
+
     // Spawn asteroid 2 at exactly gravity max distance (300 units)
     let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(300.0, 0.0), &vertices, grey);
-    
+
     // Give tiny velocity outward (should barely be affected by gravity since at boundary)
     commands.entity(e2).insert(Velocity {
         linvel: Vec2::new(0.1, 0.0),
         angvel: 0.0,
     });
-    
+
     println!("✓ Spawned test: Gravity boundary (at 300u max distance)");
 }
 
@@ -336,7 +380,7 @@ pub fn spawn_test_gravity_boundary(mut commands: Commands, mut test_config: ResM
 pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     test_config.test_name = "passing_asteroid".to_string();
     test_config.frame_limit = 500;
-    
+
     // Create small triangle (standard size)
     let side = 6.0;
     let height = side * 3.0_f32.sqrt() / 2.0;
@@ -345,7 +389,7 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
         Vec2::new(-side / 2.0, -height / 2.0),
         Vec2::new(side / 2.0, -height / 2.0),
     ];
-    
+
     // Create large octagon for the stationary asteroid
     let large_radius = 20.0;
     let mut large_verts = Vec::new();
@@ -356,36 +400,47 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
             large_radius * angle.sin(),
         ));
     }
-    
+
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    
+
     // Spawn large stationary asteroid at origin
-    let large_entity = spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &large_verts, grey);
-    
+    let large_entity =
+        spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &large_verts, grey);
+
     // Spawn small asteroid that will pass by at ~50 unit distance
     // Position it to the left, moving right with enough offset to pass by
-    use bevy_rapier2d::prelude::{RigidBody, Collider, Restitution, ExternalForce, CollisionGroups, Group};
     use crate::asteroid::{Asteroid, NeighborCount};
-    
-    let small_entity = commands.spawn((
-        Asteroid,
-        Vertices(small_verts.clone()),
-        NeighborCount(0),
-        RigidBody::Dynamic,
-        Collider::ball(2.0),
-        Restitution::coefficient(0.5),
-        Velocity {
-            linvel: Vec2::new(30.0, 0.0),  // Moving right at constant speed
-            angvel: 0.0,
-        },
-        ExternalForce::default(),
-        CollisionGroups::new(Group::GROUP_1, Group::GROUP_1),
-        TransformBundle::from_transform(Transform::from_xyz(-150.0, 50.0, 0.0)),
-    )).id();
-    
+    use bevy_rapier2d::prelude::{
+        Collider, CollisionGroups, ExternalForce, Group, Restitution, RigidBody,
+    };
+
+    let small_entity = commands
+        .spawn((
+            Asteroid,
+            Vertices(small_verts.clone()),
+            NeighborCount(0),
+            RigidBody::Dynamic,
+            Collider::ball(2.0),
+            Restitution::coefficient(0.5),
+            Velocity {
+                linvel: Vec2::new(30.0, 0.0), // Moving right at constant speed
+                angvel: 0.0,
+            },
+            ExternalForce::default(),
+            CollisionGroups::new(Group::GROUP_1, Group::GROUP_1),
+            TransformBundle::from_transform(Transform::from_xyz(-150.0, 50.0, 0.0)),
+        ))
+        .id();
+
     println!("✓ Spawned test: Small asteroid passing by large stationary asteroid");
-    println!("  Large asteroid: center at (0, 0), radius ~20u, entity={:?}", large_entity);
-    println!("  Small asteroid: starts at (-150, 50), velocity (30, 0) u/s, entity={:?}", small_entity);
+    println!(
+        "  Large asteroid: center at (0, 0), radius ~20u, entity={:?}",
+        large_entity
+    );
+    println!(
+        "  Small asteroid: starts at (-150, 50), velocity (30, 0) u/s, entity={:?}",
+        small_entity
+    );
     println!("  Expected: Small asteroid passes at ~50u distance, gravity should:");
     println!("    - Pull down (toward large) as it approaches");
     println!("    - Pull backward (opposite motion) after it passes");
@@ -403,36 +458,60 @@ pub fn test_logging_system(
     if !test_config.enabled {
         return;
     }
-    
+
     test_config.frame_count += 1;
     let asteroid_count = q.iter().count();
-    
+
     // Log state at certain frames
     if test_config.frame_count == 1 {
         test_config.initial_asteroid_count = asteroid_count;
-        println!("[Frame {}] Test: {} | Initial asteroids: {}", 
-            test_config.frame_count, test_config.test_name, asteroid_count);
+        println!(
+            "[Frame {}] Test: {} | Initial asteroids: {}",
+            test_config.frame_count, test_config.test_name, asteroid_count
+        );
         // Also log positions and entity IDs
         for (entity, transform, _, _, _) in q.iter() {
-            println!("  Entity {:?} at: ({:.1}, {:.1})", entity, transform.translation.x, transform.translation.y);
+            println!(
+                "  Entity {:?} at: ({:.1}, {:.1})",
+                entity, transform.translation.x, transform.translation.y
+            );
         }
-    } else if test_config.frame_count == 10 || test_config.frame_count == 20 || test_config.frame_count == 30 || test_config.frame_count == 40 || test_config.frame_count == 50 || test_config.frame_count % 25 == 0 || test_config.frame_count == test_config.frame_limit {
-        println!("[Frame {}] Asteroids: {} (was {})", 
-            test_config.frame_count, asteroid_count, test_config.initial_asteroid_count);
-        
+    } else if test_config.frame_count == 10
+        || test_config.frame_count == 20
+        || test_config.frame_count == 30
+        || test_config.frame_count == 40
+        || test_config.frame_count == 50
+        || test_config.frame_count.is_multiple_of(25)
+        || test_config.frame_count == test_config.frame_limit
+    {
+        println!(
+            "[Frame {}] Asteroids: {} (was {})",
+            test_config.frame_count, asteroid_count, test_config.initial_asteroid_count
+        );
+
         // Collect positions for distance calculations
-        let positions: Vec<(Entity, Vec2, Vec2, Vec2, f32)> = q.iter()
-            .map(|(e, t, v, _, f)| (e, t.translation.truncate(), v.linvel, f.force, f.force.length()))
+        let positions: Vec<(Entity, Vec2, Vec2, Vec2, f32)> = q
+            .iter()
+            .map(|(e, t, v, _, f)| {
+                (
+                    e,
+                    t.translation.truncate(),
+                    v.linvel,
+                    f.force,
+                    f.force.length(),
+                )
+            })
             .collect();
-        
+
         // Log positions, velocities, and force vectors with distances
         for (i, (entity, pos, vel, force, force_mag)) in positions.iter().enumerate() {
-            let force_dir = if *force_mag > 0.0001 {  // Lower threshold to see small forces
-                format!("({:.3}, {:.3})", force.x, force.y) 
-            } else { 
-                "none".to_string() 
+            let force_dir = if *force_mag > 0.0001 {
+                // Lower threshold to see small forces
+                format!("({:.3}, {:.3})", force.x, force.y)
+            } else {
+                "none".to_string()
             };
-            
+
             // Calculate distance to other asteroids
             let mut distances = Vec::new();
             for (j, (_, other_pos, _, _, _)) in positions.iter().enumerate() {
@@ -442,7 +521,7 @@ pub fn test_logging_system(
                 }
             }
             let dist_str = distances.join(", ");
-            
+
             println!("  [{}] Entity={:?} pos: ({:.1}, {:.1}), vel: ({:.1}, {:.1}) len={:.2}, force: {} mag={:.3}, {}", 
                 i, entity, pos.x, pos.y, vel.x, vel.y, vel.length(), force_dir, force_mag, dist_str);
         }
@@ -458,9 +537,9 @@ pub fn test_verification_system(
     if !test_config.enabled || test_config.frame_count != test_config.frame_limit {
         return;
     }
-    
+
     let final_count = q.iter().count();
-    
+
     println!("\n╔════════════════════════════════════════════╗");
     println!("║           TEST COMPLETE                    ║");
     println!("╚════════════════════════════════════════════╝");
@@ -468,13 +547,17 @@ pub fn test_verification_system(
     println!("Frames: {}", test_config.frame_count);
     println!("Initial asteroids: {}", test_config.initial_asteroid_count);
     println!("Final asteroids:   {}", final_count);
-    
-    let result = verify_test_result(&test_config.test_name, test_config.initial_asteroid_count, final_count);
+
+    let result = verify_test_result(
+        &test_config.test_name,
+        test_config.initial_asteroid_count,
+        final_count,
+    );
     println!("{}\n", result);
     let _ = std::io::stdout().flush();
-    
+
     // Exit after test completes
-    exit.send(bevy::app::AppExit::default());
+    exit.send(bevy::app::AppExit);
 }
 
 /// Verify if test passed
@@ -482,58 +565,91 @@ fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> St
     match test_name {
         "two_triangles_combine" => {
             if final_count < initial && final_count >= 1 {
-                format!("✓ PASS: Two triangles combined into {}asteroid(s)", final_count)
+                format!(
+                    "✓ PASS: Two triangles combined into {}asteroid(s)",
+                    final_count
+                )
             } else {
-                format!("✗ FAIL: Expected combining, but got: {} → {} asteroids", initial, final_count)
+                format!(
+                    "✗ FAIL: Expected combining, but got: {} → {} asteroids",
+                    initial, final_count
+                )
             }
         }
         "three_triangles_combine" => {
             if final_count < initial && final_count >= 1 {
-                format!("✓ PASS: Three triangles combined into {}asteroid(s)", final_count)
+                format!(
+                    "✓ PASS: Three triangles combined into {}asteroid(s)",
+                    final_count
+                )
             } else {
-                format!("✗ FAIL: Expected combining, but got: {} → {} asteroids", initial, final_count)
+                format!(
+                    "✗ FAIL: Expected combining, but got: {} → {} asteroids",
+                    initial, final_count
+                )
             }
         }
         "gravity_attraction" => {
             if initial > 1 && final_count <= initial {
-                format!("✓ PASS: Asteroids interacted (gravity or collision)")
+                "✓ PASS: Asteroids interacted (gravity or collision)".to_string()
             } else {
-                format!("✗ FAIL: Asteroids did not interact as expected")
+                "✗ FAIL: Asteroids did not interact as expected".to_string()
             }
         }
         "high_speed_collision" => {
             if initial == 2 && final_count == 2 {
-                format!("✓ PASS: Two asteroids bounced without merging (remained 2)")
+                "✓ PASS: Two asteroids bounced without merging (remained 2)".to_string()
             } else if final_count < initial && final_count >= 1 {
                 format!("✓ PASS: Asteroids merged into {}asteroid(s)", final_count)
             } else {
-                format!("✗ FAIL: Unexpected result: {} → {} asteroids", initial, final_count)
+                format!(
+                    "✗ FAIL: Unexpected result: {} → {} asteroids",
+                    initial, final_count
+                )
             }
         }
         "near_miss" => {
             if initial == 2 && final_count == 2 {
-                format!("✓ PASS: Two asteroids passed each other without merging (remained 2)")
+                "✓ PASS: Two asteroids passed each other without merging (remained 2)".to_string()
             } else {
-                format!("✗ FAIL: Expected 2 separate asteroids, got {} → {}", initial, final_count)
+                format!(
+                    "✗ FAIL: Expected 2 separate asteroids, got {} → {}",
+                    initial, final_count
+                )
             }
         }
         "gentle_approach" => {
             if final_count < initial && final_count >= 1 {
-                format!("✓ PASS: Asteroids merged cleanly via gravity ({} → {})", initial, final_count)
+                format!(
+                    "✓ PASS: Asteroids merged cleanly via gravity ({} → {})",
+                    initial, final_count
+                )
             } else {
-                format!("✗ FAIL: Expected gentle merge, got {} → {} asteroids", initial, final_count)
+                format!(
+                    "✗ FAIL: Expected gentle merge, got {} → {} asteroids",
+                    initial, final_count
+                )
             }
         }
         "culling_verification" => {
             if initial == 2 && final_count == 1 {
-                format!("✓ PASS: One asteroid was culled ({} → {})", initial, final_count)
+                format!(
+                    "✓ PASS: One asteroid was culled ({} → {})",
+                    initial, final_count
+                )
             } else {
-                format!("✗ FAIL: Expected culling result 2 → 1, got {} → {}", initial, final_count)
+                format!(
+                    "✗ FAIL: Expected culling result 2 → 1, got {} → {}",
+                    initial, final_count
+                )
             }
         }
         "mixed_size_asteroids" => {
             if initial == 5 {
-                format!("✓ PASS: All 5 asteroids present at end ({} → {})", initial, final_count)
+                format!(
+                    "✓ PASS: All 5 asteroids present at end ({} → {})",
+                    initial, final_count
+                )
             } else {
                 format!("✗ FAIL: Expected 5 asteroids, got {}", initial)
             }
@@ -541,9 +657,12 @@ fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> St
         "large_small_pair" => {
             if initial == 2 && final_count <= initial {
                 if final_count == 1 {
-                    format!("✓ PASS: Large+small merged into 1 asteroid")
+                    "✓ PASS: Large+small merged into 1 asteroid".to_string()
                 } else {
-                    format!("✓ PASS: Large+small interaction stable (2 → {})", final_count)
+                    format!(
+                        "✓ PASS: Large+small interaction stable (2 → {})",
+                        final_count
+                    )
                 }
             } else {
                 format!("✗ FAIL: Unexpected result {} → {}", initial, final_count)
@@ -551,18 +670,21 @@ fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> St
         }
         "gravity_boundary" => {
             if initial == 2 && final_count == 2 {
-                format!("✓ PASS: Asteroids remained separate at gravity boundary (no merge)")
+                "✓ PASS: Asteroids remained separate at gravity boundary (no merge)".to_string()
             } else if initial == 2 && final_count == 1 {
-                format!("✓ PASS: Asteroids eventually merged from boundary distance")
+                "✓ PASS: Asteroids eventually merged from boundary distance".to_string()
             } else {
-                format!("✗ FAIL: Expected stable or merged, got {} → {}", initial, final_count)
+                format!(
+                    "✗ FAIL: Expected stable or merged, got {} → {}",
+                    initial, final_count
+                )
             }
         }
         "passing_asteroid" => {
             // For this test, we just want to verify forces make sense
             // Small asteroid should pass by without runaway acceleration
             if initial == 2 {
-                format!("✓ PASS: Small asteroid passed by large one (check velocity logs)")
+                "✓ PASS: Small asteroid passed by large one (check velocity logs)".to_string()
             } else {
                 format!("✗ FAIL: Expected 2 asteroids, got {}", initial)
             }

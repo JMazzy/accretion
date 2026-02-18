@@ -1,5 +1,57 @@
 # GRAV-SIM Changelog
 
+## Performance Optimization Pass — February 18, 2026
+
+### Summary
+
+Comprehensive performance improvements targeting 500+ asteroid scaling at 60 FPS. All O(N²) bottlenecks eliminated or reduced. Artificial damping removed in favor of natural physics-only energy loss.
+
+### Damping Removed (Physics Authenticity)
+
+- **Removed `settling_damping_system`**: No longer artificially slows asteroids moving below 3 u/s. Asteroids now conserve momentum naturally.
+- **Removed `environmental_damping_system`**: No longer applies 0.5% velocity reduction to densely packed clusters. Rapier collision restitution provides natural energy dissipation.
+- **Philosophy**: Energy loss now occurs only through Rapier collision response (restitution coefficients: 0.5 small, 0.7 composite). All artificial "settling" behavior removed.
+
+### Spatial Grid Partitioning (`src/spatial_partition.rs` — new module)
+
+New `SpatialGrid` resource partitions world space into 100-unit cells for O(1) neighbor lookup:
+- Replaces O(N²) brute-force distance checks in `nbody_gravity_system` and `neighbor_counting_system`
+- O(N) rebuild each frame, O(K) lookup per asteroid (K = avg entities per cell neighborhood)
+- Grid is rebuilt both in `Update` and at the start of `FixedUpdate` to serve both gravity and UI systems
+
+### N-Body Gravity Optimized (`nbody_gravity_system`)
+
+- Now uses `SpatialGrid` to find gravity candidates instead of checking all pairs
+- Additional O(1) HashMap index for pair deduplication (Newton's 3rd law applied once per pair)
+- Net improvement: O(N²) → O(N·K) where K is typically very small at normal asteroid densities
+- Squared-distance early exit retained as a secondary filter within candidate set
+
+### Neighbor Counting Optimized (`neighbor_counting_system`)
+
+- Now uses `SpatialGrid.get_neighbors_excluding()` instead of O(N²) brute-force
+- Positions stored in a `HashMap<Entity, Vec2>` for O(1) candidate distance lookups
+- Net improvement: O(N²) → O(N·K)
+
+### Particle Locking Optimized (`particle_locking_system`)
+
+- Now iterates `rapier_context.contact_pairs()` directly (O(C), C = active contacts)
+- Previously iterated all N² entity pairs and queried Rapier contacts manually
+- Net improvement: O(N²) → O(C), typically C << N²
+
+### Gizmo Rendering Optimized (`gizmo_rendering_system`)
+
+- Force vector rendering automatically disabled when live asteroid count exceeds 200
+- Reduces per-frame line draw calls at high density where force vectors become cluttered and expensive
+
+### Test Results
+
+All physics tests pass after changes:
+- ✅ `two_triangles` — 2 asteroids merge into 1
+- ✅ `three_triangles` — 3 asteroids merge into 1
+- ✅ `gravity` — Distant asteroids attract, collide, and merge
+
+---
+
 ## Latest Release - Complete Physics System
 
 ### Overview
@@ -13,9 +65,9 @@ Complete implementation of ECS-based asteroid simulation engine on Bevy 0.13 + R
 ### 1. Core Physics System ✅
 
 - **N-Body Gravity**: Inverse-square force law with distance thresholds
-  - Minimum distance: 20 units (lets Rapier handle collision zone)
-  - Maximum distance: 300 units (prevents phantom forces)
-  - Constant: 2.0 (gentle, stable mutual attraction)
+  - Minimum distance: 5 units (lets Rapier handle collision zone)
+  - Maximum distance: 1000 units (matches cull boundary)
+  - Constant: 10.0 (noticeable mutual attraction)
   
 - **Collision Detection**: Rapier2D automatic contact manifolds
   - Element asteroids: 0.5 restitution (50% bouncy)
@@ -30,7 +82,7 @@ Complete implementation of ECS-based asteroid simulation engine on Bevy 0.13 + R
 
 - **Culling System**: Automatic removal beyond simulation boundary
   - Removes asteroids beyond 1000 units
-  - Applies damping ramp from 600-1000 units
+  - No artificial velocity damping ramps (removed)
   - Prevents off-screen asteroids from affecting physics
 
 ---
