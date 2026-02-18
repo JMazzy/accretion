@@ -4,6 +4,7 @@ use std::env;
 
 mod asteroid;
 mod graphics;
+mod player;
 mod simulation;
 mod spatial_partition;
 mod testing;
@@ -17,6 +18,10 @@ use testing::{
 
 fn spawn_initial_world(mut commands: Commands) {
     asteroid::spawn_initial_asteroids(&mut commands, 100);
+}
+
+fn spawn_player_startup(commands: Commands) {
+    player::spawn_player(commands);
 }
 
 fn main() {
@@ -40,11 +45,13 @@ fn main() {
         ..Default::default()
     })
     .add_plugins(simulation::SimulationPlugin)
+    .insert_resource(player::PlayerFireCooldown::default())
     .add_systems(
         Startup,
         (
             graphics::setup_camera,
             simulation::setup_stats_text.after(graphics::setup_camera),
+            spawn_player_startup.after(graphics::setup_camera),
         ),
     );
 

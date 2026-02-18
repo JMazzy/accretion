@@ -1,6 +1,45 @@
 # GRAV-SIM Changelog
 
-## Performance Optimization Pass — February 18, 2026
+## Player Character — February 18, 2026
+
+### Summary
+
+Added a player-controlled space ship entity with WASD thrust/rotation controls, spacebar projectile firing, and a camera that follows the player. Replaces the manual arrow-key panning system.
+
+### New Module: `src/player.rs`
+
+- **`Player` component** — marker for the player ship entity
+- **`Projectile` component** — tracks per-projectile age for lifetime management
+- **`PlayerFireCooldown` resource** — enforces 0.2 s minimum between shots
+- **`spawn_player`** — spawns ship at origin with `RigidBody::Dynamic`, `Damping` (linear 0.5 / angular 3.0), and `CollisionGroups::GROUP_2` (does not interact with asteroids in GROUP_1)
+- **Ship shape**: 6-vertex dart polygon (cyan, pointing +Y in local space) — distinct from grey asteroid triangles
+- **`player_control_system`**: W/S apply forward/reverse `ExternalForce`; A/D set `Velocity::angvel` directly for snappy rotation
+- **`projectile_fire_system`**: Spacebar fires `KinematicVelocityBased` projectile from nose; `CollisionGroups::GROUP_3` with no-collide mask (non-interactive with asteroids)
+- **`despawn_old_projectiles_system`**: Despawns projectiles after 3 s or 1000 units from origin
+- **`camera_follow_system`**: Sets camera XY to player XY each frame; replaces `camera_pan_system`
+- **`player_gizmo_system`**: Draws ship polygon in cyan + direction indicator in white; projectiles as yellow circles
+
+### Camera System Refactored
+
+- Removed `camera_pan_system` and arrow-key panning from `user_input_system`
+- `CameraState` resource simplified: removed `pan_x`/`pan_y` fields, retains `zoom`
+- `camera_zoom_system` now applies only the zoom scale to the camera transform
+- `camera_follow_system` (in `player.rs`) handles XY translation
+- Click-to-spawn world position calculation updated to account for player-centred camera offset
+
+### Controls
+
+| Key | Action |
+|-----|--------|
+| W | Thrust forward |
+| S | Thrust backward (half force) |
+| A | Rotate left |
+| D | Rotate right |
+| Space | Fire projectile (0.2 s cooldown) |
+| Mouse wheel | Zoom in/out (centred on player) |
+| Left click | Spawn asteroid at cursor world position |
+
+
 
 ### Summary
 

@@ -24,6 +24,7 @@ src/
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
 ├── spatial_partition.rs  - Spatial grid for O(1) neighbor lookup (replaces O(N²) brute-force)
+├── player.rs             - Player ship entity, WASD controls, projectile firing, camera follow
 ├── graphics.rs           - Camera setup for 2D rendering
 ├── testing.rs            - Automated test scenarios for physics validation
 └── lib.rs                - Library exports
@@ -108,8 +109,14 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 3. **`culling_system`** - Removes asteroids beyond 1000 units
 4. **`neighbor_counting_system`** - Counts nearby asteroids using grid (O(N·K))
 5. **`particle_locking_system`** - Synchronizes velocities of slow touching asteroids via Rapier contact_pairs iterator (O(C), C = active contacts)
-6. **`user_input_system`** - Left-click spawns asteroids; arrow keys pan; wheel zooms
-7. **`gizmo_rendering_system`** - Renders wireframe outlines; skips force vectors at >200 asteroids
+6. **`player_control_system`** - Applies WASD thrust/rotation to player ship
+7. **`projectile_fire_system`** - Fires projectiles on spacebar (with cooldown)
+8. **`despawn_old_projectiles_system`** - Expires projectiles after lifetime/distance limit
+9. **`user_input_system`** - Left-click spawns asteroids; mouse wheel zooms (no more arrow-key pan)
+10. **`camera_follow_system`** - Centres camera on player ship each frame
+11. **`camera_zoom_system`** - Applies zoom scale to camera transform
+12. **`gizmo_rendering_system`** - Renders asteroid wireframe outlines
+13. **`player_gizmo_system`** - Renders ship polygon and projectile circles
 
 ### FixedUpdate Schedule (chained in order)
 
@@ -143,9 +150,16 @@ gravity_const      = 10.0     // Mutual attraction strength
 min_gravity_dist   = 5.0      // Skip gravity if closer (Rapier handles it)
 max_gravity_dist   = 1000.0   // Gravity works across entire simulation
 cull_distance      = 1000.0   // Remove entities beyond this
-max_pan_distance   = 600.0    // Camera pan bounds
 min_zoom           = 0.5      // Minimum camera zoom (full circle visible)
 max_zoom           = 8.0      // Maximum camera zoom (detail view)
+
+// Player (src/player.rs)
+thrust_force       = 600.0    // Forward thrust (N) while W held
+reverse_force      = 300.0    // Reverse thrust (N) while S held
+rotation_speed     = 3.0      // Angular velocity (rad/s) while A/D held
+projectile_speed   = 500.0    // Projectile speed (units/s)
+fire_cooldown      = 0.2      // Seconds between shots
+projectile_lifetime = 3.0     // Seconds before projectile despawns
 ```
 
 ## Testing Framework

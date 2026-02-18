@@ -1,6 +1,10 @@
 //! Simulation plugin and systems for Bevy ECS
 
 use crate::asteroid::{compute_convex_hull_from_points, Asteroid, NeighborCount, Vertices};
+use crate::player::{
+    camera_follow_system, despawn_old_projectiles_system, player_control_system,
+    player_gizmo_system, projectile_fire_system,
+};
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
 use bevy::input::ButtonInput;
@@ -16,15 +20,12 @@ pub struct SimulationStats {
     pub merged_total: u32,
 }
 
-/// Camera state for pan/zoom controls
+/// Camera state for zoom control (pan is replaced by player-follow camera)
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct CameraState {
-    pub pan_x: f32,
-    pub pan_y: f32,
     pub zoom: f32,
 }
 
-const MAX_PAN_DISTANCE: f32 = 600.0;
 const MIN_ZOOM: f32 = 0.5; // 0.5 scale = see full ~2000u circle
 const MAX_ZOOM: f32 = 8.0; // 8.0 scale = 4x magnification
 const ZOOM_SPEED: f32 = 0.1; // Speed of zoom per scroll
@@ -34,24 +35,24 @@ pub struct SimulationPlugin;
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SimulationStats::default())
-            .insert_resource(CameraState {
-                pan_x: 0.0,
-                pan_y: 0.0,
-                zoom: 1.0,
-            })
+            .insert_resource(CameraState { zoom: 1.0 })
             .insert_resource(SpatialGrid::default())
             .add_systems(
                 Update,
                 (
-                    stats_counting_system,  // FIRST: Count asteroids for tracking
-                    culling_system,         // Remove far asteroids before physics
+                    stats_counting_system,        // FIRST: Count asteroids for tracking
+                    culling_system,               // Remove far asteroids before physics
                     neighbor_counting_system,
                     particle_locking_system,
-                    user_input_system,      // Now handles keyboard + mouse input
-                    camera_pan_system,      // Update camera position from input
-                    camera_zoom_system,     // Update camera zoom from input
-                    gizmo_rendering_system, // Render asteroids + boundary
-                    stats_display_system,   // Render stats text
+                    player_control_system,        // WASD ship thrust/rotation
+                    projectile_fire_system,       // Spacebar fires projectiles
+                    despawn_old_projectiles_system, // Expire old projectiles
+                    user_input_system,            // Left-click spawns asteroids; mouse wheel zoom
+                    camera_follow_system,         // Camera tracks player
+                    camera_zoom_system,           // Apply zoom scale to camera
+                    gizmo_rendering_system,       // Render asteroids + boundary
+                    player_gizmo_system,          // Render ship + projectiles
+                    stats_display_system,         // Render stats text
                 ),
             )
             // Rebuild grid then run gravity in FixedUpdate (same schedule as Rapier physics)
@@ -175,76 +176,53 @@ pub fn nbody_gravity_system(
     }
 }
 
-/// Handle user input: spawning (left-click), camera pan (arrow keys), zoom (mouse wheel)
+/// Handle user input: left-click spawns asteroids; mouse wheel adjusts zoom.
+/// Arrow-key panning has been removed — the camera now follows the player ship.
 pub fn user_input_system(
     mut commands: Commands,
     mut camera_state: ResMut<CameraState>,
+    q_player: Query<&Transform, With<crate::player::Player>>,
     buttons: Res<ButtonInput<MouseButton>>,
-    keys: Res<ButtonInput<KeyCode>>,
     mut scroll_evr: EventReader<MouseWheel>,
     windows: Query<&Window>,
 ) {
     let window = windows.single();
 
-    // Spawning: left-click with camera-aware coordinates
+    // Spawning: left-click → spawn asteroid at world position under cursor.
+    // World position accounts for player-camera offset and current zoom.
     if let Some(cursor_pos) = window.cursor_position() {
-        // Convert from screen coordinates to world coordinates, accounting for camera pan and zoom
         let norm_x = (cursor_pos.x - window.width() / 2.0) * camera_state.zoom;
         let norm_y = -(cursor_pos.y - window.height() / 2.0) * camera_state.zoom;
-        let world_x = norm_x + camera_state.pan_x;
-        let world_y = norm_y + camera_state.pan_y;
-        let world_pos = Vec2::new(world_x, world_y);
+
+        // Camera is centred on the player, so world = player_pos + screen_offset
+        let player_pos = q_player
+            .get_single()
+            .map(|t| t.translation.truncate())
+            .unwrap_or(Vec2::ZERO);
+
+        let world_pos = player_pos + Vec2::new(norm_x, norm_y);
 
         if buttons.just_pressed(MouseButton::Left) {
             crate::asteroid::spawn_asteroid(&mut commands, world_pos, Color::WHITE, 0);
         }
     }
 
-    // Camera panning: arrow keys
-    let pan_speed = 5.0;
-    if keys.pressed(KeyCode::ArrowUp) {
-        camera_state.pan_y =
-            (camera_state.pan_y + pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
-    }
-    if keys.pressed(KeyCode::ArrowDown) {
-        camera_state.pan_y =
-            (camera_state.pan_y - pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
-    }
-    if keys.pressed(KeyCode::ArrowLeft) {
-        camera_state.pan_x =
-            (camera_state.pan_x - pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
-    }
-    if keys.pressed(KeyCode::ArrowRight) {
-        camera_state.pan_x =
-            (camera_state.pan_x + pan_speed).clamp(-MAX_PAN_DISTANCE, MAX_PAN_DISTANCE);
-    }
-
-    // Zoom: mouse wheel
+    // Zoom: mouse wheel (zoom value is applied each frame in camera_zoom_system)
     for ev in scroll_evr.read() {
-        // In Bevy 0.13, MouseWheel has y field for scroll delta
         let delta = ev.y;
         camera_state.zoom = (camera_state.zoom - (delta * ZOOM_SPEED)).clamp(MIN_ZOOM, MAX_ZOOM);
     }
 }
 
-/// Apply camera pan/zoom state to the camera entity
-pub fn camera_pan_system(
+/// Apply the current zoom scale to the camera transform each frame.
+/// Camera translation is handled by player::camera_follow_system.
+pub fn camera_zoom_system(
     camera_state: Res<CameraState>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
 ) {
     for mut transform in camera_query.iter_mut() {
-        transform.translation = Vec3::new(
-            camera_state.pan_x,
-            camera_state.pan_y,
-            transform.translation.z,
-        );
         transform.scale = Vec3::new(camera_state.zoom, camera_state.zoom, 1.0);
     }
-}
-
-/// Process zoom changes (handled in camera_pan_system)
-pub fn camera_zoom_system() {
-    // Zoom is now applied directly in camera_pan_system via transform.scale
 }
 
 /// Count neighbors for each asteroid (kept for potential future features and visualization hints)
