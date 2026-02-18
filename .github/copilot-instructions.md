@@ -220,3 +220,115 @@ cargo check
   - Velocity reaches ~28-30 m/s at collision
   - Collided asteroids merge immediately into stable composite
 - **Indicates system is healthy**: Smooth acceleration, no bouncing apart after contact
+
+## Documentation Maintenance
+
+**Maintain living documentation rather than creating new files for each change.**
+
+### Documentation Files
+The project maintains three consolidated documentation files:
+
+1. **`ARCHITECTURE.md`** - Core technical reference
+   - System architecture and module organization
+   - Physics rules and ECS system execution order
+   - Physics constants and equations
+   - Test framework documentation
+   - Update when: Adding/modifying systems, changing physics constants, restructuring modules
+
+2. **`FEATURES.md`** - User controls and runtime behavior
+   - Asteroid spawning and camera controls
+   - Visual feedback (stats display, boundary visualization)
+   - Implementation details for user-facing systems
+   - Update when: Adding/modifying user controls, changing UI behavior, adjusting camera limits
+
+3. **`CHANGELOG.md`** - Concise summary of all changes
+   - Major features and improvements
+   - Bug fixes with root causes and solutions
+   - Test results and validation summary
+   - Build status and deployment info
+   - Update when: Completing significant features, fixing critical bugs, reaching milestones
+
+### Documentation Best Practices
+- **Update docs with code changes**: When implementing a feature or fix, update the relevant documentation file immediately
+- **Avoid temporary documentation files**: Do not create session-specific or change-specific markdown files
+- **Keep it concise**: Consolidate related info; remove redundancy
+- **Link to GitHub instructions**: Reference `copilot-instructions.md` for repeated architectural details
+- **Example format for changes**: "Updated gravity constant from 2.0 to 10.0 in `nbody_gravity_system` (documented in ARCHITECTURE.md)"
+
+### PhysicsConstants Updates
+When tuning physics constants:
+1. Update the constant value in the source code (e.g., `src/simulation.rs`)
+2. Update the constant reference in ARCHITECTURE.md with both the value and justification
+3. Add a line to CHANGELOG.md explaining the change and its observable effect
+4. Run relevant tests to validate the change (see Build Verification below)
+
+## Build Verification for Code Changes
+
+**Every significant code change must pass the following verification steps before proceeding to the next task.**
+
+### Verification Checklist
+For any change to physics systems, UI, core logic, or test framework:
+
+1. **Compilation & Formatting**
+   - ✅ `cargo check` passes with zero errors
+   - ✅ `cargo fmt` (code is properly formatted)
+   - ✅ `cargo clippy -- -D warnings` passes (zero warnings)
+   
+2. **Build Status**
+   - ✅ `cargo build` succeeds (debug mode)
+   - ✅ `cargo build --release` succeeds (optimized)
+   
+3. **Test Existence & Execution**
+   - ✅ Relevant tests exist for the changed functionality
+   - ✅ If modifying physics: run `./test_all.sh` or specific test with `GRAV_SIM_TEST=<name> cargo run --release`
+   - ✅ If modifying UI/input: manually verify controls work as expected
+   - ✅ All tests pass (compare initial vs final asteroid counts as applicable)
+
+4. **Physics Validation** (if changing gravity/collision/merging logic)
+   - ✅ Run at least 2 related tests to verify no regressions
+   - ✅ Confirm asteroids behave predictably (no runaway acceleration, stable velocities)
+   - ✅ Verify merging occurs when expected based on distance/velocity
+   - ✅ Check that culled asteroids are completely removed
+
+5. **Documentation Update**
+   - ✅ Update ARCHITECTURE.md if constants or system order changed
+   - ✅ Update FEATURES.md if user controls or UI changed
+   - ✅ Update CHANGELOG.md with brief summary of the change
+
+### When to Run Full Verification
+- **Always**: Modifying physics systems (gravity, collision, merging, culling)
+- **Always**: Adding new features or user controls
+- **Always**: Changing physics constants
+- **Before commit**: Any change that affects simulation behavior
+- **Optional**: Minor formatting fixes, comment updates, refactoring without behavior change
+
+### Example Verification Flow
+```bash
+# 1. Check compilation
+cargo check
+cargo fmt
+cargo clippy -- -D warnings
+
+# 2. Build both modes
+cargo build
+cargo build --release
+
+# 3. Run relevant tests
+GRAV_SIM_TEST=gravity cargo run --release
+GRAV_SIM_TEST=near_miss cargo run --release
+GRAV_SIM_TEST=culling_verification cargo run --release
+
+# 4. Confirm all tests pass
+./test_all.sh
+
+# 5. Update documentation in ARCHITECTURE.md, FEATURES.md, CHANGELOG.md
+
+# 6. Verify one final time
+cargo clippy -- -D warnings
+```
+
+### Debug Tips for Failed Verification
+- **Build errors**: Check Rust edition (2021), Bevy version (0.13), dependencies in Cargo.toml
+- **Clippy warnings**: Follow suggestions; most are idiomatic Rust improvements
+- **Test failures**: Check test output frame-by-frame; log positions/velocities for physics issues
+- **Unexpected physics**: Verify system execution order (see ECS Systems section); check constant values match source code
