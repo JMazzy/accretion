@@ -15,6 +15,7 @@ Comprehensive performance improvements targeting 500+ asteroid scaling at 60 FPS
 ### Spatial Grid Partitioning (`src/spatial_partition.rs` — new module)
 
 New `SpatialGrid` resource partitions world space into 100-unit cells for O(1) neighbor lookup:
+
 - Replaces O(N²) brute-force distance checks in `nbody_gravity_system` and `neighbor_counting_system`
 - O(N) rebuild each frame, O(K) lookup per asteroid (K = avg entities per cell neighborhood)
 - Grid is rebuilt both in `Update` and at the start of `FixedUpdate` to serve both gravity and UI systems
@@ -46,6 +47,7 @@ New `SpatialGrid` resource partitions world space into 100-unit cells for O(1) n
 ### Test Results
 
 All physics tests pass after changes:
+
 - ✅ `two_triangles` — 2 asteroids merge into 1
 - ✅ `three_triangles` — 3 asteroids merge into 1
 - ✅ `gravity` — Distant asteroids attract, collide, and merge
@@ -339,7 +341,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 ---
 
-## Summary
+## Final Summary
 
 GRAV-SIM successfully demonstrates:
 

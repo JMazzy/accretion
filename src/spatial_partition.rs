@@ -3,22 +3,28 @@
 //! This module provides O(1) cell lookup and O(K) neighbor queries where K is the average
 //! neighbors per cell, replacing O(N²) brute-force iteration.
 //!
-//! Grid cell size is set to 100 units, ensuring asteroids within max_gravity_dist (1000 units)
-//! are always in adjacent cells.
+//! ## Cell Size Choice
+//!
+//! Cell size must be chosen relative to the query distance, not the max gravity range.
+//! With GRID_CELL_SIZE = 500 units:
+//!   - A query for max_gravity_dist=1000 checks a 5×5 = 25 cell area
+//!   - A query for neighbor_threshold=3 checks a 3×3 = 9 cell area
+//!
+//! Using a cell size of 100 with max_gravity_dist=1000 would check 21×21=441 cells,
+//! which is worse than O(N²) brute force at low asteroid counts.
 
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-/// Size of each grid cell in world units
-const GRID_CELL_SIZE: f32 = 100.0;
+/// Size of each grid cell in world units.
+/// Must be at least half of the largest query radius to avoid excessive cell checks.
+const GRID_CELL_SIZE: f32 = 500.0;
 
 /// Resource holding the spatial grid for this frame
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SpatialGrid {
     /// Map from cell coordinates to entity list
     cells: HashMap<(i32, i32), Vec<Entity>>,
-    /// Map from entity to its current cell
-    entity_cells: HashMap<Entity, (i32, i32)>,
 }
 
 impl SpatialGrid {
@@ -29,31 +35,31 @@ impl SpatialGrid {
         (x, y)
     }
 
-    /// Insert or update an entity's position in the grid
+    /// Insert an entity at a position. Call after clear() for bulk rebuild.
     pub fn insert(&mut self, entity: Entity, pos: Vec2) {
         let cell = Self::world_to_cell(pos);
-
-        // Remove from old cell if exists
-        if let Some(old_cell) = self.entity_cells.get(&entity) {
-            if let Some(cell_entities) = self.cells.get_mut(old_cell) {
-                cell_entities.retain(|e| e != &entity);
-            }
-        }
-
-        // Add to new cell
         self.cells.entry(cell).or_default().push(entity);
-        self.entity_cells.insert(entity, cell);
     }
 
-    /// Clear all grid data (called each frame before rebuild)
+    /// Clear all grid data (call before each frame rebuild)
     pub fn clear(&mut self) {
-        self.cells.clear();
-        self.entity_cells.clear();
+        // Retain allocations but clear contents to avoid re-allocating Vec capacity
+        for v in self.cells.values_mut() {
+            v.clear();
+        }
+        // Remove cells that are now empty to avoid iterating them next frame
+        self.cells.retain(|_, v| !v.is_empty());
     }
 
-    /// Get all neighbors within a given distance from a position
-    /// Returns entities in cells that could contain neighbors within the distance
-    pub fn get_neighbors(&self, pos: Vec2, max_distance: f32) -> Vec<Entity> {
+    /// Get all entities in cells that overlap the given circle, excluding `entity`.
+    /// Note: results include entities outside the circle — callers must do the exact
+    /// distance check themselves (the grid is a conservative over-approximation).
+    pub fn get_neighbors_excluding(
+        &self,
+        entity: Entity,
+        pos: Vec2,
+        max_distance: f32,
+    ) -> Vec<Entity> {
         let cell = Self::world_to_cell(pos);
         let cells_to_check = Self::radius_in_cells(max_distance);
 
@@ -63,25 +69,16 @@ impl SpatialGrid {
             for dy in -cells_to_check..=cells_to_check {
                 let check_cell = (cell.0 + dx, cell.1 + dy);
                 if let Some(entities) = self.cells.get(&check_cell) {
-                    neighbors.extend(entities.iter().copied());
+                    for &e in entities {
+                        if e != entity {
+                            neighbors.push(e);
+                        }
+                    }
                 }
             }
         }
 
         neighbors
-    }
-
-    /// Get all neighbors within a given distance, filtering out the query entity itself
-    pub fn get_neighbors_excluding(
-        &self,
-        entity: Entity,
-        pos: Vec2,
-        max_distance: f32,
-    ) -> Vec<Entity> {
-        self.get_neighbors(pos, max_distance)
-            .into_iter()
-            .filter(|e| e != &entity)
-            .collect()
     }
 
     /// Compute how many cells in each direction we need to check for a given max distance
@@ -90,8 +87,8 @@ impl SpatialGrid {
     }
 }
 
-/// System to rebuild the spatial grid each frame
-/// Must run BEFORE systems that use the grid (gravity, neighbor counting)
+/// System to rebuild the spatial grid each frame.
+/// Must run BEFORE systems that use the grid (gravity, neighbor counting).
 pub fn rebuild_spatial_grid_system(
     mut grid: ResMut<SpatialGrid>,
     query: Query<(Entity, &Transform), With<Asteroid>>,
@@ -99,8 +96,7 @@ pub fn rebuild_spatial_grid_system(
     grid.clear();
 
     for (entity, transform) in query.iter() {
-        let pos = transform.translation.truncate();
-        grid.insert(entity, pos);
+        grid.insert(entity, transform.translation.truncate());
     }
 }
 

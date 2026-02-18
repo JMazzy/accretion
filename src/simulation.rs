@@ -43,9 +43,8 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 Update,
                 (
-                    stats_counting_system,       // FIRST: Count asteroids for tracking
-                    rebuild_spatial_grid_system, // REBUILD: Grid before queries
-                    culling_system,              // Remove far asteroids before physics
+                    stats_counting_system,  // FIRST: Count asteroids for tracking
+                    culling_system,         // Remove far asteroids before physics
                     neighbor_counting_system,
                     particle_locking_system,
                     user_input_system,      // Now handles keyboard + mouse input
@@ -55,8 +54,8 @@ impl Plugin for SimulationPlugin {
                     stats_display_system,   // Render stats text
                 ),
             )
-            // Run gravity in FixedUpdate (same schedule as Rapier physics) to prevent force accumulation
-            // Also rebuild the spatial grid in FixedUpdate so gravity has fresh positions
+            // Rebuild grid then run gravity in FixedUpdate (same schedule as Rapier physics)
+            // Grid rebuild only here — Update systems reuse the last FixedUpdate grid
             .add_systems(
                 FixedUpdate,
                 (rebuild_spatial_grid_system, nbody_gravity_system).chain(),

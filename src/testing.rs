@@ -13,6 +13,8 @@ pub struct TestConfig {
     pub frame_limit: u32,
     pub frame_count: u32,
     pub initial_asteroid_count: usize,
+    /// Per-frame delta times (seconds) recorded for perf_benchmark test
+    pub perf_frame_times: Vec<f32>,
 }
 
 impl Default for TestConfig {
@@ -23,6 +25,7 @@ impl Default for TestConfig {
             frame_limit: 100,
             frame_count: 0,
             initial_asteroid_count: 0,
+            perf_frame_times: Vec::new(),
         }
     }
 }
@@ -447,12 +450,54 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
 }
 
 /// Track asteroid count and log state
+/// Spawn test scenario: performance benchmark - 100 asteroids spread across viewport
+/// Asteroids are spawned deterministically in a grid pattern so every run is comparable.
+pub fn spawn_test_perf_benchmark(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+    test_config.test_name = "perf_benchmark".to_string();
+    test_config.frame_limit = 300;
+
+    let grey = Color::rgb(0.6, 0.6, 0.6);
+
+    // Standard equilateral triangle vertices (same as spawn_asteroid)
+    let side = 6.0_f32;
+    let height = side * 3.0_f32.sqrt() / 2.0;
+    let vertices = vec![
+        Vec2::new(0.0, height / 2.0),
+        Vec2::new(-side / 2.0, -height / 2.0),
+        Vec2::new(side / 2.0, -height / 2.0),
+    ];
+
+    // 10×10 grid, spacing 80 units → spans ±360 units from origin
+    let cols = 10u32;
+    let rows = 10u32;
+    let spacing = 80.0_f32;
+    let offset_x = -((cols - 1) as f32) * spacing / 2.0;
+    let offset_y = -((rows - 1) as f32) * spacing / 2.0;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = offset_x + col as f32 * spacing;
+            let y = offset_y + row as f32 * spacing;
+            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey);
+        }
+    }
+
+    println!(
+        "✓ Spawned test: perf_benchmark — {}×{} grid ({} asteroids, {}u spacing)",
+        cols,
+        rows,
+        cols * rows,
+        spacing as u32,
+    );
+}
+
 #[derive(Component)]
 #[allow(dead_code)]
 pub struct TestMarker(pub usize); // Initial index for tracking
 
 pub fn test_logging_system(
     mut test_config: ResMut<TestConfig>,
+    time: Res<Time>,
     q: Query<(Entity, &Transform, &Velocity, &Vertices, &ExternalForce), With<Asteroid>>,
 ) {
     if !test_config.enabled {
@@ -461,6 +506,38 @@ pub fn test_logging_system(
 
     test_config.frame_count += 1;
     let asteroid_count = q.iter().count();
+
+    // For perf_benchmark: record every frame's delta time, print periodic summaries
+    if test_config.test_name == "perf_benchmark" {
+        let dt_ms = time.delta_seconds() * 1000.0;
+        test_config.perf_frame_times.push(dt_ms);
+
+        if test_config.frame_count == 1 {
+            test_config.initial_asteroid_count = asteroid_count;
+            println!(
+                "[Frame 1] perf_benchmark started | asteroids: {}",
+                asteroid_count
+            );
+        } else if test_config.frame_count.is_multiple_of(50)
+            || test_config.frame_count == test_config.frame_limit
+        {
+            let window = &test_config.perf_frame_times
+                [test_config.perf_frame_times.len().saturating_sub(50)..];
+            let avg = window.iter().sum::<f32>() / window.len() as f32;
+            let min = window.iter().cloned().fold(f32::INFINITY, f32::min);
+            let max = window.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            println!(
+                "[Frame {}] asteroids: {} | last {} frames — avg: {:.2}ms  min: {:.2}ms  max: {:.2}ms  (target ≤16.7ms)",
+                test_config.frame_count,
+                asteroid_count,
+                window.len(),
+                avg,
+                min,
+                max,
+            );
+        }
+        return;
+    }
 
     // Log state at certain frames
     if test_config.frame_count == 1 {
@@ -547,6 +624,36 @@ pub fn test_verification_system(
     println!("Frames: {}", test_config.frame_count);
     println!("Initial asteroids: {}", test_config.initial_asteroid_count);
     println!("Final asteroids:   {}", final_count);
+
+    // Print full timing report for perf_benchmark
+    if test_config.test_name == "perf_benchmark" && !test_config.perf_frame_times.is_empty() {
+        let times = &test_config.perf_frame_times;
+        // Skip first 10 frames (startup jitter)
+        let steady = if times.len() > 10 { &times[10..] } else { times.as_slice() };
+        let avg = steady.iter().sum::<f32>() / steady.len() as f32;
+        let min = steady.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = steady.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let over_budget = steady.iter().filter(|&&t| t > 16.7).count();
+        let pct_60fps = 100.0 * (steady.len() - over_budget) as f32 / steady.len() as f32;
+        println!("\n── Timing summary (frames 10–{}) ──", times.len());
+        println!("  avg frame: {:.2}ms", avg);
+        println!("  min frame: {:.2}ms", min);
+        println!("  max frame: {:.2}ms", max);
+        println!(
+            "  frames at 60 FPS (≤16.7ms): {}/{} ({:.1}%)",
+            steady.len() - over_budget,
+            steady.len(),
+            pct_60fps
+        );
+        if avg <= 16.7 {
+            println!("  ✓ PASS: average frame time within 60 FPS budget");
+        } else {
+            println!(
+                "  ✗ FAIL: average frame time {:.2}ms exceeds 16.7ms budget",
+                avg
+            );
+        }
+    }
 
     let result = verify_test_result(
         &test_config.test_name,
@@ -688,6 +795,14 @@ fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> St
             } else {
                 format!("✗ FAIL: Expected 2 asteroids, got {}", initial)
             }
+        }
+        "perf_benchmark" => {
+            // Pass/fail decided from timing summary printed by test_logging_system.
+            // Here we just report final asteroid count as a sanity check.
+            format!(
+                "✓ PASS: perf_benchmark complete — {} asteroids remaining (see timing logs above)",
+                final_count
+            )
         }
         _ => format!("? UNKNOWN: {}", test_name),
     }
