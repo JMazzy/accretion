@@ -5,17 +5,20 @@
 GRAV-SIM is an ECS-based **asteroid simulation engine** built on **Bevy 0.13** with physics powered by **Rapier2D**. The simulation features natural asteroid aggregation through N-body gravity attraction and collision-based merging into larger composite structures.
 
 ### Core Purpose
+
 Pure asteroid-based simulation where asteroids naturally aggregate through gravitational attraction and collision into larger composite polygonal structures that visually rotate based on physics.
 
 ## System Architecture
 
 ### Frameworks & Dependencies
+
 - **Bevy 0.13**: ECS architecture, rendering, event handling, windowing
 - **Rapier2D 0.18**: Physics engine for collision detection, rigid body dynamics, and impulse-based response
 - **Rand 0.8**: Random number generation for asteroid coloring
 
 ### Module Structure
-```
+
+```text
 src/
 ├── main.rs          - Bevy app setup, window configuration, test mode routing
 ├── asteroid.rs      - Unified asteroid components and spawn functions; convex hull computation
@@ -28,9 +31,11 @@ src/
 ## Entity Types & Components
 
 ### Asteroid Entity
+
 All asteroids in the simulation are unified entities with locally-stored vertices (relative to position).
 
 **Components**:
+
 - `Transform` (Bevy) - Position and rotation in world space
 - `Vertices` - Vec of local-space vertices (relative to entity position)
 - `RigidBody` (Rapier) - Physics entity with mass and inertia
@@ -40,6 +45,7 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 - `Sprite` or `Gizmo` - Visual rendering
 
 **Properties**:
+
 - Spawn as triangles (3 vertices) or polygons depending on configuration
 - Composite asteroids formed when 2+ asteroids touch and move slowly
 - Local-space vertices enable correct rotation rendering and hull computation
@@ -47,18 +53,20 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 ## Physics Rules
 
 ### Gravity System (`nbody_gravity_system`)
+
 - **Constant**: `gravity_const = 2.0` (gentle mutual attraction)
 - **Minimum distance threshold**: `min_gravity_dist = 20.0` units
   - **Why**: Prevents energy injection during close encounters; Rapier handles collision physics below this range
   - **If ≥ 20 units apart**: Skip gravity entirely (prevents unphysical high-speed acceleration)
 - **Maximum gravity distance**: `max_gravity_dist = 300.0` units (prevents phantom forces from distant asteroids)
 - **Force**: Applied uniformly between all asteroid pairs as `F = gravity_const / distance²`
-- **Behavior**: 
+- **Behavior**:
   - Asteroids at 100 units apart attract smoothly with gravity_const=10.0
   - Reach collision speeds based on initial spacing
   - Collide and merge into stable composites
 
 ### Collision Detection
+
 - **Engine**: Rapier2D automatic contact manifold population
 - **Range**: Activated for distances < 20 units (where gravity is disabled)
 - **Response**: Restitution coefficients:
@@ -66,6 +74,7 @@ All asteroids in the simulation are unified entities with locally-stored vertice
   - Composite asteroids: `0.7` (70% bouncy)
 
 ### Cluster Formation & Merging
+
 - **Detection**: Flood-fill algorithm through Rapier contact manifolds
 - **Execution**: Must run in `PostUpdate` after Rapier `FixedUpdate` populates contacts
 - **Velocity threshold**: `10.0 u/s` (allows faster asteroids to merge if in contact)
@@ -78,11 +87,13 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 - **Velocity inheritance**: Average linear and angular velocity from cluster members
 
 ### Environmental Damping
+
 - **Activation**: Applied to asteroids with >6 neighbors within 3.0 units
 - **Damping factor**: 0.5% per frame (multiply velocity by 0.995)
 - **Purpose**: Prevents numerical instability in extreme density clusters
 
 ### Culling & Boundary
+
 - **Culling distance**: 1000 units from origin
 - **Damping zone**: Asteroids beyond 600 units experience increasing damping
 - **Damping ramp**: Smoothly increases from 0% to 5% over 400-unit range
@@ -91,6 +102,7 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 ## ECS Systems Execution Order
 
 ### Update Schedule (Key Physics)
+
 1. **`stats_counting_system`** - Counts live/culled asteroids
 2. **`culling_system`** - Removes asteroids beyond 1000 units
 3. **`neighbor_counting_system`** - Counts nearby asteroids (<3 units)
@@ -102,11 +114,13 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 9. **`gizmo_rendering_system`** - Renders wireframe outlines
 
 ### FixedUpdate Schedule
+
 - **Rapier physics**: Solves all collision, integrates velocities, populates contact manifolds
 
 ### PostUpdate Schedule (CRITICAL TIMING)
-10. **`asteroid_formation_system`** - Must run AFTER Rapier physics populates contacts
-11. **`test_logging_system`** & **`test_verification_system`** - Runs after merging to see final states
+
+1. **`asteroid_formation_system`** - Must run AFTER Rapier physics populates contacts
+2. **`test_logging_system`** & **`test_verification_system`** - Runs after merging to see final states
 
 **Critical**: System scheduling ensures proper data consistency. Asteroid formation must run *after* physics updates contacts.
 
@@ -127,11 +141,13 @@ max_zoom           = 8.0      // Maximum camera zoom (detail view)
 ## Testing Framework
 
 ### Test System
+
 - **Trigger**: `GRAV_SIM_TEST=<test_name>` environment variable
 - **Runs**: Single test scenario for exact reproducibility
 - **Framework**: Custom spawning functions in `src/testing.rs`
 
 ### Available Tests
+
 - `two_triangles` - Verify 2 touching asteroids merge into 1
 - `three_triangles` - Verify 3-asteroid cluster merges into 1-2
 - `gentle_approach` - Verify smooth gravity-driven acceleration
@@ -144,6 +160,7 @@ max_zoom           = 8.0      // Maximum camera zoom (detail view)
 - `mixed_size_asteroids` - Complex 5-body N-body system
 
 ### Test Logging
+
 - Logs positions and velocities at key frames (1, 10, 30, 50, 100+)
 - Compares initial vs final asteroid counts
 - Validates: merging occurred (count decreased), physics stable (velocity reasonable)
@@ -180,6 +197,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 ## Physics Validation Results
 
 ### All 10 Tests Passing ✅
+
 - ✅ Basic merging (touching asteroids)
 - ✅ Cluster detection (multiple asteroids)
 - ✅ Gravity attraction (distance-based acceleration)
@@ -192,5 +210,5 @@ GRAV_SIM_TEST=near_miss cargo run --release
 - ✅ Complex N-body systems
 
 ### Critical Fix Validated
-**Gravity Threshold Fix**: Changed minimum gravity distance from clamping at 2 units to skipping entirely when <20 units apart. This prevents energy injection during close encounters and high-speed passes, ensuring stable physics across all scenarios.
 
+**Gravity Threshold Fix**: Changed minimum gravity distance from clamping at 2 units to skipping entirely when <20 units apart. This prevents energy injection during close encounters and high-speed passes, ensuring stable physics across all scenarios.
