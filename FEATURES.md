@@ -2,27 +2,48 @@
 
 ## Runtime Controls
 
-### Asteroid Spawning
+### Keyboard + Mouse (Twin-Stick)
 
-- **Left-click**: Spawn a small triangle asteroid at cursor position
-- **Accuracy**: Click position correctly tracks with camera pan and zoom
-- **No automatic spawning**: Simulation starts empty; user drives all spawning
+| Input | Action |
+|-------|--------|
+| **W** | Thrust forward (ship-facing direction) |
+| **S** | Thrust backward |
+| **A** | Rotate ship left |
+| **D** | Rotate ship right |
+| **Space** or **Left-click** | Fire projectile toward mouse cursor |
+| **Mouse wheel** | Zoom in / out |
+
+- **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
+- An **orange aim indicator** (line + dot) extends from the ship in the current fire direction.
+
+### Gamepad (Twin-Stick)
+
+| Input | Action |
+|-------|--------|
+| **Left stick** | Rotate ship toward stick direction at fixed speed, then thrust forward |
+| **Right stick** | Aim and auto-fire projectiles in stick direction |
+| **B button** | Apply reverse thrust (while held) |
+
+- **Left stick movement**: the ship rotates at a fixed angular speed until aligned with the stick direction, then applies forward thrust proportional to stick magnitude. Thrust is suppressed while rotating sharply (> 0.5 rad off-target) to avoid fighting the turn.
+- **Right stick auto-fire**: once the right stick exceeds ~50% deflection, projectiles auto-fire at the fire cooldown rate. Pulling the stick further does not change fire rate.
+- **Dead zones**: left stick < 15%, right stick < 20% are ignored to prevent drift.
+
+### Initial World
+
+- **100 asteroids** spawn at startup, distributed across a 3000×2000 unit simulation area
+- A **400-unit exclusion zone** around the player start (origin) keeps the starting area clear
+- Grid-based seeding (6×4 cells) prevents random clumping while maintaining variety
+- Random shapes (triangles, squares, pentagons, hexagons) and sizes (0.5–1.5×), random initial velocities
 
 ### Camera Controls
-
-#### Pan (Arrow Keys)
-
-- **Up/Down arrows**: Pan camera vertically (±5 units/frame)
-- **Left/Right arrows**: Pan camera horizontally (±5 units/frame)
-- **Pan bounds**: Constrained to ±600 units from origin
-  - Ensures simulation area stays visible and culling boundary remains partially in view
 
 #### Zoom (Mouse Wheel)
 
 - **Scroll up**: Zoom out (smaller scale, larger viewport)
 - **Scroll down**: Zoom in (larger scale, smaller viewport)
-- **Zoom range**: 0.5x (full simulation circle visible) to 8.0x (detail magnification)
+- **Zoom range**: 0.5× (full simulation circle visible) to 8.0× (detail magnification)
 - **Smooth scaling**: ±0.1 scale units per scroll event
+- **Camera follows the player** automatically; no manual pan
 
 ### Coordinate System
 

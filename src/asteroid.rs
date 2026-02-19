@@ -25,112 +25,130 @@ pub struct NeighborCount(pub usize);
 #[derive(Component, Debug, Clone)]
 pub struct Vertices(pub Vec<Vec2>);
 
-/// Spawns a triangle asteroid at the given position (user click)
-pub fn spawn_asteroid(commands: &mut Commands, position: Vec2, _color: Color, _group_id: u32) {
-    // Generate a random grey shade for variety
-    let grey = rand::random::<f32>() * 0.6 + 0.3;
-    let color = Color::rgb(grey, grey, grey);
-
-    // Add small random offset to prevent stacking when clicking repeatedly in same spot
-    let mut rng = rand::thread_rng();
-    let offset = Vec2::new(rng.gen_range(-2.0..2.0), rng.gen_range(-2.0..2.0));
-    let spawn_pos = position + offset;
-
-    // Create equilateral triangle (6 unit side length)
-    let side = 6.0;
-    let height = side * 3.0_f32.sqrt() / 2.0;
-    let vertices = vec![
-        Vec2::new(0.0, height / 2.0),          // Top
-        Vec2::new(-side / 2.0, -height / 2.0), // Bottom-left
-        Vec2::new(side / 2.0, -height / 2.0),  // Bottom-right
-    ];
-
-    spawn_asteroid_with_vertices(commands, spawn_pos, &vertices, color, 1);
-}
-
 /// Spawns asteroids with random sizes, shapes, and velocities throughout the simulation area
+/// Uses grid-based distribution for even spread, with a buffer zone around the player start.
 pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
     let mut rng = rand::thread_rng();
-    let width = 1200.0;
-    let height = 680.0;
-    let margin = 150.0; // Keep asteroids away from edges
-    let min_x = -width / 2.0 + margin;
-    let max_x = width / 2.0 - margin;
-    let min_y = -height / 2.0 + margin;
-    let max_y = height / 2.0 - margin;
 
-    for _ in 0..count {
-        // Random position within simulation area
-        let position = Vec2::new(rng.gen_range(min_x..max_x), rng.gen_range(min_y..max_y));
+    // Extended simulation area (well beyond viewport)
+    let sim_width = 3000.0;
+    let sim_height = 2000.0;
+    let grid_margin = 150.0; // Keep asteroids away from outer edges
 
-        // Random size scale (0.5 to 1.5x)
-        let size_scale = rng.gen_range(0.5..1.5);
+    // Buffer zone around player spawn (origin)
+    let player_buffer_radius = 400.0;
 
-        // Random shape (triangle, square, pentagon, hexagon)
-        let shape = rng.gen_range(0..4);
-        let vertices = match shape {
-            0 => generate_triangle(size_scale), // Triangle
-            1 => generate_square(size_scale),   // Square
-            2 => generate_pentagon(size_scale), // Pentagon
-            _ => generate_hexagon(size_scale),  // Hexagon
-        };
-        // Unit count: triangle=1, square=2, pentagon=3, hexagon=4
-        let unit_size: u32 = match shape {
-            0 => 1,
-            1 => 2,
-            2 => 3,
-            _ => 4,
-        };
+    // Grid-based distribution for even spread
+    let grid_cols = 6;
+    let grid_rows = 4;
+    let cell_width = (sim_width - 2.0 * grid_margin) / grid_cols as f32;
+    let cell_height = (sim_height - 2.0 * grid_margin) / grid_rows as f32;
+    let asteroids_per_cell = (count as f32 / (grid_cols * grid_rows) as f32).ceil() as usize;
 
-        // Random velocity (gentle to avoid instant collisions)
-        let velocity = Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
+    let mut spawned = 0;
 
-        // Spawn the asteroid
-        commands.spawn((
-            (
-                Transform::from_translation(position.extend(0.05)),
-                GlobalTransform::default(),
-                Asteroid,
-                AsteroidSize(unit_size),
-                NeighborCount(0),
-                Vertices(vertices.clone()),
-                RigidBody::Dynamic,
-            ),
-            (
-                {
-                    if vertices.len() >= 3 {
-                        Collider::convex_hull(&vertices).unwrap_or_else(|| Collider::ball(5.0))
-                    } else if vertices.len() == 2 {
-                        let radius = ((vertices[0] - vertices[1]).length() / 2.0).max(2.0);
-                        Collider::ball(radius)
-                    } else {
-                        Collider::ball(2.0)
-                    }
-                },
-                Restitution::coefficient(0.0),
-                Friction::coefficient(1.0),
-                Velocity {
-                    linvel: velocity,
-                    angvel: rng.gen_range(-5.0..5.0), // Random angular velocity
-                },
-                Damping {
-                    linear_damping: 0.0,
-                    angular_damping: 0.0,
-                },
-                ExternalForce {
-                    force: Vec2::ZERO,
-                    torque: 0.0,
-                },
-                CollisionGroups::new(
-                    bevy_rapier2d::geometry::Group::GROUP_1,
-                    bevy_rapier2d::geometry::Group::GROUP_1
-                        | bevy_rapier2d::geometry::Group::GROUP_2
-                        | bevy_rapier2d::geometry::Group::GROUP_3,
-                ),
-                ActiveEvents::COLLISION_EVENTS,
-                Sleeping::disabled(),
-            ),
-        ));
+    for grid_row in 0..grid_rows {
+        for grid_col in 0..grid_cols {
+            if spawned >= count {
+                break;
+            }
+
+            // Cell bounds
+            let cell_min_x = -sim_width / 2.0 + grid_margin + grid_col as f32 * cell_width;
+            let cell_max_x = cell_min_x + cell_width;
+            let cell_min_y = -sim_height / 2.0 + grid_margin + grid_row as f32 * cell_height;
+            let cell_max_y = cell_min_y + cell_height;
+
+            // Spawn asteroids in this cell
+            for _ in 0..asteroids_per_cell {
+                if spawned >= count {
+                    break;
+                }
+
+                // Random position within cell
+                let position = Vec2::new(
+                    rng.gen_range(cell_min_x..cell_max_x),
+                    rng.gen_range(cell_min_y..cell_max_y),
+                );
+
+                // Skip if within player buffer zone
+                if position.distance(Vec2::ZERO) < player_buffer_radius {
+                    continue;
+                }
+
+                spawned += 1;
+
+                // Random size scale (0.5 to 1.5x)
+                let size_scale = rng.gen_range(0.5..1.5);
+
+                // Random shape (triangle, square, pentagon, hexagon)
+                let shape = rng.gen_range(0..4);
+                let vertices = match shape {
+                    0 => generate_triangle(size_scale), // Triangle
+                    1 => generate_square(size_scale),   // Square
+                    2 => generate_pentagon(size_scale), // Pentagon
+                    _ => generate_hexagon(size_scale),  // Hexagon
+                };
+                // Unit count: triangle=1, square=2, pentagon=3, hexagon=4
+                let unit_size: u32 = match shape {
+                    0 => 1,
+                    1 => 2,
+                    2 => 3,
+                    _ => 4,
+                };
+
+                // Random velocity (gentle to avoid instant collisions)
+                let velocity = Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
+
+                // Spawn the asteroid
+                commands.spawn((
+                    (
+                        Transform::from_translation(position.extend(0.05)),
+                        GlobalTransform::default(),
+                        Asteroid,
+                        AsteroidSize(unit_size),
+                        NeighborCount(0),
+                        Vertices(vertices.clone()),
+                        RigidBody::Dynamic,
+                    ),
+                    (
+                        {
+                            if vertices.len() >= 3 {
+                                Collider::convex_hull(&vertices)
+                                    .unwrap_or_else(|| Collider::ball(5.0))
+                            } else if vertices.len() == 2 {
+                                let radius = ((vertices[0] - vertices[1]).length() / 2.0).max(2.0);
+                                Collider::ball(radius)
+                            } else {
+                                Collider::ball(2.0)
+                            }
+                        },
+                        Restitution::coefficient(0.0),
+                        Friction::coefficient(1.0),
+                        Velocity {
+                            linvel: velocity,
+                            angvel: rng.gen_range(-5.0..5.0), // Random angular velocity
+                        },
+                        Damping {
+                            linear_damping: 0.0,
+                            angular_damping: 0.0,
+                        },
+                        ExternalForce {
+                            force: Vec2::ZERO,
+                            torque: 0.0,
+                        },
+                        CollisionGroups::new(
+                            bevy_rapier2d::geometry::Group::GROUP_1,
+                            bevy_rapier2d::geometry::Group::GROUP_1
+                                | bevy_rapier2d::geometry::Group::GROUP_2
+                                | bevy_rapier2d::geometry::Group::GROUP_3,
+                        ),
+                        ActiveEvents::COLLISION_EVENTS,
+                        Sleeping::disabled(),
+                    ),
+                ));
+            }
+        }
     }
 }
 

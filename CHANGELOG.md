@@ -1,5 +1,90 @@
 # GRAV-SIM Changelog
 
+## Twin-Stick Controls — February 18, 2026
+
+### Summary
+
+Implemented full twin-stick shooter controls for both keyboard+mouse and gamepad, decoupling movement from aiming.
+
+### Keyboard + Mouse
+
+- **Space / Left-click** fires toward the mouse cursor instead of the ship's facing direction
+- Mouse cursor position is tracked every frame in `mouse_aim_system` (simulation.rs); the screen-space cursor offset from centre gives the aim direction directly (zoom-invariant)
+- Left-click no longer spawns asteroids — shooting is the only mouse action
+- `AimDirection` resource stores the current aim vector and is read by the fire system
+
+### Gamepad
+
+- **Left stick**: rotates the ship toward the stick direction at a fixed angular speed (`ROTATION_SPEED`), then applies forward thrust proportional to stick magnitude once aligned within 0.5 rad
+- **Right stick**: updates `AimDirection` and auto-fires when magnitude > 0.5 (with shared cooldown)
+- **B button (East)**: holds reverse thrust while pressed
+- Dead zones applied: left stick 15%, right stick 20%
+
+### Architecture Changes
+
+- New `AimDirection` resource (player.rs) — shared aim vector, defaults to `Vec2::Y`
+- New `player_force_reset_system` — resets `ExternalForce` before input systems add to it (prevents double-application when keyboard + gamepad are both active)
+- New `gamepad_movement_system` — handles left stick + B button
+- New `mouse_aim_system` (simulation.rs) — updates `AimDirection` from cursor each frame
+- Refactored `projectile_fire_system` — handles Space, left-click, and gamepad right stick in one place (single cooldown timer)
+- Updated `player_gizmo_system` — draws an orange aim indicator line + dot in fire direction
+- Removed `spawn_asteroid` (asteroid.rs) — no longer reachable; `spawn_asteroid_with_vertices` remains
+
+
+
+### Summary
+
+Fixed two critical issues with asteroid splitting: collision detection for split fragments and directional alignment of split planes.
+
+### Bug Fixes
+
+1. **Collider detection for split asteroids** — Split asteroids now have proper collision detection enabled immediately after spawning
+   - Added `ActiveCollisionTypes::DYNAMIC_KINEMATIC` to ensure split fragments can collide with projectiles
+   - Prevents "sometimes can't collide further" issue where split asteroids wouldn't register hits from projectiles
+   
+2. **Split direction alignment** — Asteroid splits now align WITH the projectile trajectory, not perpendicular to it
+   - Changed split axis from perpendicular (`Vec2::new(-impact_dir.y, impact_dir.x)`) to impact-aligned (`impact_dir`)
+   - Result: projectiles split asteroids along their impact line for more intuitive physics
+   - Chunks now separate naturally along the incoming trajectory direction
+
+### Implementation Details
+
+- **File modified**: `src/player.rs` in `projectile_asteroid_hit_system`
+- **Split logic**: Changed how `split_axis` is calculated for the split plane
+- **Collision initialization**: Split asteroids now explicitly register `ActiveCollisionTypes::DYNAMIC_KINEMATIC` on spawn
+
+### Impact
+
+- Players can now chain projectile hits on split asteroid fragments without gaps
+- Visual feedback is more intuitive: asteroids split cleanly along incoming fire
+- Gameplay flow improves with reliable multi-hit mechanics
+
+## Initial Asteroid Distribution — February 18, 2026
+
+### Summary
+
+Updated asteroid spawning to distribute asteroids evenly across the extended simulation area with a buffer zone around the player start position, providing a more balanced and immersive gameplay experience.
+
+### Changes
+
+- **Extended simulation area**: Changed spawn bounds from viewport-relative (1200×680) to full simulation area (3000×2000 units)
+- **Grid-based distribution**: Split world into 6×4 grid for even spread (16 cells, ~6 asteroids per cell)
+- **Player buffer zone**: Added 400-unit exclusion radius around origin where asteroids don't spawn
+- **Initial asteroid count**: 100 asteroids spawned on startup with random shapes and velocities
+- **Function updated**: `spawn_initial_asteroids` now uses grid-based cell spawning with buffer zone checking
+
+### Impact
+
+- Asteroids no longer cluster near viewport edges
+- Player spawn area remains clear for gameplay
+- Asteroid encounters more naturally distributed across extended world
+- Grid distribution prevents random clumping while maintaining randomness within cells
+
+### Documentation
+
+- Updated `FEATURES.md` with initial distribution parameters and buffer zone description
+- See [Asteroid Spawning](FEATURES.md#asteroid-spawning) section for details
+
 ## Player Character — February 18, 2026
 
 ### Summary

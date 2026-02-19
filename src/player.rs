@@ -3,6 +3,9 @@
 use crate::asteroid::{
     compute_convex_hull_from_points, spawn_asteroid_with_vertices, AsteroidSize, Vertices,
 };
+use bevy::input::gamepad::{GamepadAxis, GamepadAxisType, GamepadButton, GamepadButtonType};
+use bevy::input::mouse::MouseButton;
+use bevy::input::Axis;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use rand::Rng;
@@ -63,6 +66,18 @@ pub struct PlayerFireCooldown {
     pub timer: f32,
 }
 
+/// World-space unit vector the player is currently aiming.
+/// Updated every frame by `mouse_aim_system` (cursor) or `projectile_fire_system` (gamepad right stick).
+/// Falls back to the ship's forward direction when no explicit aim is available.
+#[derive(Resource, Clone, Copy)]
+pub struct AimDirection(pub Vec2);
+
+impl Default for AimDirection {
+    fn default() -> Self {
+        Self(Vec2::Y) // ship starts pointing up
+    }
+}
+
 /// Attached to each projectile; stores its age in seconds.
 #[derive(Component)]
 pub struct Projectile {
@@ -118,7 +133,16 @@ pub fn spawn_player(mut commands: Commands) {
 
 // ── Control system ───────────────────────────────────────────────────────────
 
-/// Applies WASD thrust / rotation to the player ship.
+/// Resets `ExternalForce` to zero at the start of each frame so keyboard and
+/// gamepad systems can independently add their contributions without clobbering each other.
+pub fn player_force_reset_system(mut q: Query<&mut ExternalForce, With<Player>>) {
+    if let Ok(mut force) = q.get_single_mut() {
+        force.force = Vec2::ZERO;
+        force.torque = 0.0;
+    }
+}
+
+/// Applies WASD thrust / rotation to the player ship (keyboard).
 pub fn player_control_system(
     mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -126,10 +150,6 @@ pub fn player_control_system(
     let Ok((transform, mut force, mut velocity)) = q.get_single_mut() else {
         return;
     };
-
-    // Reset force each frame (ExternalForce accumulates unless cleared)
-    force.force = Vec2::ZERO;
-    force.torque = 0.0;
 
     // Local "up" direction is +Y in local space; rotate into world space
     let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
@@ -152,13 +172,88 @@ pub fn player_control_system(
     // If neither A nor D, let angular damping handle slow-down naturally
 }
 
+// ── Gamepad movement system ───────────────────────────────────────────────────
+
+/// Twin-stick gamepad movement:
+/// - **Left stick**: rotates the ship at a fixed angular speed toward the stick direction,
+///   then applies forward thrust once roughly aligned (within ~0.5 rad).
+/// - **B button (East)**: applies reverse thrust instead while held.
+pub fn gamepad_movement_system(
+    mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
+    gamepads: Res<Gamepads>,
+    axes: Res<Axis<GamepadAxis>>,
+    buttons: Res<ButtonInput<GamepadButton>>,
+) {
+    let Ok((transform, mut force, mut velocity)) = q.get_single_mut() else {
+        return;
+    };
+    let Some(gamepad) = gamepads.iter().next() else {
+        return;
+    };
+
+    const DEADZONE: f32 = 0.15;
+
+    let lx = axes
+        .get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickX))
+        .unwrap_or(0.0);
+    let ly = axes
+        .get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickY))
+        .unwrap_or(0.0);
+    let left_stick = Vec2::new(lx, ly);
+
+    if left_stick.length() < DEADZONE {
+        return;
+    }
+
+    // Compute the target world-space angle for the ship's +Y axis to point along left_stick.
+    // atan2(-lx, ly) maps stick (0,1)→0°, (1,0)→-90°, (-1,0)→+90° correctly.
+    let target_angle = (-lx).atan2(ly);
+    let current_angle = transform.rotation.to_euler(EulerRot::ZYX).0;
+
+    // Find the shortest angular path to the target
+    let mut angle_diff = target_angle - current_angle;
+    while angle_diff > std::f32::consts::PI {
+        angle_diff -= std::f32::consts::TAU;
+    }
+    while angle_diff < -std::f32::consts::PI {
+        angle_diff += std::f32::consts::TAU;
+    }
+
+    // Rotate at fixed speed toward the target direction
+    velocity.angvel = if angle_diff.abs() > 0.05 {
+        ROTATION_SPEED * angle_diff.signum()
+    } else {
+        0.0
+    };
+
+    // Apply thrust only when roughly aligned; B (East) reverses
+    let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
+    let reverse = buttons.pressed(GamepadButton::new(gamepad, GamepadButtonType::East));
+
+    if reverse {
+        force.force -= forward * REVERSE_FORCE * left_stick.length();
+    } else if angle_diff.abs() < 0.5 {
+        // Only thrust when within ~30 ° of the target to avoid fighting rotation
+        force.force += forward * THRUST_FORCE * left_stick.length();
+    }
+}
+
 // ── Projectile fire system ───────────────────────────────────────────────────
 
-/// Fires a projectile from the ship nose when spacebar is pressed (with cooldown).
+/// Unified fire system: handles Space / left-click (keyboard+mouse) and the gamepad right stick
+/// (twin-stick auto-fire).  In all cases the projectile travels toward `AimDirection`.
+///
+/// The gamepad right stick also *updates* `AimDirection` each frame so the cursor-aim and
+/// stick-aim sources are kept separate yet coherent.
+#[allow(clippy::too_many_arguments)]
 pub fn projectile_fire_system(
     mut commands: Commands,
     q_player: Query<&Transform, With<Player>>,
     keys: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    gamepads: Res<Gamepads>,
+    axes: Res<Axis<GamepadAxis>>,
+    mut aim: ResMut<AimDirection>,
     mut cooldown: ResMut<PlayerFireCooldown>,
     time: Res<Time>,
 ) {
@@ -168,34 +263,63 @@ pub fn projectile_fire_system(
         return;
     };
 
-    if keys.just_pressed(KeyCode::Space) && cooldown.timer <= 0.0 {
-        cooldown.timer = FIRE_COOLDOWN;
+    // ── Gamepad right stick: update aim + auto-fire when pushed past the threshold ──
+    const GP_DEADZONE: f32 = 0.2;
+    const GP_FIRE_THRESHOLD: f32 = 0.5;
+    let mut gamepad_wants_fire = false;
 
-        let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
-        let nose_offset = forward * 14.0; // spawn just ahead of the nose vertex
-        let spawn_pos = transform.translation.truncate() + nose_offset;
+    if let Some(gamepad) = gamepads.iter().next() {
+        let rx = axes
+            .get(GamepadAxis::new(gamepad, GamepadAxisType::RightStickX))
+            .unwrap_or(0.0);
+        let ry = axes
+            .get(GamepadAxis::new(gamepad, GamepadAxisType::RightStickY))
+            .unwrap_or(0.0);
+        let right_stick = Vec2::new(rx, ry);
 
-        commands.spawn((
-            Projectile { age: 0.0 },
-            TransformBundle::from_transform(Transform::from_translation(spawn_pos.extend(0.0))),
-            VisibilityBundle::default(),
-            RigidBody::KinematicVelocityBased,
-            Velocity {
-                linvel: forward * PROJECTILE_SPEED,
-                angvel: 0.0,
-            },
-            // Small ball collider so Rapier can detect intersections
-            Collider::ball(2.0),
-            // Belong to GROUP_3; collide with GROUP_1 (asteroids) only
-            CollisionGroups::new(
-                bevy_rapier2d::geometry::Group::GROUP_3,
-                bevy_rapier2d::geometry::Group::GROUP_1,
-            ),
-            // Kinematic↔Dynamic contacts are disabled by default; enable them
-            ActiveCollisionTypes::DYNAMIC_KINEMATIC,
-            ActiveEvents::COLLISION_EVENTS,
-        ));
+        if right_stick.length() > GP_DEADZONE {
+            aim.0 = right_stick.normalize_or_zero();
+            if right_stick.length() > GP_FIRE_THRESHOLD {
+                gamepad_wants_fire = true;
+            }
+        }
     }
+
+    // ── Determine if any source wants to fire this frame ──
+    let kb_fire = keys.just_pressed(KeyCode::Space);
+    let mouse_fire = mouse_buttons.just_pressed(MouseButton::Left);
+
+    if !(kb_fire || mouse_fire || gamepad_wants_fire) || cooldown.timer > 0.0 {
+        return;
+    }
+    cooldown.timer = FIRE_COOLDOWN;
+
+    // Use current aim direction; fall back to ship forward if aim is zero
+    let fire_dir = if aim.0.length_squared() > 0.01 {
+        aim.0.normalize_or_zero()
+    } else {
+        transform.rotation.mul_vec3(Vec3::Y).truncate()
+    };
+
+    let spawn_pos = transform.translation.truncate() + fire_dir * 14.0;
+
+    commands.spawn((
+        Projectile { age: 0.0 },
+        TransformBundle::from_transform(Transform::from_translation(spawn_pos.extend(0.0))),
+        VisibilityBundle::default(),
+        RigidBody::KinematicVelocityBased,
+        Velocity {
+            linvel: fire_dir * PROJECTILE_SPEED,
+            angvel: 0.0,
+        },
+        Collider::ball(2.0),
+        CollisionGroups::new(
+            bevy_rapier2d::geometry::Group::GROUP_3,
+            bevy_rapier2d::geometry::Group::GROUP_1,
+        ),
+        ActiveCollisionTypes::DYNAMIC_KINEMATIC,
+        ActiveEvents::COLLISION_EVENTS,
+    ));
 }
 
 // ── Projectile lifetime / despawn ────────────────────────────────────────────
@@ -237,11 +361,12 @@ pub fn camera_follow_system(
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-/// Draw the player ship, health bar, and all active projectiles using Bevy gizmos.
+/// Draw the player ship, health bar, aim indicator, and all active projectiles using Bevy gizmos.
 pub fn player_gizmo_system(
     mut gizmos: Gizmos,
     q_player: Query<(&Transform, &PlayerHealth), With<Player>>,
     q_projectiles: Query<&Transform, With<Projectile>>,
+    aim: Res<AimDirection>,
 ) {
     // ── Ship ──────────────────────────────────────────────────────────────────
     if let Ok((transform, health)) = q_player.get_single() {
@@ -262,9 +387,16 @@ pub fn player_gizmo_system(
             gizmos.line_2d(p1, p2, ship_color);
         }
 
-        // Direction indicator: bright line from center toward the nose
+        // Direction indicator: white line from center toward the nose
         let nose_world = pos + rot.mul_vec3(Vec3::new(0.0, 12.0, 0.0)).truncate();
         gizmos.line_2d(pos, nose_world, Color::WHITE);
+
+        // Aim indicator: orange line + dot showing current fire direction
+        if aim.0.length_squared() > 0.01 {
+            let aim_tip = pos + aim.0.normalize_or_zero() * 35.0;
+            gizmos.line_2d(pos, aim_tip, Color::rgb(1.0, 0.5, 0.0));
+            gizmos.circle_2d(aim_tip, 3.0, Color::rgb(1.0, 0.5, 0.0));
+        }
 
         // ── Health bar (above the ship, always axis-aligned) ──────────────────
         let bar_half = 20.0;
@@ -466,12 +598,12 @@ pub fn projectile_asteroid_hit_system(
 
             // ── Split in half ─────────────────────────────────────────────────
             4..=8 => {
-                // Split along the axis perpendicular to the impact direction so
-                // the two halves separate naturally away from each other.
+                // Split along the impact direction line so chunks separate
+                // cleanly along the projectile trajectory.
                 let impact_dir = (pos - proj_pos).normalize_or_zero();
                 // Splitting plane passes through the asteroid centroid;
-                // axis is perpendicular to the impact direction.
-                let split_axis = Vec2::new(-impact_dir.y, impact_dir.x);
+                // axis aligns with the impact direction for trajectory-aligned splits.
+                let split_axis = impact_dir;
                 let (front_world, back_world) = split_convex_polygon(&world_verts, pos, split_axis);
 
                 commands.entity(asteroid_entity).despawn();
@@ -507,10 +639,14 @@ pub fn projectile_asteroid_hit_system(
                         Color::rgb(grey, grey, grey),
                         half_size.max(1),
                     );
-                    commands.entity(new_ent).insert(Velocity {
-                        linvel: split_vel,
-                        angvel: ang_vel,
-                    });
+                    // Ensure collision detection is active immediately after spawn
+                    commands.entity(new_ent).insert((
+                        Velocity {
+                            linvel: split_vel,
+                            angvel: ang_vel,
+                        },
+                        ActiveCollisionTypes::DYNAMIC_KINEMATIC,
+                    ));
                 }
             }
 

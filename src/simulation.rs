@@ -4,13 +4,13 @@ use crate::asteroid::{
     compute_convex_hull_from_points, Asteroid, AsteroidSize, NeighborCount, Vertices,
 };
 use crate::player::{
-    camera_follow_system, despawn_old_projectiles_system, player_collision_damage_system,
-    player_control_system, player_gizmo_system, player_oob_damping_system,
-    projectile_asteroid_hit_system, projectile_fire_system,
+    camera_follow_system, despawn_old_projectiles_system, gamepad_movement_system,
+    player_collision_damage_system, player_control_system, player_force_reset_system,
+    player_gizmo_system, player_oob_damping_system, projectile_asteroid_hit_system,
+    projectile_fire_system, AimDirection,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
-use bevy::input::ButtonInput;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use std::collections::HashMap;
@@ -39,6 +39,7 @@ impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SimulationStats::default())
             .insert_resource(CameraState { zoom: 1.0 })
+            .insert_resource(AimDirection::default())
             .insert_resource(SpatialGrid::default())
             .add_systems(
                 Update,
@@ -47,16 +48,19 @@ impl Plugin for SimulationPlugin {
                     culling_system,        // Remove far asteroids before physics
                     neighbor_counting_system,
                     particle_locking_system,
-                    player_control_system,          // WASD ship thrust/rotation
-                    projectile_fire_system,         // Spacebar fires projectiles
+                    player_force_reset_system, // Reset forces before input systems add to them
+                    player_control_system,     // WASD ship thrust/rotation
+                    gamepad_movement_system,   // Gamepad left stick movement + B reverse
+                    mouse_aim_system,          // Mouse cursor updates AimDirection
+                    projectile_fire_system,    // Space/click/right-stick fires projectiles
                     despawn_old_projectiles_system, // Expire old projectiles
-                    user_input_system,              // Left-click spawns asteroids; mouse wheel zoom
-                    camera_follow_system,           // Camera tracks player
-                    camera_zoom_system,             // Apply zoom scale to camera
-                    gizmo_rendering_system,         // Render asteroids + boundary
-                    player_gizmo_system,            // Render ship + projectiles
-                    stats_display_system,           // Render stats text
-                    player_oob_damping_system,      // Slow player outside cull radius
+                    user_input_system,         // Mouse wheel zoom
+                    camera_follow_system,      // Camera tracks player
+                    camera_zoom_system,        // Apply zoom scale to camera
+                    gizmo_rendering_system,    // Render asteroids + boundary
+                    player_gizmo_system,       // Render ship + aim indicator + projectiles
+                    stats_display_system,      // Render stats text
+                    player_oob_damping_system, // Slow player outside cull radius
                     player_collision_damage_system, // Player takes damage from asteroids
                 ),
             )
@@ -192,37 +196,36 @@ pub fn nbody_gravity_system(
     }
 }
 
-/// Handle user input: left-click spawns asteroids; mouse wheel adjusts zoom.
-/// Arrow-key panning has been removed — the camera now follows the player ship.
-pub fn user_input_system(
-    mut commands: Commands,
-    mut camera_state: ResMut<CameraState>,
-    q_player: Query<&Transform, With<crate::player::Player>>,
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut scroll_evr: EventReader<MouseWheel>,
-    windows: Query<&Window>,
-) {
-    let window = windows.single();
+/// Updates `AimDirection` every frame from the mouse cursor position.
+/// The player is always at the screen centre (camera follows them), so the
+/// normalised screen-space offset from the centre IS the aim direction in world space.
+pub fn mouse_aim_system(mut aim: ResMut<AimDirection>, windows: Query<&Window>) {
+    let Ok(window) = windows.get_single() else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
 
-    // Spawning: left-click → spawn asteroid at world position under cursor.
-    // World position accounts for player-camera offset and current zoom.
-    if let Some(cursor_pos) = window.cursor_position() {
-        let norm_x = (cursor_pos.x - window.width() / 2.0) * camera_state.zoom;
-        let norm_y = -(cursor_pos.y - window.height() / 2.0) * camera_state.zoom;
-
-        // Camera is centred on the player, so world = player_pos + screen_offset
-        let player_pos = q_player
-            .get_single()
-            .map(|t| t.translation.truncate())
-            .unwrap_or(Vec2::ZERO);
-
-        let world_pos = player_pos + Vec2::new(norm_x, norm_y);
-
-        if buttons.just_pressed(MouseButton::Left) {
-            crate::asteroid::spawn_asteroid(&mut commands, world_pos, Color::WHITE, 0);
-        }
+    // Compute the direction from the window centre toward the cursor.
+    // Because the camera follows the player, this is identical to the world-space
+    // direction from the player to the cursor (zoom scale cancels on .normalize()).
+    let offset = Vec2::new(
+        cursor.x - window.width() / 2.0,
+        -(cursor.y - window.height() / 2.0), // flip Y: Bevy world +Y = screen up
+    );
+    let dir = offset.normalize_or_zero();
+    if dir.length_squared() > 0.0 {
+        aim.0 = dir;
     }
+}
 
+/// Handle user input: mouse wheel adjusts zoom.
+/// Left-click now fires projectiles (handled in `projectile_fire_system`).
+pub fn user_input_system(
+    mut camera_state: ResMut<CameraState>,
+    mut scroll_evr: EventReader<MouseWheel>,
+) {
     // Zoom: mouse wheel (zoom value is applied each frame in camera_zoom_system)
     for ev in scroll_evr.read() {
         let delta = ev.y;
