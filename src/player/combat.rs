@@ -309,13 +309,10 @@ pub fn projectile_asteroid_hit_system(
                         Color::rgb(grey, grey, grey),
                         half_size.max(1),
                     );
-                    commands.entity(new_ent).insert((
-                        Velocity {
-                            linvel: split_vel,
-                            angvel: ang_vel,
-                        },
-                        ActiveCollisionTypes::DYNAMIC_KINEMATIC,
-                    ));
+                    commands.entity(new_ent).insert(Velocity {
+                        linvel: split_vel,
+                        angvel: ang_vel,
+                    });
                 }
             }
 
