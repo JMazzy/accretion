@@ -3,7 +3,7 @@
 use crate::asteroid::{
     compute_convex_hull_from_points, spawn_asteroid_with_vertices, AsteroidSize, Vertices,
 };
-use bevy::input::gamepad::{GamepadAxis, GamepadAxisType, GamepadButton, GamepadButtonType};
+use bevy::input::gamepad::{GamepadAxis, GamepadAxisType, GamepadButton, GamepadButtonType, GamepadConnection, GamepadConnectionEvent};
 use bevy::input::mouse::MouseButton;
 use bevy::input::Axis;
 use bevy::prelude::*;
@@ -77,6 +77,11 @@ impl Default for AimDirection {
         Self(Vec2::Y) // ship starts pointing up
     }
 }
+
+/// Tracks which gamepad was most recently connected so we always prefer the real gamepad
+/// over non-gamepad HID devices (e.g. RGB controllers) that Linux exposes as joysticks.
+#[derive(Resource, Default)]
+pub struct PreferredGamepad(pub Option<Gamepad>);
 
 /// Attached to each projectile; stores its age in seconds.
 #[derive(Component)]
@@ -172,22 +177,54 @@ pub fn player_control_system(
     // If neither A nor D, let angular damping handle slow-down naturally
 }
 
+// ── Gamepad connection handler ────────────────────────────────────────────────
+
+/// Logs gamepad connection/disconnection events for debugging purposes.
+pub fn gamepad_connection_system(
+    mut events: EventReader<GamepadConnectionEvent>,
+    mut preferred: ResMut<PreferredGamepad>,
+) {
+    for event in events.read() {
+        match &event.connection {
+            GamepadConnection::Connected(_info) => {
+                // Always prefer the most recently connected gamepad so that
+                // non-gamepad HID devices (e.g. ASRock LED controller) which
+                // connect first are superseded by the real gamepad.
+                preferred.0 = Some(event.gamepad);
+                info!("[gamepad] Gamepad {} connected (now preferred)", event.gamepad.id);
+            }
+            GamepadConnection::Disconnected => {
+                info!("[gamepad] Gamepad {} disconnected", event.gamepad.id);
+                // If our preferred gamepad disconnected, clear it; a reconnect
+                // (e.g. mode switch) will set it again via the Connected branch.
+                if preferred.0 == Some(event.gamepad) {
+                    preferred.0 = None;
+                }
+            }
+        }
+    }
+}
+
 // ── Gamepad movement system ───────────────────────────────────────────────────
 
 /// Twin-stick gamepad movement:
-/// - **Left stick**: rotates the ship at a fixed angular speed toward the stick direction,
-///   then applies forward thrust once roughly aligned (within ~0.5 rad).
+/// - **Left stick**: rotates the ship at a fixed angular speed toward the stick direction
+///   while simultaneously applying forward thrust. Magnitude of the stick scales the thrust.
 /// - **B button (East)**: applies reverse thrust instead while held.
 pub fn gamepad_movement_system(
     mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
-    gamepads: Res<Gamepads>,
+    preferred: Res<PreferredGamepad>,
     axes: Res<Axis<GamepadAxis>>,
     buttons: Res<ButtonInput<GamepadButton>>,
 ) {
     let Ok((transform, mut force, mut velocity)) = q.get_single_mut() else {
         return;
     };
-    let Some(gamepad) = gamepads.iter().next() else {
+
+    // Use the most recently connected gamepad (set by gamepad_connection_system).
+    // This ensures non-gamepad HID devices that happen to connect first (e.g.
+    // RGB LED controllers) are never used for ship control.
+    let Some(gamepad) = preferred.0 else {
         return;
     };
 
@@ -226,16 +263,17 @@ pub fn gamepad_movement_system(
         0.0
     };
 
-    // Apply thrust only when roughly aligned; B (East) reverses
+    // Apply thrust always when stick is held; B (East) reverses
     let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
     let reverse = buttons.pressed(GamepadButton::new(gamepad, GamepadButtonType::East));
 
     if reverse {
         force.force -= forward * REVERSE_FORCE * left_stick.length();
-    } else if angle_diff.abs() < 0.5 {
-        // Only thrust when within ~30 ° of the target to avoid fighting rotation
+    } else {
+        // Apply thrust in the forward direction, scaled by stick magnitude
         force.force += forward * THRUST_FORCE * left_stick.length();
     }
+    
 }
 
 // ── Projectile fire system ───────────────────────────────────────────────────
@@ -251,7 +289,7 @@ pub fn projectile_fire_system(
     q_player: Query<&Transform, With<Player>>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
-    gamepads: Res<Gamepads>,
+    preferred: Res<PreferredGamepad>,
     axes: Res<Axis<GamepadAxis>>,
     mut aim: ResMut<AimDirection>,
     mut cooldown: ResMut<PlayerFireCooldown>,
@@ -268,7 +306,7 @@ pub fn projectile_fire_system(
     const GP_FIRE_THRESHOLD: f32 = 0.5;
     let mut gamepad_wants_fire = false;
 
-    if let Some(gamepad) = gamepads.iter().next() {
+    if let Some(gamepad) = preferred.0 {
         let rx = axes
             .get(GamepadAxis::new(gamepad, GamepadAxisType::RightStickX))
             .unwrap_or(0.0);

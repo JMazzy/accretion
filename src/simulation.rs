@@ -4,10 +4,10 @@ use crate::asteroid::{
     compute_convex_hull_from_points, Asteroid, AsteroidSize, NeighborCount, Vertices,
 };
 use crate::player::{
-    camera_follow_system, despawn_old_projectiles_system, gamepad_movement_system,
-    player_collision_damage_system, player_control_system, player_force_reset_system,
-    player_gizmo_system, player_oob_damping_system, projectile_asteroid_hit_system,
-    projectile_fire_system, AimDirection,
+    camera_follow_system, despawn_old_projectiles_system, gamepad_connection_system,
+    gamepad_movement_system, player_collision_damage_system, player_control_system,
+    player_force_reset_system, player_gizmo_system, player_oob_damping_system,
+    projectile_asteroid_hit_system, projectile_fire_system, AimDirection, PreferredGamepad,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -40,6 +40,7 @@ impl Plugin for SimulationPlugin {
         app.insert_resource(SimulationStats::default())
             .insert_resource(CameraState { zoom: 1.0 })
             .insert_resource(AimDirection::default())
+            .insert_resource(PreferredGamepad::default())
             .insert_resource(SpatialGrid::default())
             .add_systems(
                 Update,
@@ -48,7 +49,9 @@ impl Plugin for SimulationPlugin {
                     culling_system,        // Remove far asteroids before physics
                     neighbor_counting_system,
                     particle_locking_system,
-                    player_force_reset_system, // Reset forces before input systems add to them
+                    gamepad_connection_system, // Update PreferredGamepad on connect/disconnect
+                    // Force must be reset BEFORE any input system adds to it; chain enforces order.
+                    player_force_reset_system,
                     player_control_system,     // WASD ship thrust/rotation
                     gamepad_movement_system,   // Gamepad left stick movement + B reverse
                     mouse_aim_system,          // Mouse cursor updates AimDirection
@@ -62,7 +65,8 @@ impl Plugin for SimulationPlugin {
                     stats_display_system,      // Render stats text
                     player_oob_damping_system, // Slow player outside cull radius
                     player_collision_damage_system, // Player takes damage from asteroids
-                ),
+                )
+                    .chain(),
             )
             // Rebuild grid then run gravity in FixedUpdate (same schedule as Rapier physics)
             // Grid rebuild only here — Update systems reuse the last FixedUpdate grid
