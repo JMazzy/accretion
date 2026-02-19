@@ -4,14 +4,14 @@
 
 ### Keyboard + Mouse (Twin-Stick)
 
-| Input | Action |
-| ------- | -------- |
-| **W** | Thrust forward (ship-facing direction) |
-| **S** | Thrust backward |
-| **A** | Rotate ship left |
-| **D** | Rotate ship right |
+| Input                       | Action                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------ |
+| **W**                       | Thrust forward (ship-facing direction)                                         |
+| **S**                       | Thrust backward                                                                |
+| **A**                       | Rotate ship left                                                               |
+| **D**                       | Rotate ship right                                                              |
 | **Space** or **Left-click** | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
-| **Mouse wheel** | Zoom in / out |
+| **Mouse wheel**             | Zoom in / out                                                                  |
 
 - **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
 - An **orange aim indicator** (line + dot) extends from the ship in the current fire direction.
@@ -19,11 +19,11 @@
 
 ### Gamepad (Twin-Stick)
 
-| Input | Action |
-| ------- | -------- |
-| **Left stick** | Rotate ship toward stick direction at fixed speed, then thrust forward |
-| **Right stick** | Aim and auto-fire projectiles in stick direction |
-| **B button** | Brake — applies strong velocity damping each frame while held |
+| Input           | Action                                                                 |
+| --------------- | ---------------------------------------------------------------------- |
+| **Left stick**  | Rotate ship toward stick direction at fixed speed, then thrust forward |
+| **Right stick** | Aim and auto-fire projectiles in stick direction                       |
+| **B button**    | Brake — applies strong velocity damping each frame while held          |
 
 - **Left stick movement**: the ship rotates at a fixed angular speed until aligned with the stick direction, then applies forward thrust proportional to stick magnitude. Thrust is suppressed while rotating sharply (> 0.5 rad off-target) to avoid fighting the turn.
 - **B button brake**: while held, multiplies both linear and angular velocity by `GAMEPAD_BRAKE_DAMPING` (~0.82) every frame, bringing the ship to a near-stop in roughly half a second at 60 fps. Forward thrust is independent and can still be applied simultaneously via the left stick.
@@ -158,11 +158,11 @@ This ensures accurate spawning regardless of camera state.
 
 The player ship has a health pool that depletes when struck by asteroids at high relative speeds.
 
-| Property | Value | Description |
-| ---------- | ------- | ------------- |
-| `PLAYER_MAX_HP` | 100.0 | Full health at spawn |
-| `DAMAGE_SPEED_THRESHOLD` | 30.0 u/s | Minimum relative speed before damage is dealt |
-| `INVINCIBILITY_DURATION` | 0.5 s | Immunity period after each hit to prevent rapid damage stacking |
+| Property                 | Value    | Description                                                     |
+| ------------------------ | -------- | --------------------------------------------------------------- |
+| `PLAYER_MAX_HP`          | 100.0    | Full health at spawn                                            |
+| `DAMAGE_SPEED_THRESHOLD` | 30.0 u/s | Minimum relative speed before damage is dealt                   |
+| `INVINCIBILITY_DURATION` | 0.5 s    | Immunity period after each hit to prevent rapid damage stacking |
 
 **Damage formula**: `damage = (relative_speed − 30.0) × 0.5` — slow grazes deal no damage; high-speed impacts deal proportionally more.
 
@@ -174,24 +174,24 @@ The player ship has a health pool that depletes when struck by asteroids at high
 
 Projectiles interact with asteroids based on the target's `AsteroidSize` unit count:
 
-| Size (units) | Behaviour |
-| --- | --- |
-| 0–1 | **Destroy** — asteroid removed immediately |
-| 2–3 | **Scatter** — despawns and spawns `N` unit fragments at evenly-spaced angles with random velocity jitter |
-| 4–8 | **Split** — cut roughly in half along the projectile's impact axis; each half retains its velocity plus a separation impulse |
-| ≥9 | **Chip** — the hull vertex closest to impact is removed; a single unit fragment is ejected outward; the asteroid shrinks by 1 unit |
+| Size (units) | Behaviour                                                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 0–1          | **Destroy** — asteroid removed immediately                                                                                         |
+| 2–3          | **Scatter** — despawns and spawns `N` unit fragments at evenly-spaced angles with random velocity jitter                           |
+| 4–8          | **Split** — cut roughly in half along the projectile's impact axis; each half retains its velocity plus a separation impulse       |
+| ≥9           | **Chip** — the hull vertex closest to impact is removed; a single unit fragment is ejected outward; the asteroid shrinks by 1 unit |
 
 In all cases the projectile is despawned on contact.
-**Mass → shape rules (split and chip only):**  Fragments produced by splitting or chipping must have a minimum number of polygon sides matching their mass.  Merged composites are exempt.
+**Mass → shape rules (split and chip only):** Fragments produced by splitting or chipping must have a minimum number of polygon sides matching their mass. Merged composites are exempt.
 
 | Fragment mass | Min shape | Min vertices |
-| --- | --- | --- |
-| 1 | triangle | 3 |
-| 2–4 | square | 4 |
-| 5 | pentagon | 5 |
-| ≥6 | hexagon | 6 |
+| ------------- | --------- | ------------ |
+| 1             | triangle  | 3            |
+| 2–4           | square    | 4            |
+| 5             | pentagon  | 5            |
+| ≥6            | hexagon   | 6            |
 
-If the geometric split produces fewer vertices than the minimum for that mass (e.g. a triangular half from a size-4 asteroid), the fragment is replaced with the canonical regular polygon centred at the computed split position.  Fragments may have *more* sides than the minimum — the raw hull is kept whenever it already meets or exceeds the requirement.
+If the geometric split produces fewer vertices than the minimum for that mass (e.g. a triangular half from a size-4 asteroid), the fragment is replaced with the canonical regular polygon centred at the computed split position. Fragments may have _more_ sides than the minimum — the raw hull is kept whenever it already meets or exceeds the requirement.
 **Split geometry**: For the 4–8 case the split plane passes through the asteroid centroid and is aligned with the projectile trajectory direction, so the two halves separate naturally along the incoming fire direction.
 
 **Chip geometry**: The remaining asteroid recomputes its convex hull after removing the impacted vertex, so the outline incrementally shrinks with each chip hit.
