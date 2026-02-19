@@ -1,14 +1,18 @@
 //! Player character: space ship entity, controls, projectile firing, and camera follow.
 
+use crate::asteroid::{
+    compute_convex_hull_from_points, spawn_asteroid_with_vertices, AsteroidSize, Vertices,
+};
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+use rand::Rng;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /// Forward thrust force applied per frame while W is held.
-const THRUST_FORCE: f32 = 600.0;
+const THRUST_FORCE: f32 = 120.0;
 /// Reverse thrust (S key) is weaker than forward.
-const REVERSE_FORCE: f32 = 300.0;
+const REVERSE_FORCE: f32 = 60.0;
 /// Angular velocity (rad/s) applied while A or D is held.
 const ROTATION_SPEED: f32 = 3.0;
 /// Speed at which projectiles travel (units/s).
@@ -17,12 +21,41 @@ const PROJECTILE_SPEED: f32 = 500.0;
 const FIRE_COOLDOWN: f32 = 0.2;
 /// Seconds before a projectile is despawned.
 const PROJECTILE_LIFETIME: f32 = 3.0;
+/// Asteroid cull radius — player gets damped beyond this.
+const OOB_RADIUS: f32 = 1000.0;
+/// Velocity decay per frame applied when player is outside OOB_RADIUS.
+const OOB_DAMPING: f32 = 0.97;
+/// Maximum player HP.
+const PLAYER_MAX_HP: f32 = 100.0;
+/// Relative speed (u/s) above which asteroid impacts deal damage.
+const DAMAGE_SPEED_THRESHOLD: f32 = 30.0;
+/// Seconds of invincibility after taking a hit.
+const INVINCIBILITY_DURATION: f32 = 0.5;
 
 // ── Components / Resources ───────────────────────────────────────────────────
 
 /// Marker component for the player ship entity.
 #[derive(Component)]
 pub struct Player;
+
+/// Tracks player health and invincibility state.
+#[derive(Component)]
+pub struct PlayerHealth {
+    pub hp: f32,
+    pub max_hp: f32,
+    /// Remaining seconds of invincibility after a hit.
+    pub inv_timer: f32,
+}
+
+impl Default for PlayerHealth {
+    fn default() -> Self {
+        Self {
+            hp: PLAYER_MAX_HP,
+            max_hp: PLAYER_MAX_HP,
+            inv_timer: 0.0,
+        }
+    }
+}
 
 /// Tracks when the player last fired so we can enforce the cooldown.
 #[derive(Resource, Default)]
@@ -42,12 +75,12 @@ pub struct Projectile {
 /// The shape is a dart: a long nose at the top and two swept-back fins at the bottom.
 fn ship_vertices() -> Vec<Vec2> {
     vec![
-        Vec2::new(0.0, 12.0),    // nose
-        Vec2::new(-8.0, -8.0),   // left fin tip
-        Vec2::new(-3.0, -4.0),   // left fin inner
-        Vec2::new(0.0, -10.0),   // tail notch
-        Vec2::new(3.0, -4.0),    // right fin inner
-        Vec2::new(8.0, -8.0),    // right fin tip
+        Vec2::new(0.0, 12.0),  // nose
+        Vec2::new(-8.0, -8.0), // left fin tip
+        Vec2::new(-3.0, -4.0), // left fin inner
+        Vec2::new(0.0, -10.0), // tail notch
+        Vec2::new(3.0, -4.0),  // right fin inner
+        Vec2::new(8.0, -8.0),  // right fin tip
     ]
 }
 
@@ -58,6 +91,7 @@ pub fn spawn_player(mut commands: Commands) {
     // Ship collider as a small ball (simpler than convex polygon, fine for v1)
     commands.spawn((
         Player,
+        PlayerHealth::default(),
         // Physics
         RigidBody::Dynamic,
         Collider::ball(8.0),
@@ -68,9 +102,10 @@ pub fn spawn_player(mut commands: Commands) {
             angular_damping: 3.0,
         },
         Restitution::coefficient(0.3),
+        // GROUP_2: collides with GROUP_1 (asteroids) only, not projectiles
         CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_2,
-            bevy_rapier2d::geometry::Group::GROUP_2,
+            bevy_rapier2d::geometry::Group::GROUP_1,
         ),
         ActiveEvents::COLLISION_EVENTS,
         // Transform / visibility
@@ -144,17 +179,21 @@ pub fn projectile_fire_system(
             Projectile { age: 0.0 },
             TransformBundle::from_transform(Transform::from_translation(spawn_pos.extend(0.0))),
             VisibilityBundle::default(),
-            // Pure kinematic — no gravity / collisions with asteroids
             RigidBody::KinematicVelocityBased,
             Velocity {
                 linvel: forward * PROJECTILE_SPEED,
                 angvel: 0.0,
             },
-            // Belong to group 3; collide with nothing (no matching groups)
+            // Small ball collider so Rapier can detect intersections
+            Collider::ball(2.0),
+            // Belong to GROUP_3; collide with GROUP_1 (asteroids) only
             CollisionGroups::new(
                 bevy_rapier2d::geometry::Group::GROUP_3,
-                bevy_rapier2d::geometry::Group::NONE,
+                bevy_rapier2d::geometry::Group::GROUP_1,
             ),
+            // Kinematic↔Dynamic contacts are disabled by default; enable them
+            ActiveCollisionTypes::DYNAMIC_KINEMATIC,
+            ActiveEvents::COLLISION_EVENTS,
         ));
     }
 }
@@ -198,18 +237,21 @@ pub fn camera_follow_system(
 
 // ── Rendering ────────────────────────────────────────────────────────────────
 
-/// Draw the player ship and all active projectiles using Bevy gizmos.
+/// Draw the player ship, health bar, and all active projectiles using Bevy gizmos.
 pub fn player_gizmo_system(
     mut gizmos: Gizmos,
-    q_player: Query<&Transform, With<Player>>,
+    q_player: Query<(&Transform, &PlayerHealth), With<Player>>,
     q_projectiles: Query<&Transform, With<Projectile>>,
 ) {
     // ── Ship ──────────────────────────────────────────────────────────────────
-    if let Ok(transform) = q_player.get_single() {
+    if let Ok((transform, health)) = q_player.get_single() {
         let pos = transform.translation.truncate();
         let rot = transform.rotation;
         let verts = ship_vertices();
-        let ship_color = Color::rgb(0.2, 0.8, 1.0); // cyan-ish
+
+        // Tint ship cyan when healthy; shift toward red as health drops
+        let hp_frac = (health.hp / health.max_hp).clamp(0.0, 1.0);
+        let ship_color = Color::rgb(1.0 - hp_frac * 0.8, hp_frac * 0.6 + 0.2, hp_frac);
 
         // Draw ship outline
         for i in 0..verts.len() {
@@ -223,13 +265,359 @@ pub fn player_gizmo_system(
         // Direction indicator: bright line from center toward the nose
         let nose_world = pos + rot.mul_vec3(Vec3::new(0.0, 12.0, 0.0)).truncate();
         gizmos.line_2d(pos, nose_world, Color::WHITE);
+
+        // ── Health bar (above the ship, always axis-aligned) ──────────────────
+        let bar_half = 20.0;
+        let bar_y_offset = 18.0;
+        let bar_start = pos + Vec2::new(-bar_half, bar_y_offset);
+        let bar_end_full = pos + Vec2::new(bar_half, bar_y_offset);
+        let bar_end_hp = bar_start + Vec2::new(bar_half * 2.0 * hp_frac, 0.0);
+        // Background (dark red)
+        gizmos.line_2d(bar_start, bar_end_full, Color::rgba(0.4, 0.0, 0.0, 0.8));
+        // Fill (green → red based on hp)
+        if hp_frac > 0.0 {
+            let fill_color = Color::rgb(1.0 - hp_frac, hp_frac, 0.0);
+            gizmos.line_2d(bar_start, bar_end_hp, fill_color);
+        }
     }
 
     // ── Projectiles ───────────────────────────────────────────────────────────
     let proj_color = Color::rgb(1.0, 0.9, 0.2); // yellow
     for transform in q_projectiles.iter() {
         let p = transform.translation.truncate();
-        // Small filled circle approximated by a circle_2d gizmo
         gizmos.circle_2d(p, 3.0, proj_color);
     }
+}
+
+// ── Out-of-bounds damping ─────────────────────────────────────────────────────
+
+/// Applies extra velocity damping to the player when they drift outside the cull radius.
+/// This prevents the player from escaping the simulation area easily.
+pub fn player_oob_damping_system(mut q: Query<(&Transform, &mut Velocity), With<Player>>) {
+    let Ok((transform, mut velocity)) = q.get_single_mut() else {
+        return;
+    };
+
+    let dist = transform.translation.truncate().length();
+    if dist > OOB_RADIUS {
+        // Ramp damping smoothly: 0% at OOB_RADIUS, 3% per frame at OOB_RADIUS + 200
+        let exceed = (dist - OOB_RADIUS).min(200.0) / 200.0;
+        let factor = 1.0 - exceed * (1.0 - OOB_DAMPING);
+        velocity.linvel *= factor;
+        velocity.angvel *= factor;
+    }
+}
+
+// ── Player collision damage ───────────────────────────────────────────────────
+
+/// Detects asteroid-player collisions and applies proportional damage.
+/// Uses invincibility frames to prevent damage spam on sustained contact.
+pub fn player_collision_damage_system(
+    mut commands: Commands,
+    mut q_player: Query<(Entity, &mut PlayerHealth, &Velocity), With<Player>>,
+    q_asteroids: Query<&Velocity, With<crate::asteroid::Asteroid>>,
+    rapier_context: Res<RapierContext>,
+    time: Res<Time>,
+) {
+    let Ok((player_entity, mut health, player_vel)) = q_player.get_single_mut() else {
+        return;
+    };
+
+    // Tick down invincibility
+    health.inv_timer = (health.inv_timer - time.delta_seconds()).max(0.0);
+    if health.inv_timer > 0.0 {
+        return;
+    }
+
+    let mut total_damage = 0.0_f32;
+
+    for contact_pair in rapier_context.contact_pairs() {
+        if !contact_pair.has_any_active_contacts() {
+            continue;
+        }
+        let e1 = contact_pair.collider1();
+        let e2 = contact_pair.collider2();
+
+        // Identify which entity is the player and which is the asteroid
+        let asteroid_entity = if e1 == player_entity {
+            e2
+        } else if e2 == player_entity {
+            e1
+        } else {
+            continue;
+        };
+
+        if let Ok(ast_vel) = q_asteroids.get(asteroid_entity) {
+            let rel_speed = (player_vel.linvel - ast_vel.linvel).length();
+            if rel_speed > DAMAGE_SPEED_THRESHOLD {
+                total_damage += (rel_speed - DAMAGE_SPEED_THRESHOLD) * 0.5;
+            }
+        }
+    }
+
+    if total_damage > 0.0 {
+        health.hp -= total_damage;
+        health.inv_timer = INVINCIBILITY_DURATION;
+        println!(
+            "Player hit! HP: {:.1}/{:.1}",
+            health.hp.max(0.0),
+            health.max_hp
+        );
+        if health.hp <= 0.0 {
+            commands.entity(player_entity).despawn();
+            println!("Player ship destroyed!");
+        }
+    }
+}
+
+// ── Projectile–Asteroid hit system ───────────────────────────────────────────
+
+/// Processes projectile-asteroid collision events.
+///
+/// Size rules:
+///  - Size 1     → asteroid destroyed.
+///  - Size 2–3   → splits into N unit triangles.
+///  - Size 4–8   → splits roughly in half along the impact axis.
+///  - Size ≥9    → chip off 1 unit from the impact vertex; asteroid shrinks by 1.
+pub fn projectile_asteroid_hit_system(
+    mut commands: Commands,
+    mut collision_events: EventReader<CollisionEvent>,
+    q_asteroids: Query<
+        (&AsteroidSize, &Transform, &Velocity, &Vertices),
+        With<crate::asteroid::Asteroid>,
+    >,
+    q_projectiles: Query<Entity, With<Projectile>>,
+    q_proj_transforms: Query<&Transform, With<Projectile>>,
+) {
+    let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
+    let mut processed_projectiles: std::collections::HashSet<Entity> = Default::default();
+
+    for event in collision_events.read() {
+        let (e1, e2) = match event {
+            CollisionEvent::Started(e1, e2, _) => (*e1, *e2),
+            CollisionEvent::Stopped(..) => continue,
+        };
+
+        // Identify projectile and asteroid from the pair
+        let (proj_entity, asteroid_entity) =
+            if q_projectiles.get(e1).is_ok() && q_asteroids.get(e2).is_ok() {
+                (e1, e2)
+            } else if q_projectiles.get(e2).is_ok() && q_asteroids.get(e1).is_ok() {
+                (e2, e1)
+            } else {
+                continue;
+            };
+
+        // Skip already-processed entities this frame
+        if processed_projectiles.contains(&proj_entity)
+            || processed_asteroids.contains(&asteroid_entity)
+        {
+            continue;
+        }
+
+        let Ok((size, transform, velocity, vertices)) = q_asteroids.get(asteroid_entity) else {
+            continue; // Asteroid may have been despawned already
+        };
+
+        processed_projectiles.insert(proj_entity);
+        processed_asteroids.insert(asteroid_entity);
+
+        // Always despawn the projectile
+        commands.entity(proj_entity).despawn();
+
+        let pos = transform.translation.truncate();
+        let rot = transform.rotation;
+        let vel = velocity.linvel;
+        let ang_vel = velocity.angvel;
+        let n = size.0;
+
+        // Projectile world position — used to find the true impact vertex.
+        // Falls back to the asteroid center if the transform is already gone.
+        let proj_pos = q_proj_transforms
+            .get(proj_entity)
+            .map(|t| t.translation.truncate())
+            .unwrap_or(pos);
+
+        // World-space hull vertices (needed by split and chip paths)
+        let world_verts: Vec<Vec2> = vertices
+            .0
+            .iter()
+            .map(|v| pos + rot.mul_vec3(v.extend(0.0)).truncate())
+            .collect();
+
+        match n {
+            // ── Destroy ───────────────────────────────────────────────────────
+            0 | 1 => {
+                commands.entity(asteroid_entity).despawn();
+            }
+
+            // ── Scatter into unit fragments ───────────────────────────────────
+            2..=3 => {
+                commands.entity(asteroid_entity).despawn();
+                let mut rng = rand::thread_rng();
+                for i in 0..n {
+                    let angle = std::f32::consts::TAU * (i as f32 / n as f32);
+                    let scatter_offset = Vec2::new(angle.cos(), angle.sin()) * 8.0;
+                    let scatter_vel =
+                        vel + Vec2::new(rng.gen_range(-30.0..30.0), rng.gen_range(-30.0..30.0));
+                    spawn_unit_fragment(&mut commands, pos + scatter_offset, scatter_vel, ang_vel);
+                }
+            }
+
+            // ── Split in half ─────────────────────────────────────────────────
+            4..=8 => {
+                // Split along the axis perpendicular to the impact direction so
+                // the two halves separate naturally away from each other.
+                let impact_dir = (pos - proj_pos).normalize_or_zero();
+                // Splitting plane passes through the asteroid centroid;
+                // axis is perpendicular to the impact direction.
+                let split_axis = Vec2::new(-impact_dir.y, impact_dir.x);
+                let (front_world, back_world) = split_convex_polygon(&world_verts, pos, split_axis);
+
+                commands.entity(asteroid_entity).despawn();
+
+                let size_a = n / 2;
+                let size_b = n - size_a;
+                let mut rng = rand::thread_rng();
+
+                for (half_verts, half_size) in [(&front_world, size_a), (&back_world, size_b)] {
+                    if half_verts.len() < 3 {
+                        continue;
+                    }
+                    let hull = match compute_convex_hull_from_points(half_verts) {
+                        Some(h) if h.len() >= 3 => h,
+                        _ => continue,
+                    };
+                    let centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
+                    let local: Vec<Vec2> = hull.iter().map(|v| *v - centroid).collect();
+                    let grey = 0.4 + rand::random::<f32>() * 0.3;
+                    // Push each half outward from the split line along the impact direction
+                    let push_sign = if (centroid - pos).dot(impact_dir) >= 0.0 {
+                        1.0
+                    } else {
+                        -1.0
+                    };
+                    let split_vel = vel
+                        + impact_dir * push_sign * 25.0
+                        + Vec2::new(rng.gen_range(-10.0..10.0), rng.gen_range(-10.0..10.0));
+                    let new_ent = spawn_asteroid_with_vertices(
+                        &mut commands,
+                        centroid,
+                        &local,
+                        Color::rgb(grey, grey, grey),
+                        half_size.max(1),
+                    );
+                    commands.entity(new_ent).insert(Velocity {
+                        linvel: split_vel,
+                        angvel: ang_vel,
+                    });
+                }
+            }
+
+            // ── Chip ──────────────────────────────────────────────────────────
+            _ => {
+                // Find the hull vertex closest to the projectile — the true impact point.
+                let closest_idx = world_verts
+                    .iter()
+                    .enumerate()
+                    .min_by(|(_, a), (_, b)| {
+                        a.distance(proj_pos)
+                            .partial_cmp(&b.distance(proj_pos))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+
+                // Spawn the chip at the impact vertex, flying outward from the surface
+                let chip_pos = world_verts[closest_idx];
+                let chip_dir = (chip_pos - pos).normalize_or_zero();
+                let mut rng = rand::thread_rng();
+                let chip_vel = vel
+                    + chip_dir * 40.0
+                    + Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
+                spawn_unit_fragment(&mut commands, chip_pos, chip_vel, 0.0);
+
+                // Reduce the original asteroid: remove the impact vertex, recompute hull
+                let mut new_world_verts = world_verts;
+                if new_world_verts.len() > 3 {
+                    new_world_verts.remove(closest_idx);
+                }
+
+                let hull_world = compute_convex_hull_from_points(&new_world_verts)
+                    .unwrap_or(new_world_verts.clone());
+                let hull_centroid: Vec2 =
+                    hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
+                let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - hull_centroid).collect();
+
+                commands.entity(asteroid_entity).despawn();
+
+                let grey = 0.4 + rand::random::<f32>() * 0.3;
+                let new_ent = spawn_asteroid_with_vertices(
+                    &mut commands,
+                    hull_centroid,
+                    &new_local,
+                    Color::rgb(grey, grey, grey),
+                    n - 1,
+                );
+                commands.entity(new_ent).insert(Velocity {
+                    linvel: vel,
+                    angvel: ang_vel,
+                });
+            }
+        }
+    }
+}
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+/// Split a convex polygon (world-space vertices) with a plane that passes through
+/// `origin` and whose normal is `axis`.
+///
+/// Returns `(front, back)` where `front` contains vertices with
+/// `dot(v - origin, axis) >= 0` and `back` the rest.
+/// Both halves include the two edge-intersection points so each remains closed.
+fn split_convex_polygon(verts: &[Vec2], origin: Vec2, axis: Vec2) -> (Vec<Vec2>, Vec<Vec2>) {
+    let mut front: Vec<Vec2> = Vec::new();
+    let mut back: Vec<Vec2> = Vec::new();
+    let n = verts.len();
+
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        let da = (a - origin).dot(axis);
+        let db = (b - origin).dot(axis);
+
+        if da >= 0.0 {
+            front.push(a);
+        } else {
+            back.push(a);
+        }
+
+        // Edge straddles the split plane — compute and share the intersection point
+        if (da > 0.0 && db < 0.0) || (da < 0.0 && db > 0.0) {
+            let t = da / (da - db);
+            let intersect = a + (b - a) * t;
+            front.push(intersect);
+            back.push(intersect);
+        }
+    }
+
+    (front, back)
+}
+
+/// Spawn a single unit-size (triangle) asteroid fragment with the given velocity.
+fn spawn_unit_fragment(commands: &mut Commands, pos: Vec2, velocity: Vec2, angvel: f32) {
+    let grey = 0.4 + rand::random::<f32>() * 0.4;
+    let side = 6.0_f32;
+    let h = side * 3.0_f32.sqrt() / 2.0;
+    let verts = vec![
+        Vec2::new(0.0, h / 2.0),
+        Vec2::new(-side / 2.0, -h / 2.0),
+        Vec2::new(side / 2.0, -h / 2.0),
+    ];
+    let ent = spawn_asteroid_with_vertices(commands, pos, &verts, Color::rgb(grey, grey, grey), 1);
+    commands.entity(ent).insert(Velocity {
+        linvel: velocity,
+        angvel,
+    });
 }

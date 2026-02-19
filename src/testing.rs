@@ -49,8 +49,8 @@ pub fn spawn_test_two_triangles(mut commands: Commands, mut test_config: ResMut<
     // Spawn two triangles such that their edges ACTUALLY TOUCH at origin
     // Each extends ±3 units horizontally, so spawn at -3 and +3 to put edges at 0 and 0
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, 0.0), &vertices, grey);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, 0.0), &vertices, grey);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, 0.0), &vertices, grey, 1);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, 0.0), &vertices, grey, 1);
 
     println!("✓ Spawned test: Two triangles touching at edges (centers at ±3)");
 }
@@ -74,9 +74,9 @@ pub fn spawn_test_three_triangles(mut commands: Commands, mut test_config: ResMu
     // Spawn three triangles at positions forming a touching triangle cluster
     // Each extends ±3 units horizontally, so position them to form a touching hexagon
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, -3.0), &vertices, grey);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, -3.0), &vertices, grey);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 3.0), &vertices, grey);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, -3.0), &vertices, grey, 1);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, -3.0), &vertices, grey, 1);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 3.0), &vertices, grey, 1);
 
     println!("✓ Spawned test: Three triangles touching in cluster formation");
 }
@@ -97,8 +97,8 @@ pub fn spawn_test_gravity(mut commands: Commands, mut test_config: ResMut<TestCo
 
     // Spawn two asteroids FAR APART to test gravity attraction
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-50.0, 0.0), &vertices, grey);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(50.0, 0.0), &vertices, grey);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-50.0, 0.0), &vertices, grey, 1);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(50.0, 0.0), &vertices, grey, 1);
 
     println!("✓ Spawned test: Two distant asteroids for gravity attraction test");
 }
@@ -124,8 +124,8 @@ pub fn spawn_test_high_speed_collision(
 
     // Spawn two asteroids approaching each other at high speed
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-30.0, 0.0), &vertices, grey);
-    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(30.0, 0.0), &vertices, grey);
+    let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-30.0, 0.0), &vertices, grey, 1);
+    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(30.0, 0.0), &vertices, grey, 1);
 
     // Give them high velocities toward each other (15 u/s each = 30 u/s closing speed)
     commands.entity(e1).insert(Velocity {
@@ -158,8 +158,8 @@ pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<Test
 
     // Spawn two asteroids that will pass very close but not touch
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-40.0, 3.0), &vertices, grey);
-    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(40.0, -3.0), &vertices, grey);
+    let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-40.0, 3.0), &vertices, grey, 1);
+    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(40.0, -3.0), &vertices, grey, 1);
 
     // Give them velocities so they pass near each other
     commands.entity(e1).insert(Velocity {
@@ -190,8 +190,8 @@ pub fn spawn_test_gentle_approach(mut commands: Commands, mut test_config: ResMu
 
     // Spawn two asteroids closer together for faster gravity interaction
     let grey = Color::rgb(0.5, 0.5, 0.5);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-25.0, 0.0), &vertices, grey);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(25.0, 0.0), &vertices, grey);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-25.0, 0.0), &vertices, grey, 1);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(25.0, 0.0), &vertices, grey, 1);
 
     println!("✓ Spawned test: Slow gravity approach");
 }
@@ -218,10 +218,10 @@ pub fn spawn_test_culling_verification(
     let grey = Color::rgb(0.5, 0.5, 0.5);
 
     // Spawn asteroid 1 at center (stationary)
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey, 1);
 
     // Spawn asteroid 2 far away moving outward (will be culled at 1000 units)
-    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(950.0, 0.0), &vertices, grey);
+    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(950.0, 0.0), &vertices, grey, 1);
     commands.entity(e2).insert(Velocity {
         linvel: Vec2::new(10.0, 0.0), // Moving away from center
         angvel: 0.0,
@@ -264,6 +264,7 @@ pub fn spawn_test_mixed_size_asteroids(
         Vec2::new(0.0, 0.0),
         &vertices_large,
         grey_dark,
+        1,
     );
 
     // Spawn small asteroids at various distances around the large one
@@ -273,6 +274,7 @@ pub fn spawn_test_mixed_size_asteroids(
         Vec2::new(25.0, 0.0),
         &vertices_small,
         grey_light,
+        1,
     );
 
     // Distance 50
@@ -281,6 +283,7 @@ pub fn spawn_test_mixed_size_asteroids(
         Vec2::new(0.0, 50.0),
         &vertices_small,
         grey_light,
+        1,
     );
 
     // Distance 100 (within gravity range but far enough to have stable interaction)
@@ -289,6 +292,7 @@ pub fn spawn_test_mixed_size_asteroids(
         Vec2::new(-100.0, 0.0),
         &vertices_small,
         grey_light,
+        1,
     );
 
     // Distance 200 (far, minimal interaction)
@@ -297,6 +301,7 @@ pub fn spawn_test_mixed_size_asteroids(
         Vec2::new(0.0, -200.0),
         &vertices_small,
         grey_light,
+        1,
     );
 
     println!("✓ Spawned test: Mixed size asteroids (1 large + 4 small at distances 25/50/100/200)");
@@ -333,6 +338,7 @@ pub fn spawn_test_large_small_pair(mut commands: Commands, mut test_config: ResM
         Vec2::new(-30.0, 0.0),
         &vertices_large,
         grey_dark,
+        1,
     );
 
     // Spawn small asteroid at distance
@@ -341,6 +347,7 @@ pub fn spawn_test_large_small_pair(mut commands: Commands, mut test_config: ResM
         Vec2::new(30.0, 0.0),
         &vertices_small,
         grey_light,
+        1,
     );
 
     println!("✓ Spawned test: Large+small pair (60 units apart)");
@@ -365,10 +372,10 @@ pub fn spawn_test_gravity_boundary(mut commands: Commands, mut test_config: ResM
     let grey = Color::rgb(0.5, 0.5, 0.5);
 
     // Spawn asteroid 1 at center
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey);
+    spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey, 1);
 
     // Spawn asteroid 2 at exactly gravity max distance (300 units)
-    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(300.0, 0.0), &vertices, grey);
+    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(300.0, 0.0), &vertices, grey, 1);
 
     // Give tiny velocity outward (should barely be affected by gravity since at boundary)
     commands.entity(e2).insert(Velocity {
@@ -408,18 +415,19 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
 
     // Spawn large stationary asteroid at origin
     let large_entity =
-        spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &large_verts, grey);
+        spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &large_verts, grey, 1);
 
     // Spawn small asteroid that will pass by at ~50 unit distance
     // Position it to the left, moving right with enough offset to pass by
-    use crate::asteroid::{Asteroid, NeighborCount};
+    use crate::asteroid::{Asteroid, AsteroidSize, NeighborCount};
     use bevy_rapier2d::prelude::{
-        Collider, CollisionGroups, ExternalForce, Group, Restitution, RigidBody,
+        ActiveEvents, Collider, CollisionGroups, ExternalForce, Group, Restitution, RigidBody,
     };
 
     let small_entity = commands
         .spawn((
             Asteroid,
+            AsteroidSize(1),
             Vertices(small_verts.clone()),
             NeighborCount(0),
             RigidBody::Dynamic,
@@ -430,7 +438,11 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
                 angvel: 0.0,
             },
             ExternalForce::default(),
-            CollisionGroups::new(Group::GROUP_1, Group::GROUP_1),
+            ActiveEvents::COLLISION_EVENTS,
+            CollisionGroups::new(
+                Group::GROUP_1,
+                Group::GROUP_1 | Group::GROUP_2 | Group::GROUP_3,
+            ),
             TransformBundle::from_transform(Transform::from_xyz(-150.0, 50.0, 0.0)),
         ))
         .id();
@@ -478,7 +490,7 @@ pub fn spawn_test_perf_benchmark(mut commands: Commands, mut test_config: ResMut
         for col in 0..cols {
             let x = offset_x + col as f32 * spacing;
             let y = offset_y + row as f32 * spacing;
-            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey);
+            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey, 1);
         }
     }
 
@@ -629,7 +641,11 @@ pub fn test_verification_system(
     if test_config.test_name == "perf_benchmark" && !test_config.perf_frame_times.is_empty() {
         let times = &test_config.perf_frame_times;
         // Skip first 10 frames (startup jitter)
-        let steady = if times.len() > 10 { &times[10..] } else { times.as_slice() };
+        let steady = if times.len() > 10 {
+            &times[10..]
+        } else {
+            times.as_slice()
+        };
         let avg = steady.iter().sum::<f32>() / steady.len() as f32;
         let min = steady.iter().cloned().fold(f32::INFINITY, f32::min);
         let max = steady.iter().cloned().fold(f32::NEG_INFINITY, f32::max);

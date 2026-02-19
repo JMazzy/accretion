@@ -1,9 +1,12 @@
 //! Simulation plugin and systems for Bevy ECS
 
-use crate::asteroid::{compute_convex_hull_from_points, Asteroid, NeighborCount, Vertices};
+use crate::asteroid::{
+    compute_convex_hull_from_points, Asteroid, AsteroidSize, NeighborCount, Vertices,
+};
 use crate::player::{
-    camera_follow_system, despawn_old_projectiles_system, player_control_system,
-    player_gizmo_system, projectile_fire_system,
+    camera_follow_system, despawn_old_projectiles_system, player_collision_damage_system,
+    player_control_system, player_gizmo_system, player_oob_damping_system,
+    projectile_asteroid_hit_system, projectile_fire_system,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -40,19 +43,21 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 Update,
                 (
-                    stats_counting_system,        // FIRST: Count asteroids for tracking
-                    culling_system,               // Remove far asteroids before physics
+                    stats_counting_system, // FIRST: Count asteroids for tracking
+                    culling_system,        // Remove far asteroids before physics
                     neighbor_counting_system,
                     particle_locking_system,
-                    player_control_system,        // WASD ship thrust/rotation
-                    projectile_fire_system,       // Spacebar fires projectiles
+                    player_control_system,          // WASD ship thrust/rotation
+                    projectile_fire_system,         // Spacebar fires projectiles
                     despawn_old_projectiles_system, // Expire old projectiles
-                    user_input_system,            // Left-click spawns asteroids; mouse wheel zoom
-                    camera_follow_system,         // Camera tracks player
-                    camera_zoom_system,           // Apply zoom scale to camera
-                    gizmo_rendering_system,       // Render asteroids + boundary
-                    player_gizmo_system,          // Render ship + projectiles
-                    stats_display_system,         // Render stats text
+                    user_input_system,              // Left-click spawns asteroids; mouse wheel zoom
+                    camera_follow_system,           // Camera tracks player
+                    camera_zoom_system,             // Apply zoom scale to camera
+                    gizmo_rendering_system,         // Render asteroids + boundary
+                    player_gizmo_system,            // Render ship + projectiles
+                    stats_display_system,           // Render stats text
+                    player_oob_damping_system,      // Slow player outside cull radius
+                    player_collision_damage_system, // Player takes damage from asteroids
                 ),
             )
             // Rebuild grid then run gravity in FixedUpdate (same schedule as Rapier physics)
@@ -61,8 +66,19 @@ impl Plugin for SimulationPlugin {
                 FixedUpdate,
                 (rebuild_spatial_grid_system, nbody_gravity_system).chain(),
             )
-            // Move asteroid_formation_system to PostUpdate so it runs AFTER Rapier physics computes contacts
-            .add_systems(PostUpdate, asteroid_formation_system);
+            // asteroid_formation_system must run AFTER Rapier (PostUpdate) populates contacts.
+            // apply_deferred between the two systems flushes formation's despawns/spawns so
+            // projectile_asteroid_hit_system never double-processes an entity that was already
+            // merged and despawned by the formation system in the same frame.
+            .add_systems(
+                PostUpdate,
+                (
+                    asteroid_formation_system,
+                    apply_deferred,
+                    projectile_asteroid_hit_system,
+                )
+                    .chain(),
+            );
     }
 }
 
@@ -298,52 +314,11 @@ pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform),
     }
 }
 
-/// Check if a point is inside a convex polygon using cross product method
-/// Assumes vertices are in counter-clockwise order
-fn is_point_in_convex_polygon(point: &Vec2, polygon: &[Vec2]) -> bool {
-    if polygon.len() < 3 {
-        return false;
-    }
-
-    // For a convex polygon, the point is inside if it's on the same side
-    // of all edges (all cross products have the same sign)
-    let mut sign = None;
-
-    for i in 0..polygon.len() {
-        let v1 = polygon[i];
-        let v2 = polygon[(i + 1) % polygon.len()];
-
-        // Edge vector
-        let edge = v2 - v1;
-        // Vector from edge start to point
-        let to_point = *point - v1;
-
-        // Cross product (2D: returns scalar)
-        let cross = edge.x * to_point.y - edge.y * to_point.x;
-
-        // Skip edges that are colinear with the point
-        if cross.abs() < 0.0001 {
-            continue;
-        }
-
-        match sign {
-            None => sign = Some(cross > 0.0),
-            Some(positive) => {
-                if (cross > 0.0) != positive {
-                    return false; // Point is outside
-                }
-            }
-        }
-    }
-
-    true // Point is inside (or on boundary)
-}
-
 /// Form large asteroids by detecting clusters of touching asteroids
 /// and converting them into larger polygons
 pub fn asteroid_formation_system(
     mut commands: Commands,
-    query: Query<(Entity, &Transform, &Velocity, &Vertices), With<Asteroid>>,
+    query: Query<(Entity, &Transform, &Velocity, &Vertices, &AsteroidSize), With<Asteroid>>,
     rapier_context: Res<RapierContext>,
     mut stats: ResMut<SimulationStats>,
 ) {
@@ -354,7 +329,7 @@ pub fn asteroid_formation_system(
     let asteroids: Vec<_> = query.iter().collect();
 
     for i in 0..asteroids.len() {
-        let (e1, t1, v1, _verts1) = asteroids[i];
+        let (e1, t1, v1, _verts1, sz1) = asteroids[i];
 
         if processed.contains(&e1) {
             continue;
@@ -366,14 +341,14 @@ pub fn asteroid_formation_system(
         }
 
         // Flood-fill to find all connected slow asteroids
-        // Store: (entity, transform, vertices)
-        let mut cluster: Vec<(Entity, &Transform, &Vertices)> = vec![(e1, t1, _verts1)];
+        // Store: (entity, transform, vertices, size)
+        let mut cluster: Vec<(Entity, &Transform, &Vertices, u32)> = vec![(e1, t1, _verts1, sz1.0)];
         let mut queue = vec![e1];
         let mut visited = std::collections::HashSet::new();
         visited.insert(e1);
 
         while let Some(current) = queue.pop() {
-            for &(e2, t2, v2, verts2) in asteroids.iter() {
+            for &(e2, t2, v2, verts2, sz2) in asteroids.iter() {
                 if visited.contains(&e2) || processed.contains(&e2) {
                     continue;
                 }
@@ -388,7 +363,7 @@ pub fn asteroid_formation_system(
                     if contact.has_any_active_contacts() {
                         visited.insert(e2);
                         queue.push(e2);
-                        cluster.push((e2, t2, verts2));
+                        cluster.push((e2, t2, verts2, sz2.0));
                     }
                 }
             }
@@ -397,7 +372,7 @@ pub fn asteroid_formation_system(
         // If we have 2+ asteroids in the cluster, merge them
         if cluster.len() >= 2 {
             // Mark all as processed
-            for (entity, _, _) in &cluster {
+            for (entity, _, _, _) in &cluster {
                 processed.insert(*entity);
             }
 
@@ -406,11 +381,11 @@ pub fn asteroid_formation_system(
             let mut avg_linvel = Vec2::ZERO;
             let mut avg_angvel = 0.0;
 
-            for (entity, t, _) in &cluster {
+            for (entity, t, _v, _) in &cluster {
                 let pos = t.translation.truncate();
                 center += pos;
                 // Get velocity from the cached query data
-                for (e, _, vel, _) in &asteroids {
+                for (e, _, vel, _, _) in &asteroids {
                     if e == entity {
                         avg_linvel += vel.linvel;
                         avg_angvel += vel.angvel;
@@ -426,7 +401,7 @@ pub fn asteroid_formation_system(
 
             // Collect ALL vertices from ALL cluster members in world-space
             let mut world_vertices = Vec::new();
-            for (_entity, transform, vertices) in &cluster {
+            for (_entity, transform, vertices, _sz) in &cluster {
                 let rotation = transform.rotation;
                 let offset = transform.translation.truncate();
 
@@ -441,60 +416,38 @@ pub fn asteroid_formation_system(
             if let Some(hull) = compute_convex_hull_from_points(&world_vertices) {
                 // Need at least 3 vertices for a valid composite asteroid
                 if hull.len() >= 3 {
-                    // IMPORTANT: Check if any other asteroids are inside this hull
-                    // If so, add them to the cluster to prevent flinging
-                    let mut additional_count = 0;
-                    for &(e_check, t_check, v_check, verts_check) in asteroids.iter() {
-                        // Skip if already in cluster or processed
-                        if processed.contains(&e_check)
-                            || cluster.iter().any(|(e, _, _)| *e == e_check)
-                        {
-                            continue;
-                        }
+                    // Use the hull's geometric centroid as the spawn position so that the
+                    // stored local vertices are centred on (0,0) in local space.
+                    // Using the average of cluster entity positions would leave the vertices
+                    // off-centre, causing the physics body and drawn outline to misalign.
+                    let hull_centroid: Vec2 =
+                        hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
+                    let hull_local: Vec<Vec2> = hull.iter().map(|v| *v - hull_centroid).collect();
 
-                        // Check if this asteroid's center is inside the hull
-                        let check_pos = t_check.translation.truncate();
-                        if is_point_in_convex_polygon(&check_pos, &hull) {
-                            // Mark as processed and add to cluster
-                            processed.insert(e_check);
-                            cluster.push((e_check, t_check, verts_check));
-
-                            // Add its vertices to the hull computation
-                            let rotation = t_check.rotation;
-                            let offset = t_check.translation.truncate();
-                            for local_v in &verts_check.0 {
-                                let world_v =
-                                    offset + rotation.mul_vec3(local_v.extend(0.0)).truncate();
-                                world_vertices.push(world_v);
-                            }
-
-                            // Update center and velocity averages with incremental formula
-                            let current_count = count + additional_count as f32;
-                            let new_count = current_count + 1.0;
-                            center = (center * current_count + check_pos) / new_count;
-                            avg_linvel = (avg_linvel * current_count + v_check.linvel) / new_count;
-                            avg_angvel = (avg_angvel * current_count + v_check.angvel) / new_count;
-
-                            additional_count += 1;
-                        }
+                    // Sanity check: skip merges that would produce pathologically large shapes.
+                    // A legitimate merge of N small asteroids should never produce a hull
+                    // that extends more than ~50 units per constituent member from the center.
+                    let max_extent = hull_local
+                        .iter()
+                        .map(|v| v.length())
+                        .fold(0.0_f32, f32::max);
+                    let extent_limit = 60.0 + cluster.len() as f32 * 20.0;
+                    if max_extent > extent_limit {
+                        // Refuse to create this merge — it indicates corrupted vertex data.
+                        // Despawn nothing; leave the source asteroids intact.
+                        continue;
                     }
 
-                    // If we found additional asteroids inside, recompute hull with all vertices
-                    let final_hull = if additional_count > 0 {
-                        compute_convex_hull_from_points(&world_vertices).unwrap_or(hull.clone())
-                    } else {
-                        hull.clone()
-                    };
-
-                    // Convert hull back to local-space relative to center
-                    let hull_local: Vec<Vec2> = final_hull.iter().map(|v| *v - center).collect();
+                    // Sum unit sizes of all cluster members
+                    let total_size: u32 = cluster.iter().map(|(_, _, _, s)| s).sum();
 
                     let avg_color = Color::rgb(0.5, 0.5, 0.5);
                     let _composite = crate::asteroid::spawn_asteroid_with_vertices(
                         &mut commands,
-                        center,
+                        hull_centroid,
                         &hull_local,
                         avg_color,
+                        total_size,
                     );
 
                     // Update velocity
@@ -510,7 +463,7 @@ pub fn asteroid_formation_system(
                     stats.merged_total += merge_count;
 
                     // Despawn all source asteroids
-                    for (entity, _, _) in cluster {
+                    for (entity, _, _, _) in cluster {
                         commands.entity(entity).despawn();
                     }
                 }

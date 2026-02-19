@@ -12,6 +12,11 @@ use rand::Rng;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Asteroid;
 
+/// How many "unit" (single triangle) asteroids this entity represents.
+/// Single triangles = 1; composites = sum of constituents.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AsteroidSize(pub u32);
+
 /// Count of nearby asteroids for environmental damping calculation
 #[derive(Component, Debug, Clone, Copy)]
 pub struct NeighborCount(pub usize);
@@ -40,7 +45,7 @@ pub fn spawn_asteroid(commands: &mut Commands, position: Vec2, _color: Color, _g
         Vec2::new(side / 2.0, -height / 2.0),  // Bottom-right
     ];
 
-    spawn_asteroid_with_vertices(commands, spawn_pos, &vertices, color);
+    spawn_asteroid_with_vertices(commands, spawn_pos, &vertices, color, 1);
 }
 
 /// Spawns asteroids with random sizes, shapes, and velocities throughout the simulation area
@@ -69,43 +74,62 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
             2 => generate_pentagon(size_scale), // Pentagon
             _ => generate_hexagon(size_scale),  // Hexagon
         };
+        // Unit count: triangle=1, square=2, pentagon=3, hexagon=4
+        let unit_size: u32 = match shape {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+            _ => 4,
+        };
 
         // Random velocity (gentle to avoid instant collisions)
         let velocity = Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
 
         // Spawn the asteroid
         commands.spawn((
-            Transform::from_translation(position.extend(0.05)),
-            GlobalTransform::default(),
-            Asteroid,
-            NeighborCount(0),
-            Vertices(vertices.clone()),
-            RigidBody::Dynamic,
-            {
-                if vertices.len() >= 3 {
-                    Collider::convex_hull(&vertices).unwrap_or_else(|| Collider::ball(5.0))
-                } else if vertices.len() == 2 {
-                    let radius = ((vertices[0] - vertices[1]).length() / 2.0).max(2.0);
-                    Collider::ball(radius)
-                } else {
-                    Collider::ball(2.0)
-                }
-            },
-            Restitution::coefficient(0.0),
-            Friction::coefficient(1.0),
-            Velocity {
-                linvel: velocity,
-                angvel: rng.gen_range(-5.0..5.0), // Random angular velocity
-            },
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 0.0,
-            },
-            ExternalForce {
-                force: Vec2::ZERO,
-                torque: 0.0,
-            },
-            Sleeping::disabled(),
+            (
+                Transform::from_translation(position.extend(0.05)),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(unit_size),
+                NeighborCount(0),
+                Vertices(vertices.clone()),
+                RigidBody::Dynamic,
+            ),
+            (
+                {
+                    if vertices.len() >= 3 {
+                        Collider::convex_hull(&vertices).unwrap_or_else(|| Collider::ball(5.0))
+                    } else if vertices.len() == 2 {
+                        let radius = ((vertices[0] - vertices[1]).length() / 2.0).max(2.0);
+                        Collider::ball(radius)
+                    } else {
+                        Collider::ball(2.0)
+                    }
+                },
+                Restitution::coefficient(0.0),
+                Friction::coefficient(1.0),
+                Velocity {
+                    linvel: velocity,
+                    angvel: rng.gen_range(-5.0..5.0), // Random angular velocity
+                },
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                ),
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
         ));
     }
 }
@@ -154,12 +178,14 @@ fn generate_hexagon(scale: f32) -> Vec<Vec2> {
     vertices
 }
 
-/// Spawns an asteroid with arbitrary polygon vertices
+/// Spawns an asteroid with arbitrary polygon vertices and an explicit unit-size count.
+/// `size` is how many unit triangles this asteroid represents (use 1 for fresh spawns).
 pub fn spawn_asteroid_with_vertices(
     commands: &mut Commands,
     center: Vec2,
     hull: &[Vec2],
     _color: Color,
+    size: u32,
 ) -> Entity {
     // Ensure we have valid vertices (need at least 3 for a polygon, minimum 2 for safety)
     if hull.is_empty() {
@@ -182,25 +208,37 @@ pub fn spawn_asteroid_with_vertices(
     // Spawn asteroid with just transform and physics - wireframe rendering via gizmos
     let entity = commands
         .spawn((
-            Transform::from_translation(center.extend(0.05)),
-            GlobalTransform::default(),
-            Asteroid,
-            NeighborCount(0),
-            Vertices(hull.to_vec()), // Store as LOCAL-SPACE vertices
-            RigidBody::Dynamic,
-            collider,
-            Restitution::coefficient(0.0),
-            Friction::coefficient(1.0),
-            Velocity::zero(),
-            Damping {
-                linear_damping: 0.0,
-                angular_damping: 0.0,
-            },
-            ExternalForce {
-                force: Vec2::ZERO,
-                torque: 0.0,
-            },
-            Sleeping::disabled(),
+            (
+                Transform::from_translation(center.extend(0.05)),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(size),
+                NeighborCount(0),
+                Vertices(hull.to_vec()), // Store as LOCAL-SPACE vertices
+                RigidBody::Dynamic,
+                collider,
+            ),
+            (
+                Restitution::coefficient(0.0),
+                Friction::coefficient(1.0),
+                Velocity::zero(),
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                ),
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
         ))
         .id();
 
@@ -248,11 +286,26 @@ pub fn compute_convex_hull(particles: &[(Entity, Vec2, Color)]) -> Option<Vec<Ve
     Some(hull)
 }
 
-/// Compute convex hull from a list of points using gift wrapping algorithm
+/// Compute convex hull from a list of points using gift wrapping algorithm.
+/// Near-duplicate points (within 0.5 units) are deduplicated first so that
+/// Rapier's `Collider::convex_hull` never silently falls back to a ball.
 pub fn compute_convex_hull_from_points(points: &[Vec2]) -> Option<Vec<Vec2>> {
     if points.len() < 2 {
         return None;
     }
+
+    // Deduplicate points that are too close together (prevents degenerate hulls)
+    const MIN_DIST: f32 = 0.5;
+    let mut deduped: Vec<Vec2> = Vec::with_capacity(points.len());
+    for &p in points {
+        if !deduped.iter().any(|q| q.distance(p) < MIN_DIST) {
+            deduped.push(p);
+        }
+    }
+    if deduped.len() < 2 {
+        return None;
+    }
+    let points = deduped.as_slice();
 
     // Find leftmost point
     let mut min_idx = 0;
