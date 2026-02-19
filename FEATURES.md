@@ -5,7 +5,7 @@
 ### Keyboard + Mouse (Twin-Stick)
 
 | Input | Action |
-|-------|--------|
+| ------- | -------- |
 | **W** | Thrust forward (ship-facing direction) |
 | **S** | Thrust backward |
 | **A** | Rotate ship left |
@@ -19,7 +19,7 @@
 ### Gamepad (Twin-Stick)
 
 | Input | Action |
-|-------|--------|
+| ------- | -------- |
 | **Left stick** | Rotate ship toward stick direction at fixed speed, then thrust forward |
 | **Right stick** | Aim and auto-fire projectiles in stick direction |
 | **B button** | Apply reverse thrust (while held) |
@@ -157,7 +157,7 @@ This ensures accurate spawning regardless of camera state.
 The player ship has a health pool that depletes when struck by asteroids at high relative speeds.
 
 | Property | Value | Description |
-|----------|-------|-------------|
+| ---------- | ------- | ------------- |
 | `PLAYER_MAX_HP` | 100.0 | Full health at spawn |
 | `DAMAGE_SPEED_THRESHOLD` | 30.0 u/s | Minimum relative speed before damage is dealt |
 | `INVINCIBILITY_DURATION` | 0.5 s | Immunity period after each hit to prevent rapid damage stacking |
@@ -173,14 +173,23 @@ The player ship has a health pool that depletes when struck by asteroids at high
 Projectiles interact with asteroids based on the target's `AsteroidSize` unit count:
 
 | Size (units) | Behaviour |
-|---|---|
+| --- | --- |
 | 0–1 | **Destroy** — asteroid removed immediately |
 | 2–3 | **Scatter** — despawns and spawns `N` unit fragments at evenly-spaced angles with random velocity jitter |
 | 4–8 | **Split** — cut roughly in half along the projectile's impact axis; each half retains its velocity plus a separation impulse |
 | ≥9 | **Chip** — the hull vertex closest to impact is removed; a single unit fragment is ejected outward; the asteroid shrinks by 1 unit |
 
 In all cases the projectile is despawned on contact.
+**Mass → shape rules (split and chip only):**  Fragments produced by splitting or chipping must have a minimum number of polygon sides matching their mass.  Merged composites are exempt.
 
+| Fragment mass | Min shape | Min vertices |
+| --- | --- | --- |
+| 1 | triangle | 3 |
+| 2–4 | square | 4 |
+| 5 | pentagon | 5 |
+| ≥6 | hexagon | 6 |
+
+If the geometric split produces fewer vertices than the minimum for that mass (e.g. a triangular half from a size-4 asteroid), the fragment is replaced with the canonical regular polygon centred at the computed split position.  Fragments may have *more* sides than the minimum — the raw hull is kept whenever it already meets or exceeds the requirement.
 **Split geometry**: For the 4–8 case the split plane passes through the asteroid centroid and is aligned with the projectile trajectory direction, so the two halves separate naturally along the incoming fire direction.
 
 **Chip geometry**: The remaining asteroid recomputes its convex hull after removing the impacted vertex, so the outline incrementally shrinks with each chip hit.

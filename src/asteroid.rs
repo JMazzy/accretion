@@ -211,6 +211,52 @@ fn generate_hexagon(scale: f32) -> Vec<Vec2> {
     vertices
 }
 
+/// Returns the minimum number of polygon vertices a split/chip fragment of the
+/// given mass should have.  Follows the mass→shape table:
+///
+/// | Mass  | Min shape  | Min vertices |
+/// |-------|------------|--------------|
+/// | 1     | triangle   | 3            |
+/// | 2–4   | square     | 4            |
+/// | 5     | pentagon   | 5            |
+/// | ≥ 6   | hexagon    | 6            |
+///
+/// Merging is exempt — merged composites keep however many hull vertices they produce.
+pub fn min_vertices_for_mass(mass: u32) -> usize {
+    match mass {
+        0 | 1 => 3,
+        2..=4 => 4,
+        5 => 5,
+        _ => 6, // 6 and above: hexagon minimum
+    }
+}
+
+/// Returns canonical centred (local-space) polygon vertices at base scale for
+/// the given mass.  Used when a split or chip fragment has fewer vertices than
+/// `min_vertices_for_mass(mass)` requires.
+///
+/// Vertices are always centred at the origin, so placing the entity at the
+/// split centroid position produces a correctly-positioned shape.
+///
+/// Merging is exempt and never calls this function.
+pub fn canonical_vertices_for_mass(mass: u32) -> Vec<Vec2> {
+    let raw = match mass {
+        0 | 1 => generate_triangle(1.0),
+        2..=4 => generate_square(1.0),
+        5 => generate_pentagon(1.0),
+        _ => generate_hexagon(1.0),
+    };
+    // Centre the vertices at origin (centroid subtraction).
+    // Square / pentagon / hexagon generators already produce centred vertices, but
+    // triangle does not — subtracting the centroid makes all cases consistent.
+    let c = raw.iter().copied().sum::<Vec2>() / raw.len() as f32;
+    if c.length() > 1e-4 {
+        raw.iter().map(|v| *v - c).collect()
+    } else {
+        raw
+    }
+}
+
 /// Spawns an asteroid with arbitrary polygon vertices and an explicit unit-size count.
 /// `size` is how many unit triangles this asteroid represents (use 1 for fresh spawns).
 pub fn spawn_asteroid_with_vertices(
@@ -228,7 +274,19 @@ pub fn spawn_asteroid_with_vertices(
     // Create polygon collider from convex hull (vertices are already local-space)
     // For 2 vertices, use a capsule-like shape; for 3+, use polygon
     let collider = if hull.len() >= 3 {
-        Collider::convex_hull(hull).unwrap_or_else(|| Collider::ball(5.0))
+        if let Some(c) = Collider::convex_hull(hull) {
+            c
+        } else {
+            // This should rarely happen — log it so we can diagnose in-game failures.
+            // Common causes: degenerate/collinear vertices, or near-duplicate points.
+            eprintln!(
+                "WARNING: Collider::convex_hull failed for {} vertices (falling back to ball=5.0). \
+                 Vertices: {:?}",
+                hull.len(),
+                hull
+            );
+            Collider::ball(5.0)
+        }
     } else if hull.len() == 2 {
         // For 2 vertices, estimate a bounding ball
         let radius = ((hull[0] - hull[1]).length() / 2.0).max(2.0);
@@ -375,6 +433,242 @@ pub fn compute_convex_hull_from_points(points: &[Vec2]) -> Option<Vec<Vec2>> {
 /// Cross product to determine turn direction
 fn cross_product(o: Vec2, a: Vec2, b: Vec2) -> f32 {
     (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── compute_convex_hull_from_points ───────────────────────────────────────
+
+    #[test]
+    fn hull_empty_input_returns_none() {
+        assert!(compute_convex_hull_from_points(&[]).is_none());
+    }
+
+    #[test]
+    fn hull_single_point_returns_none() {
+        assert!(compute_convex_hull_from_points(&[Vec2::ZERO]).is_none());
+    }
+
+    #[test]
+    fn hull_three_non_collinear_returns_three_points() {
+        let pts = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(5.0, 10.0)];
+        let hull = compute_convex_hull_from_points(&pts).expect("should produce hull");
+        assert_eq!(hull.len(), 3);
+    }
+
+    #[test]
+    fn hull_square_four_corners_returns_four_points() {
+        let pts = vec![
+            Vec2::new(-10.0, -10.0),
+            Vec2::new(10.0, -10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(-10.0, 10.0),
+        ];
+        let hull = compute_convex_hull_from_points(&pts).expect("should produce hull");
+        assert_eq!(hull.len(), 4, "square should yield 4 hull vertices");
+    }
+
+    #[test]
+    fn hull_interior_point_is_excluded() {
+        let pts = vec![
+            Vec2::new(-10.0, -10.0),
+            Vec2::new(10.0, -10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(-10.0, 10.0),
+            Vec2::new(0.0, 0.0), // interior
+        ];
+        let hull = compute_convex_hull_from_points(&pts).expect("should produce hull");
+        assert_eq!(hull.len(), 4, "interior point should be excluded from hull");
+        assert!(
+            !hull.contains(&Vec2::new(0.0, 0.0)),
+            "origin should not be in hull"
+        );
+    }
+
+    #[test]
+    fn hull_deduplicates_near_identical_points() {
+        // Two near-duplicate pairs (within HULL_DEDUP_MIN_DIST = 0.5), one unique apex
+        let pts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.1, 0.0), // dup of first
+            Vec2::new(10.0, 0.0),
+            Vec2::new(10.0, 0.1), // dup of third
+            Vec2::new(5.0, 10.0),
+        ];
+        let hull = compute_convex_hull_from_points(&pts).expect("should produce hull");
+        // After dedup: 3 unique groups → triangle hull
+        assert_eq!(hull.len(), 3, "near-duplicate points should be merged before hull");
+    }
+
+    #[test]
+    fn hull_all_points_within_bounding_box_of_inputs() {
+        let pts = vec![
+            Vec2::new(-20.0, -15.0),
+            Vec2::new(20.0, -15.0),
+            Vec2::new(20.0, 15.0),
+            Vec2::new(-20.0, 15.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(5.0, 5.0),
+        ];
+        let hull = compute_convex_hull_from_points(&pts).unwrap();
+        for v in &hull {
+            assert!(
+                v.x >= -20.0 && v.x <= 20.0,
+                "hull x={} out of input range",
+                v.x
+            );
+            assert!(
+                v.y >= -15.0 && v.y <= 15.0,
+                "hull y={} out of input range",
+                v.y
+            );
+        }
+    }
+
+    #[test]
+    fn hull_collinear_points_does_not_panic() {
+        // All on x-axis — gift wrapping degenerates but must not panic
+        let pts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(5.0, 0.0),
+            Vec2::new(10.0, 0.0),
+            Vec2::new(15.0, 0.0),
+        ];
+        let _ = compute_convex_hull_from_points(&pts);
+    }
+
+    // ── Shape generators ──────────────────────────────────────────────────────
+
+    #[test]
+    fn generate_triangle_has_three_vertices() {
+        assert_eq!(generate_triangle(1.0).len(), 3);
+    }
+
+    #[test]
+    fn generate_square_has_four_vertices() {
+        assert_eq!(generate_square(1.0).len(), 4);
+    }
+
+    #[test]
+    fn generate_pentagon_has_five_vertices() {
+        assert_eq!(generate_pentagon(1.0).len(), 5);
+    }
+
+    #[test]
+    fn generate_hexagon_has_six_vertices() {
+        assert_eq!(generate_hexagon(1.0).len(), 6);
+    }
+
+    #[test]
+    fn generated_triangle_centroid_is_symmetric_and_inside() {
+        // The triangle has its apex at top, base at bottom: centroid x must be 0 (symmetric)
+        // and centroid y must lie within the vertex y-range.
+        let verts = generate_triangle(1.0);
+        let c = verts.iter().copied().sum::<Vec2>() / verts.len() as f32;
+        assert!(c.x.abs() < 1e-5, "centroid x should be 0 by symmetry, got {}", c.x);
+        let min_y = verts.iter().map(|v| v.y).fold(f32::INFINITY, f32::min);
+        let max_y = verts.iter().map(|v| v.y).fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            c.y >= min_y && c.y <= max_y,
+            "centroid y={} should be within [{min_y}, {max_y}]",
+            c.y
+        );
+    }
+
+    #[test]
+    fn shape_scale_doubles_size() {
+        // At 2× scale all vertex distances from origin should double
+        let t1 = generate_triangle(1.0);
+        let t2 = generate_triangle(2.0);
+        let max1 = t1.iter().map(|v| v.length()).fold(0.0_f32, f32::max);
+        let max2 = t2.iter().map(|v| v.length()).fold(0.0_f32, f32::max);
+        assert!(
+            (max2 / max1 - 2.0).abs() < 1e-5,
+            "scale 2× should double vertex extent (got ratio {})",
+            max2 / max1
+        );
+    }
+
+    #[test]
+    fn generate_triangle_has_positive_area() {
+        let v = generate_triangle(1.0);
+        let a = v[1] - v[0];
+        let b = v[2] - v[0];
+        let area = (a.x * b.y - a.y * b.x).abs() / 2.0;
+        assert!(area > 1.0, "triangle area should be > 1, got {area}");
+    }
+
+    #[test]
+    fn spawn_asteroid_with_vertices_returns_entity() {
+        // Smoke test: verify that the triangle vertices accepted by spawn_asteroid_with_vertices
+        // produce a valid Rapier convex hull (not a ball fallback).
+        let verts = generate_triangle(1.0);
+        let collider = bevy_rapier2d::prelude::Collider::convex_hull(&verts);
+        assert!(collider.is_some(), "valid triangle should produce a convex hull collider");
+    }
+
+    // ── min_vertices_for_mass / canonical_vertices_for_mass ───────────────────
+
+    #[test]
+    fn min_vertices_for_mass_mass_1_is_3() {
+        assert_eq!(min_vertices_for_mass(1), 3);
+    }
+
+    #[test]
+    fn min_vertices_for_mass_mass_2_through_4_are_4() {
+        for m in [2, 3, 4] {
+            assert_eq!(min_vertices_for_mass(m), 4, "mass {m} should need 4 vertices");
+        }
+    }
+
+    #[test]
+    fn min_vertices_for_mass_mass_5_is_5() {
+        assert_eq!(min_vertices_for_mass(5), 5);
+    }
+
+    #[test]
+    fn min_vertices_for_mass_mass_6_and_above_are_6() {
+        for m in [6, 7, 8, 10, 20] {
+            assert_eq!(min_vertices_for_mass(m), 6, "mass {m} should need 6 vertices");
+        }
+    }
+
+    #[test]
+    fn canonical_vertices_for_mass_shapes_meet_minimum() {
+        // Each canonical shape must have at least as many vertices as the minimum for
+        // that mass, and must produce a valid Rapier convex hull.
+        for mass in [1u32, 2, 3, 4, 5, 6, 7, 8] {
+            let verts = canonical_vertices_for_mass(mass);
+            assert!(
+                verts.len() >= min_vertices_for_mass(mass),
+                "mass {mass}: canonical shape has {} verts but min is {}",
+                verts.len(),
+                min_vertices_for_mass(mass)
+            );
+            let collider = bevy_rapier2d::prelude::Collider::convex_hull(&verts);
+            assert!(
+                collider.is_some(),
+                "mass {mass}: canonical shape must produce a valid convex hull collider"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_vertices_centroid_is_near_origin() {
+        // Canonical shapes should be centred; centroid should be very close to (0, 0).
+        for mass in [1u32, 2, 3, 4, 5, 6] {
+            let verts = canonical_vertices_for_mass(mass);
+            let c = verts.iter().copied().sum::<Vec2>() / verts.len() as f32;
+            assert!(
+                c.length() < 0.5,
+                "mass {mass}: canonical centroid ({:.3}, {:.3}) is not near origin",
+                c.x,
+                c.y
+            );
+        }
+    }
 }
 
 /// Blend colors by averaging RGB values

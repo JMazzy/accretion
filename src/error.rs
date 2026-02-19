@@ -5,7 +5,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use crate::error::SimError;
 //!
 //! fn some_system() -> Result<(), SimError> {

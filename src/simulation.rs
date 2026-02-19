@@ -136,6 +136,29 @@ pub fn particle_locking_system(
     }
 }
 
+/// Compute the gravitational force vector applied to body `i` (toward body `j`)
+/// for a single pair, using an inverse-square law.
+///
+/// Returns `None` when the pair is outside the valid gravity range:
+/// - `dist_sq < min_dist_sq` (Rapier handles the contact)
+/// - `dist_sq > max_dist_sq` (too far to matter)
+///
+/// The reaction force on body `j` is the negation of the returned value (Newton's 3rd law).
+pub(crate) fn gravity_force_between(
+    pos_i: Vec2,
+    pos_j: Vec2,
+    gravity_const: f32,
+    min_dist_sq: f32,
+    max_dist_sq: f32,
+) -> Option<Vec2> {
+    let delta = pos_j - pos_i;
+    let dist_sq = delta.length_squared();
+    if dist_sq > max_dist_sq || dist_sq < min_dist_sq {
+        return None;
+    }
+    Some(delta.normalize_or_zero() * (gravity_const / dist_sq))
+}
+
 /// N-body gravity system: applies custom gravity between all asteroids
 /// Optimized with spatial grid: only checks neighbors in nearby cells (O(N·K) instead of O(N²))
 pub fn nbody_gravity_system(
@@ -180,20 +203,18 @@ pub fn nbody_gravity_system(
                 }
 
                 let pos_j = entity_data[idx_j].1;
-                let delta = pos_j - *pos_i;
-                let dist_sq = delta.length_squared();
 
-                // Quick distance check to skip far asteroids
-                if dist_sq > max_gravity_dist_sq || dist_sq < min_gravity_dist_sq {
-                    continue;
+                if let Some(force) = gravity_force_between(
+                    *pos_i,
+                    pos_j,
+                    gravity_const,
+                    min_gravity_dist_sq,
+                    max_gravity_dist_sq,
+                ) {
+                    // Apply Newton's third law: equal and opposite forces
+                    *force_deltas.entry(*entity_i).or_insert(Vec2::ZERO) += force;
+                    *force_deltas.entry(entity_j).or_insert(Vec2::ZERO) -= force;
                 }
-
-                let force_mag = gravity_const / dist_sq;
-                let force = delta.normalize_or_zero() * force_mag;
-
-                // Apply Newton's third law: equal and opposite forces
-                *force_deltas.entry(*entity_i).or_insert(Vec2::ZERO) += force;
-                *force_deltas.entry(entity_j).or_insert(Vec2::ZERO) -= force;
             }
         }
     }
@@ -483,5 +504,97 @@ pub fn asteroid_formation_system(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── gravity_force_between ─────────────────────────────────────────────────
+
+    #[test]
+    fn gravity_attracts_toward_other_body() {
+        let f = gravity_force_between(Vec2::ZERO, Vec2::new(100.0, 0.0), 10.0, 1.0, 1_000_000.0)
+            .expect("pair should be in range");
+        assert!(f.x > 0.0, "force x should be positive (toward body j)");
+        assert!(f.y.abs() < 1e-6, "no vertical component for horizontal pair");
+    }
+
+    #[test]
+    fn gravity_inverse_square_law() {
+        let g = 10.0_f32;
+        let f1 = gravity_force_between(Vec2::ZERO, Vec2::new(10.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
+        let f2 = gravity_force_between(Vec2::ZERO, Vec2::new(20.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
+        let ratio = f1.x / f2.x;
+        assert!(
+            (ratio - 4.0).abs() < 1e-4,
+            "force at 2× distance should be 4× weaker; ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn gravity_force_magnitude_matches_formula() {
+        let d = 50.0_f32;
+        let g = 10.0_f32;
+        let f = gravity_force_between(Vec2::ZERO, Vec2::new(d, 0.0), g, 1.0, 1_000_000.0).unwrap();
+        let expected = g / (d * d);
+        assert!(
+            (f.x - expected).abs() < 1e-6,
+            "magnitude: got {}, expected {expected}",
+            f.x
+        );
+    }
+
+    #[test]
+    fn gravity_none_beyond_max_distance() {
+        let max_dist = 100.0_f32;
+        let f = gravity_force_between(
+            Vec2::ZERO,
+            Vec2::new(max_dist + 1.0, 0.0),
+            10.0,
+            1.0,
+            max_dist * max_dist,
+        );
+        assert!(f.is_none(), "should be None beyond max distance");
+    }
+
+    #[test]
+    fn gravity_none_within_min_distance() {
+        let min_dist = 5.0_f32;
+        let f = gravity_force_between(
+            Vec2::ZERO,
+            Vec2::new(2.0, 0.0),
+            10.0,
+            min_dist * min_dist,
+            1_000_000.0,
+        );
+        assert!(f.is_none(), "should be None when closer than min distance");
+    }
+
+    #[test]
+    fn gravity_newtons_third_law() {
+        let pos_i = Vec2::new(-50.0, 30.0);
+        let pos_j = Vec2::new(70.0, -20.0);
+        let f_ij = gravity_force_between(pos_i, pos_j, 10.0, 1.0, 1_000_000.0).unwrap();
+        let f_ji = gravity_force_between(pos_j, pos_i, 10.0, 1.0, 1_000_000.0).unwrap();
+        assert!(
+            (f_ij + f_ji).length() < 1e-5,
+            "forces on i and j must sum to zero"
+        );
+    }
+
+    #[test]
+    fn gravity_at_boundary_distance_returns_some() {
+        // Exactly at max boundary (dist_sq == max_dist_sq uses > not >=, so this is in-range)
+        let max_dist = 100.0_f32;
+        let f = gravity_force_between(
+            Vec2::ZERO,
+            Vec2::new(max_dist, 0.0),
+            10.0,
+            1.0,
+            max_dist * max_dist,
+        );
+        assert!(f.is_some(), "exactly at boundary should still return force");
     }
 }

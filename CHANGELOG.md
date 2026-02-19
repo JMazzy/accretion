@@ -1,5 +1,28 @@
 # GRAV-SIM Changelog
 
+## Mass → Shape Rules for Split/Chip Fragments — February 19, 2026
+
+Fragment shapes produced by splitting (size 4–8) or chipping (≥9) now respect a minimum vertex count that scales with the fragment’s mass:
+
+| Fragment mass | Min shape | Min vertices |
+|---|---|---|
+| 1 | triangle | 3 |
+| 2–4 | square | 4 |
+| 5 | pentagon | 5 |
+| ≥6 | hexagon | 6 |
+
+- **Files changed**: `src/asteroid.rs`, `src/player/combat.rs`
+- Two new public helpers added to `asteroid.rs`:
+  - `min_vertices_for_mass(mass) -> usize` — returns the minimum vertex count for the mass tier
+  - `canonical_vertices_for_mass(mass) -> Vec<Vec2>` — returns the centred canonical polygon for that mass (triangle/square/pentagon/hexagon)
+- Both split and chip paths check the resulting hull vertex count; if it falls below the minimum, the canonical shape is substituted at the computed centroid position
+- Fragments may retain *more* sides than the minimum when the geometric hull already exceeds the requirement
+- Merging (`asteroid_formation_system`) is unaffected — composites keep whatever hull the gift-wrapping produces
+- 10 new unit tests added (6 in `asteroid.rs`, 4 in `combat.rs`); all 63 tests pass
+- `cargo clippy -- -D warnings` clean; release build succeeds
+
+---
+
 ## Test Isolation & Script Fixes
 
 ### Test Player Isolation

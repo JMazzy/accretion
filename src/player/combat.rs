@@ -6,15 +6,28 @@
 //! | Size (units) | Effect |
 //! |---|---|
 //! | 0–1 | Immediate destroy |
-//! | 2–3 | Scatter into N unit fragments |
+//! | 2–3 | Scatter into N unit fragments (each mass 1 = triangle) |
 //! | 4–8 | Split roughly in half along impact axis |
 //! | ≥ 9 | Chip: remove closest vertex, spawn one unit fragment |
+//!
+//! ## Mass → shape rules for split/chip fragments
+//!
+//! Fragment shapes are regulated so they never have *fewer* sides than their
+//! mass warrants (merging is exempt):
+//!
+//! | Fragment mass | Min shape  | Min vertices |
+//! |---------------|------------|--------------|
+//! | 1             | triangle   | 3            |
+//! | 2–4           | square     | 4            |
+//! | 5             | pentagon   | 5            |
+//! | ≥ 6           | hexagon    | 6            |
 
 use super::state::{
     AimDirection, Player, PlayerFireCooldown, PlayerHealth, PreferredGamepad, Projectile,
 };
 use crate::asteroid::{
-    compute_convex_hull_from_points, spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
+    canonical_vertices_for_mass, compute_convex_hull_from_points, min_vertices_for_mass,
+    spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
 };
 use crate::constants::{
     DAMAGE_SPEED_THRESHOLD, FIRE_COOLDOWN, GAMEPAD_FIRE_THRESHOLD, GAMEPAD_RIGHT_DEADZONE,
@@ -292,7 +305,15 @@ pub fn projectile_asteroid_hit_system(
                         _ => continue,
                     };
                     let centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
-                    let local: Vec<Vec2> = hull.iter().map(|v| *v - centroid).collect();
+                    let final_mass = half_size.max(1);
+                    // Enforce mass→shape: if the hull has fewer vertices than the
+                    // mass requires, substitute the canonical regular polygon.
+                    let local: Vec<Vec2> =
+                        if hull.len() < min_vertices_for_mass(final_mass) {
+                            canonical_vertices_for_mass(final_mass)
+                        } else {
+                            hull.iter().map(|v| *v - centroid).collect()
+                        };
                     let grey = 0.4 + rand::random::<f32>() * 0.3;
                     let push_sign = if (centroid - pos).dot(impact_dir) >= 0.0 {
                         1.0
@@ -307,7 +328,7 @@ pub fn projectile_asteroid_hit_system(
                         centroid,
                         &local,
                         Color::rgb(grey, grey, grey),
-                        half_size.max(1),
+                        final_mass,
                     );
                     commands.entity(new_ent).insert(Velocity {
                         linvel: split_vel,
@@ -344,10 +365,18 @@ pub fn projectile_asteroid_hit_system(
                 }
 
                 let hull_world = compute_convex_hull_from_points(&new_world_verts)
-                    .unwrap_or(new_world_verts.clone());
+                    .unwrap_or_else(|| new_world_verts.clone());
                 let hull_centroid: Vec2 =
                     hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
-                let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - hull_centroid).collect();
+                let new_mass = (n - 1).max(1);
+                // Enforce mass→shape: if the hull has fewer vertices than the
+                // mass requires, substitute the canonical regular polygon.
+                let new_local: Vec<Vec2> =
+                    if hull_world.len() < min_vertices_for_mass(new_mass) {
+                        canonical_vertices_for_mass(new_mass)
+                    } else {
+                        hull_world.iter().map(|v| *v - hull_centroid).collect()
+                    };
 
                 commands.entity(asteroid_entity).despawn();
 
@@ -357,7 +386,7 @@ pub fn projectile_asteroid_hit_system(
                     hull_centroid,
                     &new_local,
                     Color::rgb(grey, grey, grey),
-                    n - 1,
+                    new_mass,
                 );
                 commands.entity(new_ent).insert(Velocity {
                     linvel: vel,
@@ -404,6 +433,511 @@ fn split_convex_polygon(verts: &[Vec2], origin: Vec2, axis: Vec2) -> (Vec<Vec2>,
     }
 
     (front, back)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── split_convex_polygon ──────────────────────────────────────────────────
+
+    #[test]
+    fn split_square_along_vertical_axis_both_halves_have_correct_signs() {
+        // Unit square split along X axis: front = x >= 0, back = x < 0
+        let square = vec![
+            Vec2::new(-10.0, -10.0),
+            Vec2::new(10.0, -10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(-10.0, 10.0),
+        ];
+        let (front, back) = split_convex_polygon(&square, Vec2::ZERO, Vec2::X);
+        assert!(
+            front.len() >= 3,
+            "front half needs ≥3 points for a valid polygon, got {}",
+            front.len()
+        );
+        assert!(
+            back.len() >= 3,
+            "back half needs ≥3 points for a valid polygon, got {}",
+            back.len()
+        );
+        for v in &front {
+            assert!(v.x >= -1e-5, "front vertex has x={} (should be ≥ 0)", v.x);
+        }
+        for v in &back {
+            assert!(v.x <= 1e-5, "back vertex has x={} (should be ≤ 0)", v.x);
+        }
+    }
+
+    #[test]
+    fn split_all_points_on_front_side_back_is_empty() {
+        // Polygon entirely to the right of origin → all vertices go to front
+        let rect = vec![
+            Vec2::new(5.0, -5.0),
+            Vec2::new(15.0, -5.0),
+            Vec2::new(15.0, 5.0),
+            Vec2::new(5.0, 5.0),
+        ];
+        let (front, back) = split_convex_polygon(&rect, Vec2::ZERO, Vec2::X);
+        assert_eq!(front.len(), 4, "all 4 vertices should be in front");
+        assert!(back.is_empty(), "nothing should be in back");
+    }
+
+    #[test]
+    fn split_intersection_points_shared_between_halves() {
+        // Axis-aligned rectangle crossing origin: intersection at x=0, y=±5
+        let rect = vec![
+            Vec2::new(-10.0, -5.0),
+            Vec2::new(10.0, -5.0),
+            Vec2::new(10.0, 5.0),
+            Vec2::new(-10.0, 5.0),
+        ];
+        let (front, back) = split_convex_polygon(&rect, Vec2::ZERO, Vec2::X);
+
+        let has_pt = |verts: &[Vec2], x: f32, y: f32| {
+            verts
+                .iter()
+                .any(|v| (v.x - x).abs() < 1e-4 && (v.y - y).abs() < 1e-4)
+        };
+
+        assert!(
+            has_pt(&front, 0.0, 5.0) || has_pt(&front, 0.0, -5.0),
+            "front half should contain at least one intersection point"
+        );
+        assert!(
+            has_pt(&back, 0.0, 5.0) || has_pt(&back, 0.0, -5.0),
+            "back half should contain at least one intersection point"
+        );
+    }
+
+    #[test]
+    fn split_triangle_does_not_panic() {
+        // Equilateral triangle split along Y → apex on boundary, two base corners split
+        let tri = vec![
+            Vec2::new(0.0, 10.0),
+            Vec2::new(-10.0, -5.0),
+            Vec2::new(10.0, -5.0),
+        ];
+        let (front, back) = split_convex_polygon(&tri, Vec2::ZERO, Vec2::X);
+        assert!(!front.is_empty() || !back.is_empty(), "at least one side should have vertices");
+    }
+
+    #[test]
+    fn split_preserves_all_original_vertices_in_union() {
+        // Every original vertex must appear in either front or back (not lost)
+        let square = vec![
+            Vec2::new(-10.0, -10.0),
+            Vec2::new(10.0, -10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(-10.0, 10.0),
+        ];
+        let (front, back) = split_convex_polygon(&square, Vec2::ZERO, Vec2::X);
+        let union: Vec<Vec2> = front.iter().chain(back.iter()).copied().collect();
+        for v in &square {
+            assert!(
+                union.iter().any(|u| (*u - *v).length() < 1e-4),
+                "original vertex {v:?} missing from split output"
+            );
+        }
+    }
+
+    // ── spawn_unit_fragment geometry ─────────────────────────────────────────
+
+    #[test]
+    fn unit_fragment_triangle_has_positive_area() {
+        let side = 6.0_f32;
+        let h = side * 3.0_f32.sqrt() / 2.0;
+        let v = [
+            Vec2::new(0.0, h / 2.0),
+            Vec2::new(-side / 2.0, -h / 2.0),
+            Vec2::new(side / 2.0, -h / 2.0),
+        ];
+        let a = v[1] - v[0];
+        let b = v[2] - v[0];
+        let area = (a.x * b.y - a.y * b.x).abs() / 2.0;
+        assert!(area > 1.0, "unit fragment triangle must have positive area, got {area}");
+    }
+
+    #[test]
+    fn unit_fragment_triangle_accepted_by_rapier_convex_hull() {
+        let side = 6.0_f32;
+        let h = side * 3.0_f32.sqrt() / 2.0;
+        let verts = vec![
+            Vec2::new(0.0, h / 2.0),
+            Vec2::new(-side / 2.0, -h / 2.0),
+            Vec2::new(side / 2.0, -h / 2.0),
+        ];
+        let collider = bevy_rapier2d::prelude::Collider::convex_hull(&verts);
+        assert!(
+            collider.is_some(),
+            "unit fragment vertices must produce a valid Rapier convex hull collider"
+        );
+    }
+
+    // ── Full split pipeline: split → hull → local → Rapier collider ──────────
+    //
+    // These tests exercise the same code path as `projectile_asteroid_hit_system`
+    // for size-4..=8 asteroids.  A `None` return from `Collider::convex_hull`
+    // means the fragment silently falls back to a ball and can look like it has
+    // no collision shape.
+
+    /// Returns the polygon area (shoelace formula).
+    fn poly_area(v: &[Vec2]) -> f32 {
+        let n = v.len();
+        let mut a = 0.0f32;
+        for i in 0..n {
+            let j = (i + 1) % n;
+            a += v[i].x * v[j].y - v[j].x * v[i].y;
+        }
+        a.abs() / 2.0
+    }
+
+    /// Simulate the exact pipeline from `projectile_asteroid_hit_system`
+    /// (size 4..=8 path) and assert both halves produce a valid Rapier collider.
+    fn assert_split_produces_valid_colliders(shape_name: &str, verts: &[Vec2], axis: Vec2) {
+        let origin = Vec2::ZERO;
+        let (front_raw, back_raw) = split_convex_polygon(verts, origin, axis);
+
+        for (side, raw) in [("front", &front_raw), ("back", &back_raw)] {
+            if raw.len() < 3 {
+                // Empty half is fine — the code skips it with `continue`
+                continue;
+            }
+            let hull = crate::asteroid::compute_convex_hull_from_points(raw);
+            let hull = match hull {
+                Some(ref h) if h.len() >= 3 => h.clone(),
+                _ => {
+                    panic!(
+                        "{shape_name} axis=({ax:.2},{ay:.2}) {side}: \
+                         compute_convex_hull_from_points returned < 3 pts from {n} raw pts",
+                        ax = axis.x,
+                        ay = axis.y,
+                        n = raw.len()
+                    );
+                }
+            };
+            let centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
+            let local: Vec<Vec2> = hull.iter().map(|v| *v - centroid).collect();
+            let area = poly_area(&local);
+            let collider = bevy_rapier2d::prelude::Collider::convex_hull(&local);
+
+            assert!(
+                collider.is_some(),
+                "{shape_name} axis=({ax:.2},{ay:.2}) {side}: \
+                 Collider::convex_hull returned None for {n} local pts (area={area:.4})\n\
+                 local: {local:?}",
+                ax = axis.x,
+                ay = axis.y,
+                n = local.len()
+            );
+
+            // Sanity: the resulting shape must have positive area
+            assert!(
+                area > 0.1,
+                "{shape_name} axis=({ax:.2},{ay:.2}) {side}: \
+                 polygon area {area:.4} is suspiciously small (near-degenerate)",
+                ax = axis.x,
+                ay = axis.y
+            );
+        }
+    }
+
+    fn impact_axes() -> [Vec2; 6] {
+        use std::f32::consts::FRAC_PI_4;
+        [
+            Vec2::X,
+            Vec2::NEG_X,
+            Vec2::Y,
+            Vec2::NEG_Y,
+            Vec2::new(FRAC_PI_4.cos(), FRAC_PI_4.sin()),   // 45°
+            Vec2::new(-FRAC_PI_4.cos(), FRAC_PI_4.sin()),  // 135°
+        ]
+    }
+
+    #[test]
+    fn split_pipeline_square_asteroid_all_axes() {
+        use crate::constants::SQUARE_BASE_HALF;
+        let h = SQUARE_BASE_HALF;
+        let square = vec![
+            Vec2::new(-h, -h),
+            Vec2::new(h, -h),
+            Vec2::new(h, h),
+            Vec2::new(-h, h),
+        ];
+        for axis in impact_axes() {
+            assert_split_produces_valid_colliders("square", &square, axis);
+        }
+    }
+
+    #[test]
+    fn split_pipeline_triangle_asteroid_all_axes() {
+        use crate::constants::TRIANGLE_BASE_SIDE;
+        let side = TRIANGLE_BASE_SIDE;
+        let height = side * 3.0_f32.sqrt() / 2.0;
+        let tri = vec![
+            Vec2::new(0.0, height / 2.0),
+            Vec2::new(-side / 2.0, -height / 2.0),
+            Vec2::new(side / 2.0, -height / 2.0),
+        ];
+        for axis in impact_axes() {
+            assert_split_produces_valid_colliders("triangle", &tri, axis);
+        }
+    }
+
+    #[test]
+    fn split_pipeline_pentagon_asteroid_all_axes() {
+        use crate::constants::POLYGON_BASE_RADIUS;
+        let r = POLYGON_BASE_RADIUS;
+        let pent: Vec<Vec2> = (0..5)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / 5.0;
+                Vec2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        for axis in impact_axes() {
+            assert_split_produces_valid_colliders("pentagon", &pent, axis);
+        }
+    }
+
+    #[test]
+    fn split_pipeline_hexagon_asteroid_all_axes() {
+        use crate::constants::POLYGON_BASE_RADIUS;
+        let r = POLYGON_BASE_RADIUS;
+        let hex: Vec<Vec2> = (0..6)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / 6.0;
+                Vec2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        for axis in impact_axes() {
+            assert_split_produces_valid_colliders("hexagon", &hex, axis);
+        }
+    }
+
+    #[test]
+    fn split_pipeline_large_composite_hull_all_axes() {
+        // A large octagon simulating a merged composite (e.g. 8 triangles merged)
+        let r = 30.0_f32;
+        let oct: Vec<Vec2> = (0..8)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / 8.0;
+                Vec2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        for axis in impact_axes() {
+            assert_split_produces_valid_colliders("large_octagon", &oct, axis);
+        }
+    }
+
+    #[test]
+    fn split_pipeline_vertex_exactly_on_split_plane() {
+        // Diamond where two vertices lie exactly on the split plane (y-axis).
+        // This is a tricky edge case that can produce near-duplicate intersection points.
+        let diamond = vec![
+            Vec2::new(-10.0, -5.0),
+            Vec2::new(0.0, 8.0),   // ON y-axis
+            Vec2::new(10.0, -5.0),
+            Vec2::new(0.0, -8.0),  // ON y-axis
+        ];
+        // Split along Y (axis = X), so the two vertices on the y-axis are on the plane
+        assert_split_produces_valid_colliders("diamond_on_axis", &diamond, Vec2::X);
+        assert_split_produces_valid_colliders("diamond_on_axis", &diamond, Vec2::NEG_X);
+    }
+
+    // ── Chip path: vertex-removal pipeline ───────────────────────────────────
+    //
+    // These mirror the `_ =>` (size ≥ 9) path in `projectile_asteroid_hit_system`.
+
+    fn assert_chip_produces_valid_collider(shape_name: &str, verts: &[Vec2], remove_idx: usize) {
+        // Simulate the chip path
+        let mut new_world = verts.to_vec();
+        if new_world.len() > 3 {
+            new_world.remove(remove_idx);
+        }
+        let hull_world = crate::asteroid::compute_convex_hull_from_points(&new_world)
+            .unwrap_or_else(|| new_world.clone());
+        let centroid: Vec2 =
+            hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
+        let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - centroid).collect();
+
+        let collider = bevy_rapier2d::prelude::Collider::convex_hull(&new_local);
+        let area = poly_area(&new_local);
+
+        assert!(
+            collider.is_some(),
+            "{shape_name} chip[{remove_idx}]: Collider::convex_hull returned None \
+             for {n} pts (area={area:.4})\n  local: {new_local:?}",
+            n = new_local.len()
+        );
+        assert!(
+            area > 0.1,
+            "{shape_name} chip[{remove_idx}]: area {area:.4} is suspiciously small"
+        );
+    }
+
+    #[test]
+    fn chip_path_pentagon_valid_collider_after_each_vertex_removed() {
+        use crate::constants::POLYGON_BASE_RADIUS;
+        let r = POLYGON_BASE_RADIUS;
+        let pent: Vec<Vec2> = (0..5)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / 5.0;
+                Vec2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        for idx in 0..5 {
+            assert_chip_produces_valid_collider("pentagon", &pent, idx);
+        }
+    }
+
+    #[test]
+    fn chip_path_octagon_valid_collider_after_each_vertex_removed() {
+        let r = 20.0_f32;
+        let oct: Vec<Vec2> = (0..8)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / 8.0;
+                Vec2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        for idx in 0..8 {
+            assert_chip_produces_valid_collider("octagon", &oct, idx);
+        }
+    }
+
+    #[test]
+    fn chip_path_triangle_leaves_three_vertices_unchanged() {
+        // Triangles (len=3) must NOT have a vertex removed (would leave 2, degenerate)
+        use crate::constants::TRIANGLE_BASE_SIDE;
+        let side = TRIANGLE_BASE_SIDE;
+        let h = side * 3.0_f32.sqrt() / 2.0;
+        let tri = vec![
+            Vec2::new(0.0, h / 2.0),
+            Vec2::new(-side / 2.0, -h / 2.0),
+            Vec2::new(side / 2.0, -h / 2.0),
+        ];
+        // When len == 3 the remove is skipped; hull computation on 3 pts must still produce a valid collider
+        assert_chip_produces_valid_collider("triangle_no_remove", &tri, 0);
+    }
+
+    // ── Mass→shape correction ─────────────────────────────────────────────────
+
+    /// Simulate the full split pipeline with mass→shape correction and assert the result
+    /// meets the minimum vertex count for the given mass.
+    fn split_with_shape_correction(
+        shape_name: &str,
+        verts: &[Vec2],
+        axis: Vec2,
+        mass_a: u32,
+        mass_b: u32,
+    ) {
+        let origin = Vec2::ZERO;
+        let (front_raw, back_raw) = split_convex_polygon(verts, origin, axis);
+        for (side, raw, mass) in
+            [("front", &front_raw, mass_a), ("back", &back_raw, mass_b)]
+        {
+            if raw.len() < 3 {
+                continue; // empty half is fine
+            }
+            let hull = match crate::asteroid::compute_convex_hull_from_points(raw) {
+                Some(h) if h.len() >= 3 => h,
+                _ => continue, // hull failed → production code skips this half
+            };
+            let final_mass = mass.max(1);
+            let centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
+            let local: Vec<Vec2> = if hull.len() < min_vertices_for_mass(final_mass) {
+                canonical_vertices_for_mass(final_mass)
+            } else {
+                hull.iter().map(|v| *v - centroid).collect()
+            };
+
+            let min_v = min_vertices_for_mass(final_mass);
+            assert!(
+                local.len() >= min_v,
+                "{shape_name} {side} mass={final_mass}: got {} verts, expected ≥{min_v}",
+                local.len()
+            );
+            let collider = bevy_rapier2d::prelude::Collider::convex_hull(&local);
+            assert!(
+                collider.is_some(),
+                "{shape_name} {side} mass={final_mass}: Collider::convex_hull returned None \
+                 for {} verts",
+                local.len()
+            );
+        }
+    }
+
+    #[test]
+    fn mass_shape_correction_size4_square_split_gives_at_least_4_vertices() {
+        // A size-4 square (split → two halves each of mass 2).
+        // Mass 2 requires ≥4 vertices. The raw split half may only have 3.
+        use crate::constants::SQUARE_BASE_HALF;
+        let h = SQUARE_BASE_HALF;
+        let square = vec![
+            Vec2::new(-h, -h),
+            Vec2::new(h, -h),
+            Vec2::new(h, h),
+            Vec2::new(-h, h),
+        ];
+        for axis in [Vec2::X, Vec2::Y, Vec2::new(1.0, 1.0).normalize()] {
+            split_with_shape_correction("square_size4", &square, axis, 2, 2);
+        }
+    }
+
+    #[test]
+    fn mass_shape_correction_size5_pentagon_split_both_halves_valid() {
+        // Size-5 split → mass 2 + mass 3 (both need ≥4 vertices).
+        use crate::constants::POLYGON_BASE_RADIUS;
+        let r = POLYGON_BASE_RADIUS;
+        let pent: Vec<Vec2> = (0..5)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / 5.0;
+                Vec2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        for axis in [Vec2::X, Vec2::Y] {
+            split_with_shape_correction("pentagon_size5", &pent, axis, 2, 3);
+        }
+    }
+
+    #[test]
+    fn mass_shape_correction_size6_hexagon_split_both_halves_valid() {
+        // Size-6 hexagon split → mass 3 + mass 3 (each need ≥4 vertices).
+        use crate::constants::POLYGON_BASE_RADIUS;
+        let r = POLYGON_BASE_RADIUS;
+        let hex: Vec<Vec2> = (0..6)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / 6.0;
+                Vec2::new(r * a.cos(), r * a.sin())
+            })
+            .collect();
+        for axis in [Vec2::X, Vec2::Y, Vec2::new(1.0, 1.0).normalize()] {
+            split_with_shape_correction("hexagon_size6", &hex, axis, 3, 3);
+        }
+    }
+
+    #[test]
+    fn mass_shape_correction_degenerate_input_uses_canonical() {
+        // Force a below-minimum scenario by directly calling the correction logic.
+        // A 3-vertex hull for mass=4 must be replaced with the 4-vertex canonical square.
+        let three_vert_hull = vec![
+            Vec2::new(-5.0, -5.0),
+            Vec2::new(5.0, -5.0),
+            Vec2::new(0.0, 5.0),
+        ];
+        let mass = 4u32;
+        let centroid = Vec2::ZERO;
+        let result: Vec<Vec2> = if three_vert_hull.len() < min_vertices_for_mass(mass) {
+            canonical_vertices_for_mass(mass)
+        } else {
+            three_vert_hull.iter().map(|v| *v - centroid).collect()
+        };
+        let min_v = min_vertices_for_mass(mass);
+        assert!(
+            result.len() >= min_v,
+            "mass {mass}: expected ≥{min_v} vertices but got {}",
+            result.len()
+        );
+    }
 }
 
 /// Spawn a single unit-size (triangle) asteroid fragment at `pos` with the given velocity.
