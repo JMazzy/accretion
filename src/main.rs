@@ -20,7 +20,7 @@ use testing::{
 };
 
 fn spawn_initial_world(mut commands: Commands) {
-    asteroid::spawn_initial_asteroids(&mut commands, 100);
+    asteroid::spawn_initial_asteroids(&mut commands, 200);
 }
 
 fn spawn_player_startup(commands: Commands) {

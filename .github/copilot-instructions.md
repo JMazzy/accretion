@@ -11,7 +11,7 @@
 The "grav-sim" project is an ECS-based **asteroid simulation engine** built on **Bevy** with physics powered by **Rapier2D**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
 
 - **Purpose**: Pure asteroid-based simulation where asteroids naturally aggregate through gravitational attraction and collision to form larger composite asteroids (polygons) that visually rotate based on physics.
-- **Framework**: 
+- **Framework**:
   - **Bevy 0.14**: Game engine providing ECS architecture, rendering, and event handling
   - **Rapier2D 0.18**: Physics engine for collision detection, rigid body dynamics, and impulse-based response
 - **Core Modules**:
@@ -33,13 +33,12 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
     6. **Environmental damping** - Stabilizes dense clusters
     7. **User input** - Left-click spawns asteroids
     8. **Gizmo rendering** - Renders wireframe outlines
-  - **PostUpdate Schedule**:
-    9. **Asteroid formation** - MUST run AFTER Rapier physics (FixedUpdate) populates contacts
-    10. **Test logging & verification** - MUST run after formation to see merged results
+  - **PostUpdate Schedule**: 9. **Asteroid formation** - MUST run AFTER Rapier physics (FixedUpdate) populates contacts 10. **Test logging & verification** - MUST run after formation to see merged results
 
 ## Physics Rules
 
 ### Small Asteroid Properties (Triangles)
+
 - **Shape**: Equilateral triangle (relative vertices stored, rotated by transform)
 - **Collider**: 2.0 unit ball
 - **Mass**: 1.0 unit
@@ -48,6 +47,7 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Damping**: No linear or angular damping by default
 
 ### Large Asteroid Properties (Polygons)
+
 - **Formation**: Created when 2+ small asteroids touch and move < 1.0 u/s
 - **Shape**: Convex hull of constituent asteroids (computed via gift wrapping algorithm)
 - **Collider**: Exact convex polygon from physics engine
@@ -58,6 +58,7 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Velocity**: Inherits averaged linear and angular velocity from constituents
 
 ### N-Body Gravity
+
 - **Constant**: 2.0 (gentle mutual attraction to avoid velocity blowup)
 - **Minimum distance threshold**: 2.0 units (clamps distance-squared to prevent singularities)
 - **Maximum gravity distance**: 300.0 units (prevents phantom forces from distant asteroids)
@@ -65,15 +66,17 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Observed Behavior**: Asteroids at 100 units apart attract over ~350 frames, reach velocities ~28+ m/s, then collide and merge
 
 ### Velocity Synchronization
+
 - **Activation**: When two asteroids touch and both move < 5.0 u/s
 - **Effect**: Velocities averaged between them (linear and angular)
 - **Purpose**: Prepares asteroids for smooth composite formation
 
 ### Cluster Formation & Merging (CRITICAL IMPLEMENTATION)
+
 - **Detection**: Flood-fill algorithm through Rapier contact manifolds
 - **Contact query**: MUST run in PostUpdate after Rapier FixedUpdate populates contacts
 - **Velocity threshold**: 10.0 u/s (allows faster asteroids to merge if in contact)
-- **Hull computation**: 
+- **Hull computation**:
   - Collect ALL vertices from cluster members in WORLD-SPACE
   - Apply transform rotation to local vertices: `world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate()`
   - Compute convex hull from complete world-space vertex set
@@ -83,11 +86,13 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Prevention**: Processed asteroids tracked per-frame to prevent duplicate merging
 
 ### Environmental Damping
+
 - **Activation**: Applied to asteroids with >6 neighbors within 3.0 units
 - **Damping factor**: 0.5% per frame (factor: 0.995)
 - **Purpose**: Prevents numerical instability in extreme density clusters
 
 ### Culling & Damping
+
 - **Damping zone**: Asteroids beyond 600 units from origin experience increasing damping
 - **Culling distance**: 1000 units (asteroids removed when exceeding this)
 - **Damping ramp**: Smoothly increases from 0% to 5% over 400-unit range
@@ -100,6 +105,7 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Coordinate system**: Screen (0,0) top-left → World (0,0) center; X right, Y up
 
 ## Current Implementation Status
+
 - ✅ Pure asteroid-only unified system (all entities equal)
 - ✅ Cluster-based formation with flood-fill contact detection
 - ✅ Wireframe rendering with rotation (no sprite overlays)
@@ -112,6 +118,7 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 ## Testing Strategy (Session-Learned Best Practices)
 
 ### Test Framework
+
 - **Environment Variable**: `GRAV_SIM_TEST=<test_name>` triggers test mode from `main.rs`
 - **Available Tests**:
   - `two_triangles`: Verifies 2 touching asteroids merge into 1 composite
@@ -120,17 +127,20 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Test Config Resource**: Tracks frame count, asteroid counts, test name for automated verification
 
 ### Test Logging Strategy
+
 - Log at key frames: 1, 10, 30, 50, 100, 150, 200, 250, 300, etc.
 - Log both **positions** and **velocities** to understand physics behavior
 - Example output: `[Frame 300] pos: (-11.3, 0.0), vel_len: 28.565` for gravity test
 - This reveals whether asteroids are attracting (velocity increasing, distance decreasing) or repelling
 
 ### Test Verification
+
 - Compare `initial_asteroid_count` vs `final_asteroid_count`
 - For merging tests: expect `final < initial` AND `final >= 1`
 - Use frame logging to debug: if asteroids don't merge, watch velocity and position trends
 
 ### Physics Debugging via Tests
+
 1. **Spawn asteroids precisely** (not randomly) to reproduce behavior
 2. **Log positions/velocities** across frames to see trends
 3. **Use consistent test runs** (same spawn positions) for reproducible results
@@ -138,6 +148,7 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 5. **Watch for phase changes**: attraction → collision → merge
 
 ### Common Pitfalls Found
+
 - **System scheduling**: Formation system must run AFTER physics updates contacts
 - **Hull computation**: Must use constituent vertex positions, not just center positions
 - **Overlapping spawns**: Cause Rapier separation impulses; spawn touching but not overlapping
@@ -174,7 +185,7 @@ cargo check
   - `src/asteroid.rs` - Core asteroid definitions and spawn functions
   - `src/simulation.rs` - All ECS systems
   - `src/graphics.rs` - Camera/rendering setup
-- **Naming Conventions**: 
+- **Naming Conventions**:
   - `snake_case` for functions, variables, modules
   - `PascalCase` for types, structs, enums, traits
   - `SCREAMING_SNAKE_CASE` for constants
@@ -186,13 +197,13 @@ cargo check
 ## Integration Points
 
 - **External APIs**: None - fully self-contained simulation
-- **Dependencies**: 
+- **Dependencies**:
   - `bevy` (0.13) - ECS engine, rendering, windowing
   - `bevy_rapier2d` (0.25) - Physics engine integration for Bevy
   - `rapier2d` (0.18) - Core physics via SIMD-optimized convex hulls and collision detection
   - `rand` (0.8) - Random grey shades for asteroid coloring
   - `glam` - Math library (Vec2, Quat) via Bevy
-- **Cross-Component Communication**: 
+- **Cross-Component Communication**:
   - Components: `Asteroid`, `Vertices` (local-space), `NeighborCount`, plus Rapier/Bevy physics components
   - Systems read/write components; Rapier applies physics automatically in FixedUpdate
   - Formation system queries Rapier context for contacts (requires PostUpdate scheduling)
@@ -202,18 +213,21 @@ cargo check
 ## Critical Implementation Notes
 
 ### Vertex Storage (LOCAL-SPACE Essential)
+
 - **Why local-space?**: Enables correct rotation rendering; simplifies physics collider creation
 - **Storage**: `Vertices(Vec<Vec2>)` component stores vertices relative to entity position
 - **Rendering**: Gizmos system rotates local vertices by transform rotation before drawing
 - **Hull Composition**: When merging, convert local vertices to world-space, compute hull, convert back to local
 
 ### System Scheduling Constraints
+
 - **Rapier Physics**: Runs in FixedUpdate; solves all physics, populates contact manifolds
 - **Formation System**: Must run in PostUpdate; queries populated contact manifolds
 - **Test Systems**: Must run in PostUpdate after formation; sees results of merging
 - **Violation Consequences**: If formation runs before physics, no contacts detected → no merging
 
 ### Gravity Constant Tuning
+
 - **Tested range**: 2.0 works well; too high (15.0+) causes instability
 - **Observable metrics**:
   - At 100 units separation: ~350 frames to collision
@@ -226,6 +240,7 @@ cargo check
 **Maintain living documentation rather than creating new files for each change.**
 
 ### Documentation Files
+
 The project maintains three consolidated documentation files:
 
 1. **`ARCHITECTURE.md`** - Core technical reference
@@ -249,6 +264,7 @@ The project maintains three consolidated documentation files:
    - Update when: Completing significant features, fixing critical bugs, reaching milestones
 
 ### Documentation Best Practices
+
 - **Update docs with code changes**: When implementing a feature or fix, update the relevant documentation file immediately
 - **Avoid temporary documentation files**: Do not create session-specific or change-specific markdown files
 - **Keep it concise**: Consolidate related info; remove redundancy
@@ -256,7 +272,9 @@ The project maintains three consolidated documentation files:
 - **Example format for changes**: "Updated gravity constant from 2.0 to 10.0 in `nbody_gravity_system` (documented in ARCHITECTURE.md)"
 
 ### PhysicsConstants Updates
+
 When tuning physics constants:
+
 1. Update the constant value in the source code (e.g., `src/simulation.rs`)
 2. Update the constant reference in ARCHITECTURE.md with both the value and justification
 3. Add a line to CHANGELOG.md explaining the change and its observable effect
@@ -267,17 +285,16 @@ When tuning physics constants:
 **Every significant code change must pass the following verification steps before proceeding to the next task.**
 
 ### Verification Checklist
+
 For any change to physics systems, UI, core logic, or test framework:
 
 1. **Compilation & Formatting**
    - ✅ `cargo check` passes with zero errors
    - ✅ `cargo fmt` (code is properly formatted)
    - ✅ `cargo clippy -- -D warnings` passes (zero warnings)
-   
 2. **Build Status**
    - ✅ `cargo build` succeeds (debug mode)
    - ✅ `cargo build --release` succeeds (optimized)
-   
 3. **Test Existence & Execution**
    - ✅ Relevant tests exist for the changed functionality
    - ✅ If modifying physics: run `./test_all.sh` or specific test with `GRAV_SIM_TEST=<name> cargo run --release`
@@ -296,6 +313,7 @@ For any change to physics systems, UI, core logic, or test framework:
    - ✅ Update CHANGELOG.md with brief summary of the change
 
 ### When to Run Full Verification
+
 - **Always**: Modifying physics systems (gravity, collision, merging, culling)
 - **Always**: Adding new features or user controls
 - **Always**: Changing physics constants
@@ -303,6 +321,7 @@ For any change to physics systems, UI, core logic, or test framework:
 - **Optional**: Minor formatting fixes, comment updates, refactoring without behavior change
 
 ### Example Verification Flow
+
 ```bash
 # 1. Check compilation
 cargo check
@@ -328,6 +347,7 @@ cargo clippy -- -D warnings
 ```
 
 ### Debug Tips for Failed Verification
+
 - **Build errors**: Check Rust edition (2021), Bevy version (0.13), dependencies in Cargo.toml
 - **Clippy warnings**: Follow suggestions; most are idiomatic Rust improvements
 - **Test failures**: Check test output frame-by-frame; log positions/velocities for physics issues

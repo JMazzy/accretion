@@ -23,7 +23,8 @@
 //! | ≥ 6           | hexagon    | 6            |
 
 use super::state::{
-    AimDirection, Player, PlayerFireCooldown, PlayerHealth, PreferredGamepad, Projectile,
+    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PreferredGamepad,
+    Projectile,
 };
 use crate::asteroid::{
     canonical_vertices_for_mass, compute_convex_hull_from_points, min_vertices_for_mass,
@@ -57,6 +58,7 @@ pub fn projectile_fire_system(
     axes: Res<Axis<GamepadAxis>>,
     mut aim: ResMut<AimDirection>,
     mut cooldown: ResMut<PlayerFireCooldown>,
+    mut idle: ResMut<AimIdleTimer>,
     time: Res<Time>,
 ) {
     cooldown.timer = (cooldown.timer - time.delta_seconds()).max(0.0);
@@ -77,14 +79,16 @@ pub fn projectile_fire_system(
         let right_stick = Vec2::new(rx, ry);
         if right_stick.length() > GAMEPAD_RIGHT_DEADZONE {
             aim.0 = right_stick.normalize_or_zero();
+            // Right stick is active — prevent idle aim snap.
+            idle.secs = 0.0;
             if right_stick.length() > GAMEPAD_FIRE_THRESHOLD {
                 gamepad_wants_fire = true;
             }
         }
     }
 
-    let kb_fire = keys.just_pressed(KeyCode::Space);
-    let mouse_fire = mouse_buttons.just_pressed(MouseButton::Left);
+    let kb_fire = keys.pressed(KeyCode::Space);
+    let mouse_fire = mouse_buttons.pressed(MouseButton::Left);
 
     if !(kb_fire || mouse_fire || gamepad_wants_fire) || cooldown.timer > 0.0 {
         return;
@@ -109,6 +113,7 @@ pub fn projectile_fire_system(
             angvel: 0.0,
         },
         Collider::ball(PROJECTILE_COLLIDER_RADIUS),
+        Ccd { enabled: true },
         CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_3,
             bevy_rapier2d::geometry::Group::GROUP_1,

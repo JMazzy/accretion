@@ -10,11 +10,12 @@
 | **S** | Thrust backward |
 | **A** | Rotate ship left |
 | **D** | Rotate ship right |
-| **Space** or **Left-click** | Fire projectile toward mouse cursor |
+| **Space** or **Left-click** | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **Mouse wheel** | Zoom in / out |
 
 - **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
 - An **orange aim indicator** (line + dot) extends from the ship in the current fire direction.
+- **Aim idle snap**: if no mouse movement, gamepad left stick, or right stick input is received for 1 second, the aim direction automatically resets to the ship's forward (+Y).
 
 ### Gamepad (Twin-Stick)
 
@@ -22,9 +23,10 @@
 | ------- | -------- |
 | **Left stick** | Rotate ship toward stick direction at fixed speed, then thrust forward |
 | **Right stick** | Aim and auto-fire projectiles in stick direction |
-| **B button** | Apply reverse thrust (while held) |
+| **B button** | Brake — applies strong velocity damping each frame while held |
 
 - **Left stick movement**: the ship rotates at a fixed angular speed until aligned with the stick direction, then applies forward thrust proportional to stick magnitude. Thrust is suppressed while rotating sharply (> 0.5 rad off-target) to avoid fighting the turn.
+- **B button brake**: while held, multiplies both linear and angular velocity by `GAMEPAD_BRAKE_DAMPING` (~0.82) every frame, bringing the ship to a near-stop in roughly half a second at 60 fps. Forward thrust is independent and can still be applied simultaneously via the left stick.
 - **Right stick auto-fire**: once the right stick exceeds ~50% deflection, projectiles auto-fire at the fire cooldown rate. Pulling the stick further does not change fire rate.
 - **Dead zones**: left stick < 15%, right stick < 20% are ignored to prevent drift.
 

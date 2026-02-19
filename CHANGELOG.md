@@ -1,22 +1,38 @@
 # GRAV-SIM Changelog
 
+## Control Refinements — February 19, 2026
+
+### Aim Idle Snap
+
+Added `AimIdleTimer` resource. When no mouse movement, gamepad left stick, or right stick input is received for 1 second (`AIM_IDLE_SNAP_SECS = 1.0`), the `AimDirection` resource is automatically reset to the ship's local forward (+Y). Each active input source (mouse cursor move, left stick above deadzone, right stick above deadzone) zeroes the timer.
+
+### Gamepad B Button → Brake
+
+Replaced the "reverse thrust" behaviour on the B (East) gamepad button with an active brake. While held, both `linvel` and `angvel` are multiplied by `GAMEPAD_BRAKE_DAMPING` (0.82) every frame, stopping the ship from full speed in roughly half a second at 60 fps. The S/keyboard reverse-thrust path is unchanged.
+
+### Space / LMB Auto-Repeat Fire
+
+Changed `keys.just_pressed(Space)` and `mouse_buttons.just_pressed(Left)` to `pressed`. Holding Space or left-click now fires continuously at `FIRE_COOLDOWN` intervals, matching the behaviour of the gamepad right stick.
+
+---
+
 ## Mass → Shape Rules for Split/Chip Fragments — February 19, 2026
 
 Fragment shapes produced by splitting (size 4–8) or chipping (≥9) now respect a minimum vertex count that scales with the fragment’s mass:
 
 | Fragment mass | Min shape | Min vertices |
-|---|---|---|
-| 1 | triangle | 3 |
-| 2–4 | square | 4 |
-| 5 | pentagon | 5 |
-| ≥6 | hexagon | 6 |
+| ------------- | --------- | ------------ |
+| 1             | triangle  | 3            |
+| 2–4           | square    | 4            |
+| 5             | pentagon  | 5            |
+| ≥6            | hexagon   | 6            |
 
 - **Files changed**: `src/asteroid.rs`, `src/player/combat.rs`
 - Two new public helpers added to `asteroid.rs`:
   - `min_vertices_for_mass(mass) -> usize` — returns the minimum vertex count for the mass tier
   - `canonical_vertices_for_mass(mass) -> Vec<Vec2>` — returns the centred canonical polygon for that mass (triangle/square/pentagon/hexagon)
 - Both split and chip paths check the resulting hull vertex count; if it falls below the minimum, the canonical shape is substituted at the computed centroid position
-- Fragments may retain *more* sides than the minimum when the geometric hull already exceeds the requirement
+- Fragments may retain _more_ sides than the minimum when the geometric hull already exceeds the requirement
 - Merging (`asteroid_formation_system`) is unaffected — composites keep whatever hull the gift-wrapping produces
 - 10 new unit tests added (6 in `asteroid.rs`, 4 in `combat.rs`); all 63 tests pass
 - `cargo clippy -- -D warnings` clean; release build succeeds
@@ -26,15 +42,18 @@ Fragment shapes produced by splitting (size 4–8) or chipping (≥9) now respec
 ## Test Isolation & Script Fixes
 
 ### Test Player Isolation
+
 - Player entity is no longer spawned in test mode. `spawn_player_startup` moved to the non-test `else` branch in `main.rs`. This prevents the player's 8-unit ball collider at origin from interfering with asteroid-only tests (several of which spawn asteroids at (0,0)).
 - Player systems still registered by `SimulationPlugin` in test mode but are no-ops since no `Player` component exists.
 - `PlayerFireCooldown` resource kept unconditional to avoid system panics.
 
 ### test_all.sh Pass/Fail Detection Fixed
+
 - Script previously used `grep`'s exit code (0=match found) to count pass/fail, meaning a `✗ FAIL` line was still counted as a pass.
 - Fixed to capture the result line and check for the `✓ PASS` prefix explicitly.
 
 ### gentle_approach Frame Limit Increase
+
 - Raised `frame_limit` from 400 → 600 frames. At 400 frames the asteroids had fully converged in velocity (~9.9 u/s, 12.3 units apart) but had not yet made physical contact; the extra 200 frames give them time to collide and merge.
 - Test now correctly reports `✓ PASS: Asteroids merged cleanly via gravity (2 → 1)`.
 
@@ -70,8 +89,6 @@ Implemented full twin-stick shooter controls for both keyboard+mouse and gamepad
 - Updated `player_gizmo_system` — draws an orange aim indicator line + dot in fire direction
 - Removed `spawn_asteroid` (asteroid.rs) — no longer reachable; `spawn_asteroid_with_vertices` remains
 
-
-
 ### Summary
 
 Fixed two critical issues with asteroid splitting: collision detection for split fragments and directional alignment of split planes.
@@ -81,7 +98,7 @@ Fixed two critical issues with asteroid splitting: collision detection for split
 1. **Collider detection for split asteroids** — Split asteroids now have proper collision detection enabled immediately after spawning
    - Added `ActiveCollisionTypes::DYNAMIC_KINEMATIC` to ensure split fragments can collide with projectiles
    - Prevents "sometimes can't collide further" issue where split asteroids wouldn't register hits from projectiles
-   
+
 2. **Split direction alignment** — Asteroid splits now align WITH the projectile trajectory, not perpendicular to it
    - Changed split axis from perpendicular (`Vec2::new(-impact_dir.y, impact_dir.x)`) to impact-aligned (`impact_dir`)
    - Result: projectiles split asteroids along their impact line for more intuitive physics
@@ -154,17 +171,15 @@ Added a player-controlled space ship entity with WASD thrust/rotation controls, 
 
 ### Controls
 
-| Key | Action |
-|-----|--------|
-| W | Thrust forward |
-| S | Thrust backward (half force) |
-| A | Rotate left |
-| D | Rotate right |
-| Space | Fire projectile (0.2 s cooldown) |
-| Mouse wheel | Zoom in/out (centred on player) |
-| Left click | Spawn asteroid at cursor world position |
-
-
+| Key         | Action                                  |
+| ----------- | --------------------------------------- |
+| W           | Thrust forward                          |
+| S           | Thrust backward (half force)            |
+| A           | Rotate left                             |
+| D           | Rotate right                            |
+| Space       | Fire projectile (0.2 s cooldown)        |
+| Mouse wheel | Zoom in/out (centred on player)         |
+| Left click  | Spawn asteroid at cursor world position |
 
 ### Summary
 
@@ -234,7 +249,6 @@ Complete implementation of ECS-based asteroid simulation engine on Bevy 0.13 + R
   - Minimum distance: 5 units (lets Rapier handle collision zone)
   - Maximum distance: 1000 units (matches cull boundary)
   - Constant: 10.0 (noticeable mutual attraction)
-  
 - **Collision Detection**: Rapier2D automatic contact manifolds
   - Element asteroids: 0.5 restitution (50% bouncy)
   - Composite asteroids: 0.7 restitution (70% bouncy)
@@ -357,19 +371,19 @@ Proper execution ordering for physics consistency:
 
 11 automated test scenarios covering all physics behaviors:
 
-| # | Test | Type | Status | Key Finding |
-| - | ---- | ---- | ------ | ----------- |
-| 1 | `two_triangles` | Basic merge | ✅ | Touching asteroids merge instantly |
-| 2 | `three_triangles` | Cluster | ✅ | Multi-body clusters properly detect |
-| 3 | `gentle_approach` | Gravity | ✅ | Smooth acceleration over distance |
-| 4 | `high_speed_collision` | Impact | ✅ | High-velocity merging works |
-| 5 | `near_miss` | Pass-by | ✅ | High-speed pass behavior validates |
-| 6 | `gravity` | Long-range | ✅ | Inverse-square law verified |
-| 7 | `culling_verification` | Off-screen | ✅ | No phantom forces from culled asteroids |
-| 8 | `large_small_pair` | Mixed size | ✅ | Different masses interact correctly |
-| 9 | `gravity_boundary` | Distance limit | ✅ | Max gravity distance works as designed |
-| 10 | `mixed_size_asteroids` | N-body | ✅ | Complex systems stable |
-| 11 | `passing_asteroid` | Pass-by | ✅ | Alternative near-miss scenario |
+| #   | Test                   | Type           | Status | Key Finding                             |
+| --- | ---------------------- | -------------- | ------ | --------------------------------------- |
+| 1   | `two_triangles`        | Basic merge    | ✅     | Touching asteroids merge instantly      |
+| 2   | `three_triangles`      | Cluster        | ✅     | Multi-body clusters properly detect     |
+| 3   | `gentle_approach`      | Gravity        | ✅     | Smooth acceleration over distance       |
+| 4   | `high_speed_collision` | Impact         | ✅     | High-velocity merging works             |
+| 5   | `near_miss`            | Pass-by        | ✅     | High-speed pass behavior validates      |
+| 6   | `gravity`              | Long-range     | ✅     | Inverse-square law verified             |
+| 7   | `culling_verification` | Off-screen     | ✅     | No phantom forces from culled asteroids |
+| 8   | `large_small_pair`     | Mixed size     | ✅     | Different masses interact correctly     |
+| 9   | `gravity_boundary`     | Distance limit | ✅     | Max gravity distance works as designed  |
+| 10  | `mixed_size_asteroids` | N-body         | ✅     | Complex systems stable                  |
+| 11  | `passing_asteroid`     | Pass-by        | ✅     | Alternative near-miss scenario          |
 
 ### Test Framework
 
@@ -504,6 +518,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 ### Potential Enhancements
 
 #### Physics
+
 - **Gravitational binding energy merging**: Replace velocity-threshold merge criterion with a potential-energy check so clusters only stick when kinetic energy falls below gravitational binding energy
 - **Concave asteroid deformation**: Track per-vertex damage; move impact vertices inward and recompute hull to simulate progressive surface cratering
 - **Rotational-inertia gravity torque**: Include second-moment-of-area in force application so asymmetric composites develop realistic spin
@@ -511,6 +526,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 - **KD-tree spatial index**: Replace the static 500-unit grid with a dynamic KD-tree for better performance under highly non-uniform asteroid distributions
 
 #### Visual & Rendering
+
 - **Particle effects**: Impact dust clouds, merge vortex animations, debris trails on destruction
 - **LOD mesh rendering**: Render large composites (>8 vertices) as GPU-filled meshes instead of per-vertex CPU gizmo lines, removing the rendering bottleneck at high count
 - **Velocity heat-map colouring**: Tint wireframes blue→red based on speed for instant visual KE feedback
@@ -518,6 +534,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 - **Post-processing**: Bloom on high-energy collisions; chromatic aberration during player invincibility frames
 
 #### Gameplay & Extensibility
+
 - **Configuration file**: Load `assets/physics.toml` at startup so constants can be tuned without recompilation
 - **Score and wave system**: Points for destruction scaled by asteroid size; progressive wave spawner increasing count and size over time
 - **Power-up asteroids**: Special asteroids granting temporary buffs (shield, rapid-fire, gravity bomb) on destruction
@@ -525,6 +542,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 - **Local co-op multiplayer**: Second player ship sharing the same physics world
 
 #### Developer Tooling
+
 - **Golden test baselines**: Store expected frame-log snapshots in `tests/golden/` and diff on each run to catch unintentional physics constant drift automatically
 - **In-game physics inspector overlay**: Toggle to show entity IDs, velocities, and contact counts without restarting in test mode
 - **Hot-reload constants**: Watch `assets/physics.toml` at runtime and apply changes immediately for rapid tuning iteration

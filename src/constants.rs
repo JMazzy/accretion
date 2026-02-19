@@ -27,7 +27,7 @@ pub const SPAWN_GRID_MARGIN: f32 = 150.0;
 ///
 /// Increase to give the player more breathing room at startup.
 /// Decrease to make encounters start faster.
-pub const PLAYER_BUFFER_RADIUS: f32 = 400.0;
+pub const PLAYER_BUFFER_RADIUS: f32 = 100.0;
 
 // ── Physics: Gravity ──────────────────────────────────────────────────────────
 
@@ -123,21 +123,21 @@ pub const ZOOM_SPEED: f32 = 0.1;
 ///
 /// Increase for snappier acceleration; decrease for a floatier feel.
 /// Tested range: 60.0–300.0.
-pub const THRUST_FORCE: f32 = 120.0;
+pub const THRUST_FORCE: f32 = 60.0;
 
 /// Reverse thrust force (N) applied while S / gamepad-B is held.
 /// Intentionally weaker than `THRUST_FORCE`.
-pub const REVERSE_FORCE: f32 = 60.0;
+pub const REVERSE_FORCE: f32 = 30.0;
 
 /// Fixed angular velocity (rad/s) applied while A / D are held.
 pub const ROTATION_SPEED: f32 = 3.0;
 
 /// Linear damping applied to the player ship by Rapier on every physics step.
 /// Simulates inertial resistance in space (purely aesthetic — real space has none).
-pub const PLAYER_LINEAR_DAMPING: f32 = 0.5;
+pub const PLAYER_LINEAR_DAMPING: f32 = 0.1;
 
 /// Angular damping applied to the player ship.
-pub const PLAYER_ANGULAR_DAMPING: f32 = 3.0;
+pub const PLAYER_ANGULAR_DAMPING: f32 = 0.5;
 
 /// Radius (u) of the player ship's ball collider.
 pub const PLAYER_COLLIDER_RADIUS: f32 = 8.0;
@@ -194,6 +194,16 @@ pub const INVINCIBILITY_DURATION: f32 = 0.5;
 
 /// Left-stick dead zone: inputs smaller than this fraction are ignored.
 pub const GAMEPAD_LEFT_DEADZONE: f32 = 0.15;
+
+/// Velocity decay factor applied to the player's linvel / angvel every frame
+/// while the B (East) gamepad button is held.  Acts as an active brake.
+/// Range: (0.0, 1.0) — 0.82 removes ≈18% of speed per frame (~60 fps), stopping
+/// from full speed in roughly half a second.
+pub const GAMEPAD_BRAKE_DAMPING: f32 = 0.82;
+
+/// Seconds of inactivity (no mouse movement, left stick, or right stick) before
+/// the aim direction is automatically snapped back to the ship's forward direction.
+pub const AIM_IDLE_SNAP_SECS: f32 = 1.0;
 
 /// Right-stick dead zone for aim updates.
 pub const GAMEPAD_RIGHT_DEADZONE: f32 = 0.2;

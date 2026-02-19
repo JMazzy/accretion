@@ -8,10 +8,11 @@
 //! Also contains [`player_oob_damping_system`] which enforces the soft
 //! out-of-bounds boundary.
 
-use super::state::{Player, PreferredGamepad};
+use super::state::{AimDirection, AimIdleTimer, Player, PreferredGamepad};
 use crate::constants::{
-    GAMEPAD_HEADING_SNAP_THRESHOLD, GAMEPAD_LEFT_DEADZONE, OOB_DAMPING, OOB_RADIUS, OOB_RAMP_WIDTH,
-    REVERSE_FORCE, ROTATION_SPEED, THRUST_FORCE,
+    AIM_IDLE_SNAP_SECS, GAMEPAD_BRAKE_DAMPING, GAMEPAD_HEADING_SNAP_THRESHOLD,
+    GAMEPAD_LEFT_DEADZONE, OOB_DAMPING, OOB_RADIUS, OOB_RAMP_WIDTH, REVERSE_FORCE, ROTATION_SPEED,
+    THRUST_FORCE,
 };
 use bevy::input::gamepad::{
     GamepadAxis, GamepadAxisType, GamepadButton, GamepadButtonType, GamepadConnection,
@@ -106,12 +107,14 @@ pub fn gamepad_connection_system(
 /// 2. Once aligned within `GAMEPAD_HEADING_SNAP_THRESHOLD`, rotation stops.
 /// 3. Forward thrust is applied proportional to stick magnitude at all times.
 ///
-/// **B button (East)**: holds reverse thrust while pressed, overriding forward.
+/// **B button (East)**: active brake — applies `GAMEPAD_BRAKE_DAMPING` to both
+/// linear and angular velocity every frame while held.
 pub fn gamepad_movement_system(
     mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
     preferred: Res<PreferredGamepad>,
     axes: Res<Axis<GamepadAxis>>,
     buttons: Res<ButtonInput<GamepadButton>>,
+    mut idle: ResMut<AimIdleTimer>,
 ) {
     let Ok((transform, mut force, mut velocity)) = q.get_single_mut() else {
         return;
@@ -120,6 +123,12 @@ pub fn gamepad_movement_system(
     let Some(gamepad) = preferred.0 else {
         return;
     };
+
+    // ── Brake (B / East button) ────────────────────────────────────────────────
+    if buttons.pressed(GamepadButton::new(gamepad, GamepadButtonType::East)) {
+        velocity.linvel *= GAMEPAD_BRAKE_DAMPING;
+        velocity.angvel *= GAMEPAD_BRAKE_DAMPING;
+    }
 
     let lx = axes
         .get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickX))
@@ -132,6 +141,9 @@ pub fn gamepad_movement_system(
     if left_stick.length() < GAMEPAD_LEFT_DEADZONE {
         return;
     }
+
+    // Left stick is active — prevent aim-direction idle snap.
+    idle.secs = 0.0;
 
     // atan2(-lx, ly) maps: stick (0,1)→0°, (1,0)→−90°, (−1,0)→+90°
     let target_angle = (-lx).atan2(ly);
@@ -152,12 +164,28 @@ pub fn gamepad_movement_system(
     };
 
     let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
-    let reverse = buttons.pressed(GamepadButton::new(gamepad, GamepadButtonType::East));
+    force.force += forward * THRUST_FORCE * left_stick.length();
+}
 
-    if reverse {
-        force.force -= forward * REVERSE_FORCE * left_stick.length();
-    } else {
-        force.force += forward * THRUST_FORCE * left_stick.length();
+// ── Aim idle snap ─────────────────────────────────────────────────────────────
+
+/// Snap the aim direction back to the ship's local forward when no aim input
+/// has been received for [`AIM_IDLE_SNAP_SECS`] seconds.
+///
+/// Increments [`AimIdleTimer`] every frame.  When the threshold is crossed and
+/// the player entity exists, `AimDirection` is overwritten with the ship's
+/// world-space +Y.
+pub fn aim_snap_system(
+    q_player: Query<&Transform, With<Player>>,
+    mut aim: ResMut<AimDirection>,
+    mut idle: ResMut<AimIdleTimer>,
+    time: Res<Time>,
+) {
+    idle.secs += time.delta_seconds();
+    if idle.secs >= AIM_IDLE_SNAP_SECS {
+        if let Ok(transform) = q_player.get_single() {
+            aim.0 = transform.rotation.mul_vec3(Vec3::Y).truncate();
+        }
     }
 }
 

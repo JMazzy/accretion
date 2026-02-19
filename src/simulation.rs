@@ -13,10 +13,11 @@ use crate::constants::{
     VELOCITY_THRESHOLD_LOCKING, ZOOM_SPEED,
 };
 use crate::player::{
-    camera_follow_system, despawn_old_projectiles_system, gamepad_connection_system,
-    gamepad_movement_system, player_collision_damage_system, player_control_system,
-    player_force_reset_system, player_gizmo_system, player_oob_damping_system,
-    projectile_asteroid_hit_system, projectile_fire_system, AimDirection, PreferredGamepad,
+    aim_snap_system, camera_follow_system, despawn_old_projectiles_system,
+    gamepad_connection_system, gamepad_movement_system, player_collision_damage_system,
+    player_control_system, player_force_reset_system, player_gizmo_system,
+    player_oob_damping_system, projectile_asteroid_hit_system, projectile_fire_system,
+    AimDirection, AimIdleTimer, PreferredGamepad,
 };
 use crate::rendering::{gizmo_rendering_system, stats_display_system};
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
@@ -46,6 +47,7 @@ impl Plugin for SimulationPlugin {
         app.insert_resource(SimulationStats::default())
             .insert_resource(CameraState { zoom: 1.0 })
             .insert_resource(AimDirection::default())
+            .insert_resource(AimIdleTimer::default())
             .insert_resource(PreferredGamepad::default())
             .insert_resource(SpatialGrid::default())
             .add_systems(
@@ -62,6 +64,7 @@ impl Plugin for SimulationPlugin {
                     gamepad_movement_system,        // Gamepad left stick movement + B reverse
                     mouse_aim_system,               // Mouse cursor updates AimDirection
                     projectile_fire_system,         // Space/click/right-stick fires projectiles
+                    aim_snap_system,                // Snap aim to forward after idle timeout
                     despawn_old_projectiles_system, // Expire old projectiles
                     user_input_system,              // Mouse wheel zoom
                     camera_follow_system,           // Camera tracks player
@@ -230,7 +233,12 @@ pub fn nbody_gravity_system(
 /// Updates `AimDirection` every frame from the mouse cursor position.
 /// The player is always at the screen centre (camera follows them), so the
 /// normalised screen-space offset from the centre IS the aim direction in world space.
-pub fn mouse_aim_system(mut aim: ResMut<AimDirection>, windows: Query<&Window>) {
+/// Also resets [`AimIdleTimer`] whenever the cursor position changes.
+pub fn mouse_aim_system(
+    mut aim: ResMut<AimDirection>,
+    mut idle: ResMut<AimIdleTimer>,
+    windows: Query<&Window>,
+) {
     let Ok(window) = windows.get_single() else {
         return;
     };
@@ -247,6 +255,14 @@ pub fn mouse_aim_system(mut aim: ResMut<AimDirection>, windows: Query<&Window>) 
     );
     let dir = offset.normalize_or_zero();
     if dir.length_squared() > 0.0 {
+        // Detect cursor movement: compare to the stored last cursor position.
+        let moved = idle
+            .last_cursor
+            .is_none_or(|prev| prev.distance_squared(cursor) > 1.0);
+        if moved {
+            idle.last_cursor = Some(cursor);
+            idle.secs = 0.0;
+        }
         aim.0 = dir;
     }
 }

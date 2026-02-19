@@ -78,6 +78,20 @@ impl Default for AimDirection {
 #[derive(Resource, Default)]
 pub struct PreferredGamepad(pub Option<Gamepad>);
 
+/// Tracks how long (seconds) since any active aim input was last received.
+///
+/// Reset to 0.0 whenever the mouse cursor moves, the gamepad left stick is
+/// active, or the right stick is active.  When the timer exceeds
+/// `AIM_IDLE_SNAP_SECS` the aim direction is snapped back to the ship's
+/// local forward (+Y).
+#[derive(Resource, Default)]
+pub struct AimIdleTimer {
+    /// Seconds since the last active aim input.
+    pub secs: f32,
+    /// Last known cursor screen position; used to detect mouse movement.
+    pub last_cursor: Option<Vec2>,
+}
+
 // ── Invincibility helper ───────────────────────────────────────────────────────
 
 // Helper methods are public API; suppress dead_code until they're wired into systems.
