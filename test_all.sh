@@ -31,9 +31,10 @@ for test in "${TESTS[@]}"; do
     echo "▶ Running test: $test"
     TOTAL=$((TOTAL + 1))
     
-    timeout 50 bash -c "GRAV_SIM_TEST=$test cargo run --release 2>&1" | grep -E "(PASS|FAIL)" | tail -1
-    
-    if [[ $? -eq 0 ]]; then
+    RESULT=$(timeout 50 bash -c "GRAV_SIM_TEST=$test cargo run --release 2>&1" | grep -E "(PASS|FAIL)" | tail -1)
+    echo "$RESULT"
+
+    if echo "$RESULT" | grep -q "✓ PASS"; then
         PASSED=$((PASSED + 1))
     else
         FAILED=$((FAILED + 1))

@@ -5,22 +5,24 @@
 //!
 //! ## Cell Size Choice
 //!
-//! Cell size must be chosen relative to the query distance, not the max gravity range.
-//! With GRID_CELL_SIZE = 500 units:
-//!   - A query for max_gravity_dist=1000 checks a 5×5 = 25 cell area
-//!   - A query for neighbor_threshold=3 checks a 3×3 = 9 cell area
+//! Cell size (`GRID_CELL_SIZE` in `constants.rs`) must be chosen relative to the
+//! query distance, not the max gravity range.
+//! With `GRID_CELL_SIZE = 500` units:
+//!   - A query for `max_gravity_dist = 1000` checks a 5×5 = 25 cell area
+//!   - A query for `neighbor_threshold = 3` checks a 3×3 = 9 cell area
 //!
-//! Using a cell size of 100 with max_gravity_dist=1000 would check 21×21=441 cells,
+//! Using a cell size of 100 with `max_gravity_dist = 1000` would check 21×21 = 441 cells,
 //! which is worse than O(N²) brute force at low asteroid counts.
 
+use crate::asteroid::Asteroid;
+use crate::constants::GRID_CELL_SIZE;
 use bevy::prelude::*;
 use std::collections::HashMap;
 
-/// Size of each grid cell in world units.
+/// Resource holding the spatial grid for this frame.
+///
+/// Cell size is controlled by [`crate::constants::GRID_CELL_SIZE`].
 /// Must be at least half of the largest query radius to avoid excessive cell checks.
-const GRID_CELL_SIZE: f32 = 500.0;
-
-/// Resource holding the spatial grid for this frame
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SpatialGrid {
     /// Map from cell coordinates to entity list
@@ -99,6 +101,3 @@ pub fn rebuild_spatial_grid_system(
         grid.insert(entity, transform.translation.truncate());
     }
 }
-
-// Re-export Asteroid for use in this module
-use crate::asteroid::Asteroid;

@@ -1,7 +1,16 @@
 //! Simulation plugin and systems for Bevy ECS
+//!
+//! This module owns the core physics systems (gravity, cluster formation, culling)
+//! and the camera zoom / mouse-aim input handling.  Rendering logic lives in
+//! [`crate::rendering`]; player systems live in [`crate::player`].
 
 use crate::asteroid::{
     compute_convex_hull_from_points, Asteroid, AsteroidSize, NeighborCount, Vertices,
+};
+use crate::constants::{
+    CULL_DISTANCE, GRAVITY_CONST, HULL_EXTENT_BASE, HULL_EXTENT_PER_MEMBER, MAX_GRAVITY_DIST,
+    MAX_ZOOM, MIN_GRAVITY_DIST, MIN_ZOOM, NEIGHBOR_THRESHOLD, VELOCITY_THRESHOLD_FORMATION,
+    VELOCITY_THRESHOLD_LOCKING, ZOOM_SPEED,
 };
 use crate::player::{
     camera_follow_system, despawn_old_projectiles_system, gamepad_connection_system,
@@ -9,6 +18,7 @@ use crate::player::{
     player_force_reset_system, player_gizmo_system, player_oob_damping_system,
     projectile_asteroid_hit_system, projectile_fire_system, AimDirection, PreferredGamepad,
 };
+use crate::rendering::{gizmo_rendering_system, stats_display_system};
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
@@ -29,10 +39,6 @@ pub struct CameraState {
     pub zoom: f32,
 }
 
-const MIN_ZOOM: f32 = 0.5; // 0.5 scale = see full ~2000u circle
-const MAX_ZOOM: f32 = 8.0; // 8.0 scale = 4x magnification
-const ZOOM_SPEED: f32 = 0.1; // Speed of zoom per scroll
-
 pub struct SimulationPlugin;
 
 impl Plugin for SimulationPlugin {
@@ -52,18 +58,18 @@ impl Plugin for SimulationPlugin {
                     gamepad_connection_system, // Update PreferredGamepad on connect/disconnect
                     // Force must be reset BEFORE any input system adds to it; chain enforces order.
                     player_force_reset_system,
-                    player_control_system,     // WASD ship thrust/rotation
-                    gamepad_movement_system,   // Gamepad left stick movement + B reverse
-                    mouse_aim_system,          // Mouse cursor updates AimDirection
-                    projectile_fire_system,    // Space/click/right-stick fires projectiles
+                    player_control_system,          // WASD ship thrust/rotation
+                    gamepad_movement_system,        // Gamepad left stick movement + B reverse
+                    mouse_aim_system,               // Mouse cursor updates AimDirection
+                    projectile_fire_system,         // Space/click/right-stick fires projectiles
                     despawn_old_projectiles_system, // Expire old projectiles
-                    user_input_system,         // Mouse wheel zoom
-                    camera_follow_system,      // Camera tracks player
-                    camera_zoom_system,        // Apply zoom scale to camera
-                    gizmo_rendering_system,    // Render asteroids + boundary
-                    player_gizmo_system,       // Render ship + aim indicator + projectiles
-                    stats_display_system,      // Render stats text
-                    player_oob_damping_system, // Slow player outside cull radius
+                    user_input_system,              // Mouse wheel zoom
+                    camera_follow_system,           // Camera tracks player
+                    camera_zoom_system,             // Apply zoom scale to camera
+                    gizmo_rendering_system,         // Render asteroids + boundary
+                    player_gizmo_system,            // Render ship + aim indicator + projectiles
+                    stats_display_system,           // Render stats text
+                    player_oob_damping_system,      // Slow player outside cull radius
                     player_collision_damage_system, // Player takes damage from asteroids
                 )
                     .chain(),
@@ -97,7 +103,7 @@ pub fn particle_locking_system(
     mut query: Query<(Entity, &mut Velocity), With<Asteroid>>,
     rapier_context: Res<RapierContext>,
 ) {
-    let velocity_threshold = 5.0;
+    let velocity_threshold = VELOCITY_THRESHOLD_LOCKING;
     let mut pairs_to_merge: Vec<(Entity, Entity)> = Vec::new();
 
     // Iterate only active contact pairs from Rapier (O(C) not O(N²))
@@ -136,9 +142,9 @@ pub fn nbody_gravity_system(
     mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
     grid: Res<SpatialGrid>,
 ) {
-    let gravity_const = 10.0; // Increased for more noticeable attraction
-    let min_gravity_dist = 5.0; // Skip gravity entirely if asteroids are closer than this - prevents runaway acceleration
-    let max_gravity_dist = 1000.0; // Match culling distance - gravity works across entire simulation
+    let gravity_const = GRAVITY_CONST;
+    let min_gravity_dist = MIN_GRAVITY_DIST;
+    let max_gravity_dist = MAX_GRAVITY_DIST;
     let min_gravity_dist_sq = min_gravity_dist * min_gravity_dist;
     let max_gravity_dist_sq = max_gravity_dist * max_gravity_dist;
 
@@ -254,7 +260,7 @@ pub fn neighbor_counting_system(
     mut query: Query<(Entity, &Transform, &mut NeighborCount), With<Asteroid>>,
     grid: Res<SpatialGrid>,
 ) {
-    let neighbor_threshold = 3.0;
+    let neighbor_threshold = NEIGHBOR_THRESHOLD;
 
     // Collect all entity positions first as a HashMap for O(1) lookups
     let entity_positions: HashMap<Entity, Vec2> = query
@@ -289,7 +295,7 @@ pub fn stats_counting_system(
     mut stats: ResMut<SimulationStats>,
     query: Query<(Entity, &Transform), With<Asteroid>>,
 ) {
-    let cull_distance = 1000.0;
+    let cull_distance = CULL_DISTANCE;
     let mut live_count = 0;
     let mut culled_this_frame = 0;
 
@@ -309,7 +315,7 @@ pub fn stats_counting_system(
 
 /// Cull asteroids far off-screen
 pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform), With<Asteroid>>) {
-    let cull_distance = 1000.0; // Cull just beyond the gravity interaction range
+    let cull_distance = CULL_DISTANCE;
 
     for (entity, transform) in query.iter() {
         let dist = transform.translation.truncate().length();
@@ -330,7 +336,7 @@ pub fn asteroid_formation_system(
     mut stats: ResMut<SimulationStats>,
 ) {
     // Find clusters of slow-moving asteroids that are touching
-    let velocity_threshold = 10.0;
+    let velocity_threshold = VELOCITY_THRESHOLD_FORMATION;
     let mut processed = std::collections::HashSet::new();
 
     let asteroids: Vec<_> = query.iter().collect();
@@ -438,7 +444,8 @@ pub fn asteroid_formation_system(
                         .iter()
                         .map(|v| v.length())
                         .fold(0.0_f32, f32::max);
-                    let extent_limit = 60.0 + cluster.len() as f32 * 20.0;
+                    let extent_limit =
+                        HULL_EXTENT_BASE + cluster.len() as f32 * HULL_EXTENT_PER_MEMBER;
                     if max_extent > extent_limit {
                         // Refuse to create this merge — it indicates corrupted vertex data.
                         // Despawn nothing; leave the source asteroids intact.
@@ -474,103 +481,6 @@ pub fn asteroid_formation_system(
                         commands.entity(entity).despawn();
                     }
                 }
-            }
-        }
-    }
-}
-
-/// Render asteroid outlines using gizmos (wireframe visualization with rotation)
-/// Optimized: Skip force vectors at high asteroid counts to reduce rendering overhead
-pub fn gizmo_rendering_system(
-    mut gizmos: Gizmos,
-    query: Query<(&Transform, &Vertices, &ExternalForce), With<Asteroid>>,
-    stats: Res<SimulationStats>,
-) {
-    // Skip force vector rendering when asteroid count is high to reduce CPU overhead
-    let draw_force_vectors = stats.live_count < 200;
-
-    // Draw asteroids
-    for (transform, vertices, force) in query.iter() {
-        let pos = transform.translation.truncate();
-        if vertices.0.len() < 2 {
-            continue;
-        }
-
-        // Extract rotation from transform
-        let rotation = transform.rotation;
-
-        // Draw polygon outline with rotation applied
-        for i in 0..vertices.0.len() {
-            let v1 = vertices.0[i];
-            let v2 = vertices.0[(i + 1) % vertices.0.len()];
-
-            // Rotate vertices by transform rotation
-            let p1 = pos + rotation.mul_vec3(v1.extend(0.0)).truncate();
-            let p2 = pos + rotation.mul_vec3(v2.extend(0.0)).truncate();
-
-            gizmos.line_2d(p1, p2, Color::WHITE);
-        }
-
-        // Draw force vector (red line from asteroid center showing current force)
-        // Only at low asteroid counts to reduce visual clutter and CPU overhead
-        if draw_force_vectors {
-            let force_vec = force.force * 80.0;
-            if force_vec.length() > 0.1 {
-                // Only draw if force is significant
-                gizmos.line_2d(pos, pos + force_vec, Color::rgb(1.0, 0.0, 0.0));
-            }
-        }
-    }
-
-    // Draw culling boundary circle at origin (yellow)
-    let cull_distance = 1000.0;
-    gizmos.circle_2d(Vec2::ZERO, cull_distance, Color::rgb(1.0, 1.0, 0.0));
-}
-
-/// Marker component for the stats text display
-#[derive(Component)]
-pub struct StatsTextDisplay;
-
-/// Initialize stats text display entity on startup
-pub fn setup_stats_text(mut commands: Commands) {
-    // Create UI text that stays fixed on screen (unaffected by camera zoom/pan)
-    commands
-        .spawn(NodeBundle {
-            style: Style {
-                position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
-                top: Val::Px(10.0),
-                ..default()
-            },
-            ..default()
-        })
-        .with_children(|parent| {
-            parent.spawn(TextBundle::from_section(
-                "Live: 0 | Culled: 0 | Merged: 0",
-                TextStyle {
-                    font: Handle::default(),
-                    font_size: 20.0,
-                    color: Color::rgb(0.0, 1.0, 1.0),
-                },
-            ));
-        })
-        .insert(StatsTextDisplay);
-}
-
-/// Update stats text display each frame (content only - position is fixed in screen space)
-pub fn stats_display_system(
-    stats: Res<SimulationStats>,
-    parent_query: Query<&Children, With<StatsTextDisplay>>,
-    mut text_query: Query<&mut Text>,
-) {
-    // Find the Text child of our StatsTextDisplay parent node
-    for children in parent_query.iter() {
-        for &child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                text.sections[0].value = format!(
-                    "Live: {} | Culled: {} | Merged: {}",
-                    stats.live_count, stats.culled_total, stats.merged_total
-                );
             }
         }
     }

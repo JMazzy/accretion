@@ -3,8 +3,11 @@ use bevy_rapier2d::prelude::*;
 use std::env;
 
 mod asteroid;
+mod constants;
+mod error;
 mod graphics;
 mod player;
+mod rendering;
 mod simulation;
 mod spatial_partition;
 mod testing;
@@ -50,8 +53,7 @@ fn main() {
         Startup,
         (
             graphics::setup_camera,
-            simulation::setup_stats_text.after(graphics::setup_camera),
-            spawn_player_startup.after(graphics::setup_camera),
+            rendering::setup_stats_text.after(graphics::setup_camera),
         ),
     );
 
@@ -130,7 +132,13 @@ fn main() {
         println!("Running test: {}", test_name);
     } else {
         app.insert_resource(TestConfig::default())
-            .add_systems(Startup, spawn_initial_world.after(graphics::setup_camera));
+            .add_systems(
+                Startup,
+                (
+                    spawn_initial_world.after(graphics::setup_camera),
+                    spawn_player_startup.after(graphics::setup_camera),
+                ),
+            );
     }
 
     app.run();

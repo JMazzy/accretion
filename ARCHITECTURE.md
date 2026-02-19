@@ -133,9 +133,11 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ## Spatial Grid (`spatial_partition.rs`)
 
-The `SpatialGrid` resource partitions world space into 100-unit cells for O(1) neighbor queries.
+The `SpatialGrid` resource partitions world space into 500-unit cells for efficient neighbor queries.
 
-- **Cell size**: 100 units (large enough to span typical gravity interaction distances)
+- **Cell size**: 500 units — deliberately large to avoid excessive cell-check overhead
+  - A query for `max_gravity_dist=1000` checks only a 5×5=25 cell area
+  - Using 100-unit cells with the same query would check 21×21=441 cells, worse than O(N²) at low asteroid counts
 - **Lookup**: `get_neighbors_excluding(entity, pos, max_distance)` returns candidates from nearby cells
 - **Rebuild**: Called at the start of each Update and FixedUpdate frame
 - **Complexity**: O(N) rebuild, O(K) lookup where K = avg entities per cell neighborhood
@@ -146,20 +148,29 @@ The `SpatialGrid` resource partitions world space into 100-unit cells for O(1) n
 All constants defined in `src/simulation.rs`:
 
 ```rust
-gravity_const      = 10.0     // Mutual attraction strength
-min_gravity_dist   = 5.0      // Skip gravity if closer (Rapier handles it)
-max_gravity_dist   = 1000.0   // Gravity works across entire simulation
-cull_distance      = 1000.0   // Remove entities beyond this
-min_zoom           = 0.5      // Minimum camera zoom (full circle visible)
-max_zoom           = 8.0      // Maximum camera zoom (detail view)
+// Simulation physics (src/simulation.rs)
+gravity_const           = 10.0    // Mutual attraction strength
+min_gravity_dist        = 5.0     // Skip gravity if closer (Rapier handles it)
+max_gravity_dist        = 1000.0  // Gravity works across entire simulation
+cull_distance           = 1000.0  // Remove entities beyond this
+min_zoom                = 0.5     // Minimum camera zoom (full circle visible)
+max_zoom                = 8.0     // Maximum camera zoom (detail view)
+
+// Spatial grid (src/spatial_partition.rs)
+grid_cell_size          = 500.0   // Must be >= max_query_distance / 2
 
 // Player (src/player.rs)
-thrust_force       = 600.0    // Forward thrust (N) while W held
-reverse_force      = 300.0    // Reverse thrust (N) while S held
-rotation_speed     = 3.0      // Angular velocity (rad/s) while A/D held
-projectile_speed   = 500.0    // Projectile speed (units/s)
-fire_cooldown      = 0.2      // Seconds between shots
-projectile_lifetime = 3.0     // Seconds before projectile despawns
+thrust_force            = 120.0   // Forward thrust (N) while W held
+reverse_force           = 60.0    // Reverse thrust (N) while S held
+rotation_speed          = 3.0     // Angular velocity (rad/s) while A or D held
+projectile_speed        = 500.0   // Projectile speed (units/s)
+fire_cooldown           = 0.2     // Seconds between shots
+projectile_lifetime     = 3.0     // Seconds before projectile despawns
+player_max_hp           = 100.0   // Player ship full health
+damage_speed_threshold  = 30.0    // Minimum relative speed (u/s) that deals damage
+invincibility_duration  = 0.5     // Seconds of damage immunity after a hit
+oob_radius              = 1000.0  // Soft boundary beyond which player is damped
+oob_damping             = 0.97    // Velocity decay factor applied per frame outside OOB_RADIUS
 ```
 
 ## Testing Framework
@@ -169,6 +180,7 @@ projectile_lifetime = 3.0     // Seconds before projectile despawns
 - **Trigger**: `GRAV_SIM_TEST=<test_name>` environment variable
 - **Runs**: Single test scenario for exact reproducibility
 - **Framework**: Custom spawning functions in `src/testing.rs`
+- **Player isolation**: In test mode the player entity is **not spawned** — player systems run but find no `Player` component and are no-ops. This ensures asteroid-only tests are not affected by the player ship's collider (8-unit ball at origin) or its input/damage systems.
 
 ### Available Tests
 
@@ -195,6 +207,64 @@ projectile_lifetime = 3.0     // Seconds before projectile despawns
 - **Formatting**: `cargo fmt` (rustfmt)
 - **Linting**: `cargo clippy -- -D warnings` (all warnings as errors)
 - **File Structure**: Standard Rust layout with modules in `src/`
+
+## Known Limitations & Future Considerations
+
+### Current Technical Constraints
+
+#### Simulation Boundaries
+- **2D only**: All physics operates on the XY plane; no Z-axis forces or rendering depth
+- **Hard world boundary**: 1000-unit cull radius is fixed in source; asteroids beyond this are permanently removed
+- **Spawn area**: Initial asteroids distributed in a 3000×2000 unit region with a 400-unit player buffer at origin; values require recompilation to change
+- **Max simulation density**: Gizmo-based wireframe rendering starts showing overhead beyond ~200 simultaneous live asteroids (force-vector annotations auto-disabled at this threshold)
+
+#### Physics Simplifications
+- **Convex-only colliders**: All asteroid shapes are convex polygons; concavities from impacts are approximated by their convex hull, not modelled directly
+- **Gravity cutoff**: Gravity is disabled inside 5 units (Rapier handles close contacts) and beyond 1000 units; there is no smooth transition
+- **No rotational gravity torque**: Gravity applies only linear force (no torque based on off-centre mass distribution)
+- **Cluster formation is discrete**: Merging is all-or-nothing per frame; a cluster either fully merges in one PostUpdate step or waits until the next frame
+- **Single-pass hull computation**: Composite hull is computed once at merge time; subsequent impacts reduce vertex count but do not recompute the full hull from physics state
+
+#### Hardcoded Configuration
+All physics-tuning constants are defined directly in source files and require `cargo build` to change:
+- Gravity, distance thresholds, velocity thresholds — `src/simulation.rs`
+- Player movement, projectile, health constants — `src/player.rs`
+- Grid cell size — `src/spatial_partition.rs`
+- Asteroid spawn counts and bounds — `src/asteroid.rs`
+
+#### Version Constraints
+- **Bevy 0.13**: API is stable for this version; upgrading to Bevy 0.14+ will require migration (scheduling API, `TransformBundle` removal, text rendering changes)
+- **Rapier 0.18 / bevy\_rapier2d 0.25**: Contact manifold query API (`rapier_context.contact_pair()`) may change in future Rapier releases; currently used in formation and particle-locking systems
+
+### Future Enhancement Roadmap
+
+#### Physics Improvements
+- **Concave asteroid deformation**: Track per-vertex damage state; move impact vertex inward and recompute hull to simulate craters and progressive destruction
+- **Gravitational binding energy merge criterion**: Replace velocity-threshold merging with a binding-energy check; clusters only merge if their kinetic energy is below the gravitational potential energy of the cluster, producing more physically realistic aggregation
+- **Rotational-inertia-aware gravity torque**: Include mass distribution (second moment of area) in gravity force application so oddly-shaped composites develop realistic rotation
+- **Soft boundary with elastic reflection**: Replace hard cull-at-1000u removal with a potential-well boundary that gently reflects asteroids back toward the simulation centre
+- **KD-tree neighbor search**: Replace the static 500-unit spatial grid with a dynamic KD-tree to better handle highly non-uniform asteroid distributions (dense cluster + sparse outer field)
+- **Orbital presets**: Optional initial conditions (Keplerian orbits, accretion disk configuration) as alternative to random spawning
+
+#### Visual & Rendering Enhancements
+- **Particle effects system**: Impact dust clouds on projectile hits; merge vortex animations; debris trail on asteroid destruction
+- **Level-of-Detail (LOD) rendering**: Large composites (>8 vertices) rendered as filled GPU mesh instead of CPU-drawn gizmo wireframe, removing the per-vertex CPU bottleneck at high count
+- **Velocity heat-map coloring**: Tint asteroid wireframes from blue (slow) to red (fast) to give instant visual feedback on kinetic energy distribution
+- **Crater / fracture overlays**: Draw cracks on asteroid surfaces proportional to accumulated damage (impacts that didn't yet destroy the asteroid)
+- **Dynamic camera FOV**: Camera zoom automatically increases when the player moves fast, giving a wider field of view at speed
+- **Post-processing effects**: Bloom on high-energy impacts and merges; chromatic aberration during player damage invincibility
+
+#### Gameplay & Extensibility
+- **Configuration file support**: Load physics constants from an `assets/physics.toml` file at startup, enabling tuning without recompilation
+- **Score and progression system**: Points for asteroid destruction scaled by size; wave-based difficulty ramp spawning more and larger asteroids over time
+- **Power-up asteroids**: Special-coloured asteroids that grant the player temporary buffs (shield, rapid-fire, gravity bomb) on destruction
+- **Boss asteroids**: Single very-large composite (size ≥ 20) with scripted split behaviour acting as a wave-ending target
+- **Multiplayer (local co-op)**: Spawn a second player ship feeding off the same physics world; share the asteroid field and scoring
+
+#### Test & Developer Tooling
+- **Automated regression baseline**: Store golden frame-log snapshots in `tests/golden/` and compare on each test run, automatically catching physics constant drift
+- **In-game physics inspector**: Toggle an overlay showing entity IDs, velocities, and contact counts on-screen for live debugging without restarting in test mode
+- **Hot-reload constants**: Watch `assets/physics.toml` for changes at runtime and apply updated constants on the fly (requires the configuration file feature above)
 
 ## Development Commands
 

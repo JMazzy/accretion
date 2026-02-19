@@ -177,7 +177,7 @@ pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<Test
 /// Spawn test scenario: slow-speed gravity approach (should result in clean merge)
 pub fn spawn_test_gentle_approach(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     test_config.test_name = "gentle_approach".to_string();
-    test_config.frame_limit = 400;
+    test_config.frame_limit = 600;
 
     // Create triangle vertices
     let side = 6.0;

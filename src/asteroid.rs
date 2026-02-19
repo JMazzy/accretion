@@ -4,6 +4,12 @@
 //! Any two asteroids can combine if touching and slow, forming a new asteroid with
 //! the convex hull of their combined shapes.
 
+use crate::constants::{
+    ASTEROID_INITIAL_ANGVEL_RANGE, ASTEROID_INITIAL_VELOCITY_RANGE, ASTEROID_SIZE_SCALE_MAX,
+    ASTEROID_SIZE_SCALE_MIN, FRICTION_ASTEROID, HULL_DEDUP_MIN_DIST, PLAYER_BUFFER_RADIUS,
+    POLYGON_BASE_RADIUS, RESTITUTION_SMALL, SIM_HEIGHT, SIM_WIDTH, SPAWN_GRID_MARGIN,
+    SQUARE_BASE_HALF, TRIANGLE_BASE_SIDE,
+};
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use rand::Rng;
@@ -31,12 +37,12 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
     let mut rng = rand::thread_rng();
 
     // Extended simulation area (well beyond viewport)
-    let sim_width = 3000.0;
-    let sim_height = 2000.0;
-    let grid_margin = 150.0; // Keep asteroids away from outer edges
+    let sim_width = SIM_WIDTH;
+    let sim_height = SIM_HEIGHT;
+    let grid_margin = SPAWN_GRID_MARGIN;
 
     // Buffer zone around player spawn (origin)
-    let player_buffer_radius = 400.0;
+    let player_buffer_radius = PLAYER_BUFFER_RADIUS;
 
     // Grid-based distribution for even spread
     let grid_cols = 6;
@@ -79,7 +85,7 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
                 spawned += 1;
 
                 // Random size scale (0.5 to 1.5x)
-                let size_scale = rng.gen_range(0.5..1.5);
+                let size_scale = rng.gen_range(ASTEROID_SIZE_SCALE_MIN..ASTEROID_SIZE_SCALE_MAX);
 
                 // Random shape (triangle, square, pentagon, hexagon)
                 let shape = rng.gen_range(0..4);
@@ -98,7 +104,14 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
                 };
 
                 // Random velocity (gentle to avoid instant collisions)
-                let velocity = Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
+                let velocity = Vec2::new(
+                    rng.gen_range(
+                        -ASTEROID_INITIAL_VELOCITY_RANGE..ASTEROID_INITIAL_VELOCITY_RANGE,
+                    ),
+                    rng.gen_range(
+                        -ASTEROID_INITIAL_VELOCITY_RANGE..ASTEROID_INITIAL_VELOCITY_RANGE,
+                    ),
+                );
 
                 // Spawn the asteroid
                 commands.spawn((
@@ -123,11 +136,13 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
                                 Collider::ball(2.0)
                             }
                         },
-                        Restitution::coefficient(0.0),
-                        Friction::coefficient(1.0),
+                        Restitution::coefficient(RESTITUTION_SMALL),
+                        Friction::coefficient(FRICTION_ASTEROID),
                         Velocity {
                             linvel: velocity,
-                            angvel: rng.gen_range(-5.0..5.0), // Random angular velocity
+                            angvel: rng.gen_range(
+                                -ASTEROID_INITIAL_ANGVEL_RANGE..ASTEROID_INITIAL_ANGVEL_RANGE,
+                            ), // Random angular velocity
                         },
                         Damping {
                             linear_damping: 0.0,
@@ -154,7 +169,7 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize) {
 
 /// Generate an equilateral triangle with configurable size
 fn generate_triangle(scale: f32) -> Vec<Vec2> {
-    let side = 6.0 * scale;
+    let side = TRIANGLE_BASE_SIDE * scale;
     let height = side * 3.0_f32.sqrt() / 2.0;
     vec![
         Vec2::new(0.0, height / 2.0),
@@ -165,7 +180,7 @@ fn generate_triangle(scale: f32) -> Vec<Vec2> {
 
 /// Generate a square with configurable size
 fn generate_square(scale: f32) -> Vec<Vec2> {
-    let half = 4.0 * scale;
+    let half = SQUARE_BASE_HALF * scale;
     vec![
         Vec2::new(-half, half),
         Vec2::new(half, half),
@@ -176,7 +191,7 @@ fn generate_square(scale: f32) -> Vec<Vec2> {
 
 /// Generate a regular pentagon with configurable size
 fn generate_pentagon(scale: f32) -> Vec<Vec2> {
-    let radius = 5.0 * scale;
+    let radius = POLYGON_BASE_RADIUS * scale;
     let mut vertices = Vec::new();
     for i in 0..5 {
         let angle = 2.0 * std::f32::consts::PI * i as f32 / 5.0;
@@ -187,7 +202,7 @@ fn generate_pentagon(scale: f32) -> Vec<Vec2> {
 
 /// Generate a regular hexagon with configurable size
 fn generate_hexagon(scale: f32) -> Vec<Vec2> {
-    let radius = 5.0 * scale;
+    let radius = POLYGON_BASE_RADIUS * scale;
     let mut vertices = Vec::new();
     for i in 0..6 {
         let angle = 2.0 * std::f32::consts::PI * i as f32 / 6.0;
@@ -313,7 +328,7 @@ pub fn compute_convex_hull_from_points(points: &[Vec2]) -> Option<Vec<Vec2>> {
     }
 
     // Deduplicate points that are too close together (prevents degenerate hulls)
-    const MIN_DIST: f32 = 0.5;
+    const MIN_DIST: f32 = HULL_DEDUP_MIN_DIST;
     let mut deduped: Vec<Vec2> = Vec::with_capacity(points.len());
     for &p in points {
         if !deduped.iter().any(|q| q.distance(p) < MIN_DIST) {

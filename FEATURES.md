@@ -150,6 +150,49 @@ world_y = norm_y + pan_y
 
 This ensures accurate spawning regardless of camera state.
 
+## Player Ship Systems
+
+### Player Health & Damage
+
+The player ship has a health pool that depletes when struck by asteroids at high relative speeds.
+
+| Property | Value | Description |
+|----------|-------|-------------|
+| `PLAYER_MAX_HP` | 100.0 | Full health at spawn |
+| `DAMAGE_SPEED_THRESHOLD` | 30.0 u/s | Minimum relative speed before damage is dealt |
+| `INVINCIBILITY_DURATION` | 0.5 s | Immunity period after each hit to prevent rapid damage stacking |
+
+**Damage formula**: `damage = (relative_speed − 30.0) × 0.5` — slow grazes deal no damage; high-speed impacts deal proportionally more.
+
+**Visual feedback**: The ship's wireframe colour shifts from cyan (full health) to red as HP decreases. A pixel-wide health bar floats above the ship showing the current HP fraction (green → red as health drops).
+
+**Ship destruction**: When HP reaches 0 the player entity is despawned. There is currently no respawn mechanic.
+
+### Asteroid Destruction (Projectile Hits)
+
+Projectiles interact with asteroids based on the target's `AsteroidSize` unit count:
+
+| Size (units) | Behaviour |
+|---|---|
+| 0–1 | **Destroy** — asteroid removed immediately |
+| 2–3 | **Scatter** — despawns and spawns `N` unit fragments at evenly-spaced angles with random velocity jitter |
+| 4–8 | **Split** — cut roughly in half along the projectile's impact axis; each half retains its velocity plus a separation impulse |
+| ≥9 | **Chip** — the hull vertex closest to impact is removed; a single unit fragment is ejected outward; the asteroid shrinks by 1 unit |
+
+In all cases the projectile is despawned on contact.
+
+**Split geometry**: For the 4–8 case the split plane passes through the asteroid centroid and is aligned with the projectile trajectory direction, so the two halves separate naturally along the incoming fire direction.
+
+**Chip geometry**: The remaining asteroid recomputes its convex hull after removing the impacted vertex, so the outline incrementally shrinks with each chip hit.
+
+### Out-of-Bounds Behaviour
+
+The player ship is not culled like asteroids, but experiences increasing velocity damping when outside the 1000-unit boundary:
+
+- **OOB radius**: 1000 units from origin (matches asteroid cull boundary)
+- **Damping factor**: 0.97 (velocity scaled per frame), ramped smoothly — 0% at the boundary, reaching full 3% per frame at +200 units beyond
+- **Effect**: Gentle drag that discourages escaping the simulation; the player can still re-enter under thrust
+
 ## UI/UX Notes
 
 ### Viewport Design

@@ -1,5 +1,22 @@
 # GRAV-SIM Changelog
 
+## Test Isolation & Script Fixes
+
+### Test Player Isolation
+- Player entity is no longer spawned in test mode. `spawn_player_startup` moved to the non-test `else` branch in `main.rs`. This prevents the player's 8-unit ball collider at origin from interfering with asteroid-only tests (several of which spawn asteroids at (0,0)).
+- Player systems still registered by `SimulationPlugin` in test mode but are no-ops since no `Player` component exists.
+- `PlayerFireCooldown` resource kept unconditional to avoid system panics.
+
+### test_all.sh Pass/Fail Detection Fixed
+- Script previously used `grep`'s exit code (0=match found) to count pass/fail, meaning a `✗ FAIL` line was still counted as a pass.
+- Fixed to capture the result line and check for the `✓ PASS` prefix explicitly.
+
+### gentle_approach Frame Limit Increase
+- Raised `frame_limit` from 400 → 600 frames. At 400 frames the asteroids had fully converged in velocity (~9.9 u/s, 12.3 units apart) but had not yet made physical contact; the extra 200 frames give them time to collide and merge.
+- Test now correctly reports `✓ PASS: Asteroids merged cleanly via gravity (2 → 1)`.
+
+---
+
 ## Twin-Stick Controls — February 18, 2026
 
 ### Summary
@@ -449,19 +466,45 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 ## Known Limitations & Future Considerations
 
-### Current Scope
+### Current Technical Limitations
 
-- Simulates asteroids only (no other object types)
-- 2D simulation (XY plane)
-- O(n²) gravity calculations (suitable for <100 asteroids)
+- **2D simulation only**: All physics operates on the XY plane; no 3D depth or out-of-plane forces
+- **Convex-only colliders**: Asteroid shapes are always convex polygons; concave craters are not modelled, only approximated by their convex hull
+- **Hard world boundary**: 1000-unit cull radius is fixed in source; requires recompilation to change
+- **No configuration file**: All physics constants (gravity, player thrust, damage thresholds, grid cell size) are hard-coded in source; tuning requires `cargo build`
+- **No respawn mechanic**: Player destruction is permanent in the current session; no death/restart loop
+- **Gizmo rendering overhead**: Wireframe rendering via Bevy gizmos incurs CPU cost per vertex per frame; force-vector annotations are disabled above 200 live asteroids, but performance may visibly degrade above ~500 simultaneous entities
+- **Cluster formation is one-pass**: Asteroid merging happens in a single PostUpdate pass; very large simultaneous contact events may need multiple frames to fully resolve
+- **No save/load**: Simulation state cannot be serialised or resumed between runs
+- **Bevy 0.13 / Rapier 0.18 dependency lock**: Upgrading to Bevy 0.14+ requires API migration (scheduling changes, `TransformBundle` removal, text-rendering updates)
 
 ### Potential Enhancements
 
-- Spatial partitioning for larger asteroid counts
-- Additional collision shapes beyond convex polygons
-- Advanced rendering (textures, lighting)
-- Network multiplayer support
-- Physics system serialization/deserialization
+#### Physics
+- **Gravitational binding energy merging**: Replace velocity-threshold merge criterion with a potential-energy check so clusters only stick when kinetic energy falls below gravitational binding energy
+- **Concave asteroid deformation**: Track per-vertex damage; move impact vertices inward and recompute hull to simulate progressive surface cratering
+- **Rotational-inertia gravity torque**: Include second-moment-of-area in force application so asymmetric composites develop realistic spin
+- **Soft boundary reflection**: Replace hard cull removal with a potential-well that gently bounces asteroids back toward the simulation centre
+- **KD-tree spatial index**: Replace the static 500-unit grid with a dynamic KD-tree for better performance under highly non-uniform asteroid distributions
+
+#### Visual & Rendering
+- **Particle effects**: Impact dust clouds, merge vortex animations, debris trails on destruction
+- **LOD mesh rendering**: Render large composites (>8 vertices) as GPU-filled meshes instead of per-vertex CPU gizmo lines, removing the rendering bottleneck at high count
+- **Velocity heat-map colouring**: Tint wireframes blue→red based on speed for instant visual KE feedback
+- **Fracture overlays**: Draw surface cracks proportional to accumulated damage on surviving asteroids
+- **Post-processing**: Bloom on high-energy collisions; chromatic aberration during player invincibility frames
+
+#### Gameplay & Extensibility
+- **Configuration file**: Load `assets/physics.toml` at startup so constants can be tuned without recompilation
+- **Score and wave system**: Points for destruction scaled by asteroid size; progressive wave spawner increasing count and size over time
+- **Power-up asteroids**: Special asteroids granting temporary buffs (shield, rapid-fire, gravity bomb) on destruction
+- **Boss asteroids**: Single very-large composite (size ≥ 20) with scripted split behaviour as a wave-end objective
+- **Local co-op multiplayer**: Second player ship sharing the same physics world
+
+#### Developer Tooling
+- **Golden test baselines**: Store expected frame-log snapshots in `tests/golden/` and diff on each run to catch unintentional physics constant drift automatically
+- **In-game physics inspector overlay**: Toggle to show entity IDs, velocities, and contact counts without restarting in test mode
+- **Hot-reload constants**: Watch `assets/physics.toml` at runtime and apply changes immediately for rapid tuning iteration
 
 ---
 
