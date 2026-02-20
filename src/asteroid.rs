@@ -6,8 +6,8 @@
 
 use crate::config::PhysicsConfig;
 use crate::constants::{
-    FRICTION_ASTEROID, HULL_DEDUP_MIN_DIST, POLYGON_BASE_RADIUS, RESTITUTION_SMALL,
-    SQUARE_BASE_HALF, TRIANGLE_BASE_SIDE,
+    FRICTION_ASTEROID, HEPTAGON_BASE_RADIUS, HULL_DEDUP_MIN_DIST, OCTAGON_BASE_RADIUS,
+    POLYGON_BASE_RADIUS, RESTITUTION_SMALL, SQUARE_BASE_HALF, TRIANGLE_BASE_SIDE,
 };
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -87,20 +87,24 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
                 let size_scale =
                     rng.gen_range(config.asteroid_size_scale_min..config.asteroid_size_scale_max);
 
-                // Random shape (triangle, square, pentagon, hexagon)
-                let shape = rng.gen_range(0..4);
+                // Random shape (triangle, square, pentagon, hexagon, heptagon, octagon)
+                let shape = rng.gen_range(0..6);
                 let vertices = match shape {
-                    0 => generate_triangle(size_scale, config.triangle_base_side), // Triangle
-                    1 => generate_square(size_scale, config.square_base_half),     // Square
-                    2 => generate_pentagon(size_scale, config.polygon_base_radius), // Pentagon
-                    _ => generate_hexagon(size_scale, config.polygon_base_radius), // Hexagon
+                    0 => generate_triangle(size_scale, config.triangle_base_side),
+                    1 => generate_square(size_scale, config.square_base_half),
+                    2 => generate_pentagon(size_scale, config.polygon_base_radius),
+                    3 => generate_hexagon(size_scale, config.polygon_base_radius),
+                    4 => generate_heptagon(size_scale, config.heptagon_base_radius),
+                    _ => generate_octagon(size_scale, config.octagon_base_radius),
                 };
-                // Unit count: triangle=1, square=2, pentagon=3, hexagon=4
+                // Unit count: tri=1, sq=2, pent=3, hex=4, hept=5, oct=6
                 let unit_size: u32 = match shape {
                     0 => 1,
                     1 => 2,
                     2 => 3,
-                    _ => 4,
+                    3 => 4,
+                    4 => 5,
+                    _ => 6,
                 };
 
                 // Random velocity (gentle to avoid instant collisions)
@@ -170,6 +174,60 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
     }
 }
 
+/// Spawns a single large planetoid asteroid at the given position.
+///
+/// The planetoid is a 16-sided near-circle with a large radius, full N-body
+/// physics, and a high unit-size count that reflects its dominant mass.
+/// It participates in gravity, collisions, and merging like any other asteroid;
+/// only its initial size and shape distinguish it.
+///
+/// # Example
+/// ```
+/// spawn_planetoid(&mut commands, Vec2::new(500.0, 300.0), &config);
+/// ```
+pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &PhysicsConfig) {
+    let vertices = generate_regular_polygon(16, 1.0, config.planetoid_base_radius);
+    commands.spawn((
+        (
+            Transform::from_translation(position.extend(0.05)),
+            GlobalTransform::default(),
+            Asteroid,
+            AsteroidSize(config.planetoid_unit_size),
+            NeighborCount(0),
+            Vertices(vertices.clone()),
+            RigidBody::Dynamic,
+        ),
+        (
+            {
+                Collider::convex_hull(&vertices)
+                    .unwrap_or_else(|| Collider::ball(config.planetoid_base_radius))
+            },
+            Restitution::coefficient(RESTITUTION_SMALL),
+            Friction::coefficient(FRICTION_ASTEROID),
+            Velocity {
+                linvel: Vec2::ZERO,
+                angvel: 0.0,
+            },
+            Damping {
+                linear_damping: 0.0,
+                angular_damping: 0.0,
+            },
+            ExternalForce {
+                force: Vec2::ZERO,
+                torque: 0.0,
+            },
+            CollisionGroups::new(
+                bevy_rapier2d::geometry::Group::GROUP_1,
+                bevy_rapier2d::geometry::Group::GROUP_1
+                    | bevy_rapier2d::geometry::Group::GROUP_2
+                    | bevy_rapier2d::geometry::Group::GROUP_3,
+            ),
+            ActiveEvents::COLLISION_EVENTS,
+            Sleeping::disabled(),
+        ),
+    ));
+}
+
 /// Generate an equilateral triangle with configurable size
 fn generate_triangle(scale: f32, base_side: f32) -> Vec<Vec2> {
     let side = base_side * scale;
@@ -194,24 +252,33 @@ fn generate_square(scale: f32, base_half: f32) -> Vec<Vec2> {
 
 /// Generate a regular pentagon with configurable size
 fn generate_pentagon(scale: f32, base_radius: f32) -> Vec<Vec2> {
-    let radius = base_radius * scale;
-    let mut vertices = Vec::new();
-    for i in 0..5 {
-        let angle = 2.0 * std::f32::consts::PI * i as f32 / 5.0;
-        vertices.push(Vec2::new(radius * angle.cos(), radius * angle.sin()));
-    }
-    vertices
+    generate_regular_polygon(5, scale, base_radius)
 }
 
 /// Generate a regular hexagon with configurable size
 fn generate_hexagon(scale: f32, base_radius: f32) -> Vec<Vec2> {
+    generate_regular_polygon(6, scale, base_radius)
+}
+
+/// Generate a regular heptagon (7-sided polygon) with configurable size
+fn generate_heptagon(scale: f32, base_radius: f32) -> Vec<Vec2> {
+    generate_regular_polygon(7, scale, base_radius)
+}
+
+/// Generate a regular octagon (8-sided polygon) with configurable size
+fn generate_octagon(scale: f32, base_radius: f32) -> Vec<Vec2> {
+    generate_regular_polygon(8, scale, base_radius)
+}
+
+/// Generic regular polygon generator — used for all n-gon shapes.
+fn generate_regular_polygon(sides: usize, scale: f32, base_radius: f32) -> Vec<Vec2> {
     let radius = base_radius * scale;
-    let mut vertices = Vec::new();
-    for i in 0..6 {
-        let angle = 2.0 * std::f32::consts::PI * i as f32 / 6.0;
-        vertices.push(Vec2::new(radius * angle.cos(), radius * angle.sin()));
-    }
-    vertices
+    (0..sides)
+        .map(|i| {
+            let angle = 2.0 * std::f32::consts::PI * i as f32 / sides as f32;
+            Vec2::new(radius * angle.cos(), radius * angle.sin())
+        })
+        .collect()
 }
 
 /// Returns the minimum number of polygon vertices a split/chip fragment of the
@@ -222,7 +289,9 @@ fn generate_hexagon(scale: f32, base_radius: f32) -> Vec<Vec2> {
 /// | 1     | triangle   | 3            |
 /// | 2–4   | square     | 4            |
 /// | 5     | pentagon   | 5            |
-/// | ≥ 6   | hexagon    | 6            |
+/// | 6–7   | hexagon    | 6            |
+/// | 8–9   | heptagon   | 7            |
+/// | ≥ 10  | octagon    | 8            |
 ///
 /// Merging is exempt — merged composites keep however many hull vertices they produce.
 pub fn min_vertices_for_mass(mass: u32) -> usize {
@@ -230,7 +299,9 @@ pub fn min_vertices_for_mass(mass: u32) -> usize {
         0 | 1 => 3,
         2..=4 => 4,
         5 => 5,
-        _ => 6, // 6 and above: hexagon minimum
+        6..=7 => 6,
+        8..=9 => 7,
+        _ => 8,
     }
 }
 
@@ -247,7 +318,9 @@ pub fn canonical_vertices_for_mass(mass: u32) -> Vec<Vec2> {
         0 | 1 => generate_triangle(1.0, TRIANGLE_BASE_SIDE),
         2..=4 => generate_square(1.0, SQUARE_BASE_HALF),
         5 => generate_pentagon(1.0, POLYGON_BASE_RADIUS),
-        _ => generate_hexagon(1.0, POLYGON_BASE_RADIUS),
+        6..=7 => generate_hexagon(1.0, POLYGON_BASE_RADIUS),
+        8..=9 => generate_heptagon(1.0, HEPTAGON_BASE_RADIUS),
+        _ => generate_octagon(1.0, OCTAGON_BASE_RADIUS),
     };
     // Centre the vertices at origin (centroid subtraction).
     // Square / pentagon / hexagon generators already produce centred vertices, but

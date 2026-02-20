@@ -11,8 +11,8 @@
 
 # Width / height of the initial asteroid spawn region (world units).
 # Asteroids are placed within ±sim_width/2 of the origin.
-sim_width = 3000.0
-sim_height = 2000.0
+sim_width = 6000.0
+sim_height = 4000.0
 
 # Gap between the spawn grid edge and the outer simulation boundary.
 spawn_grid_margin = 150.0
@@ -26,7 +26,7 @@ player_buffer_radius = 100.0
 # Inverse-square gravity strength.
 # Higher → stronger attraction → faster cluster formation.
 # Tested range: 5.0–15.0.  Above ~20.0 causes runaway acceleration at close range.
-gravity_const = 10.0
+gravity_const = 18.0
 
 # Asteroids closer than this (world units) are excluded from gravity calculations.
 # Rapier handles contact physics below this threshold to prevent energy injection.
@@ -35,7 +35,7 @@ min_gravity_dist = 5.0
 
 # Maximum distance at which gravity is applied.
 # Set equal to cull_distance so culled asteroids exert no phantom forces.
-max_gravity_dist = 1000.0
+max_gravity_dist = 2000.0
 
 # ── Physics: Cluster Formation ────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ friction_asteroid = 1.0
 
 # Distance from origin beyond which asteroids are permanently removed.
 # Should match max_gravity_dist to avoid phantom forces from culled asteroids.
-cull_distance = 1000.0
+cull_distance = 2000.0
 
 # ── Physics: Neighbor Counting ────────────────────────────────────────────────
 
@@ -78,7 +78,7 @@ grid_cell_size = 500.0
 # ── Camera ────────────────────────────────────────────────────────────────────
 
 # Zoom scale limits (camera.scale = zoom → larger = zoomed out).
-min_zoom = 0.5
+min_zoom = 0.25
 max_zoom = 8.0
 
 # Zoom scale change per scroll-wheel event.
@@ -108,7 +108,7 @@ player_restitution = 0.3
 # ── Player: Out-of-Bounds ─────────────────────────────────────────────────────
 
 # Distance from origin where the soft boundary begins.
-oob_radius = 1000.0
+oob_radius = 2000.0
 
 # Minimum velocity decay factor per frame at max out-of-bounds depth.
 # Closer to 1.0 = gentler drag; closer to 0.0 = harsher.
@@ -130,7 +130,7 @@ fire_cooldown = 0.2
 projectile_lifetime = 3.0
 
 # Distance from origin beyond which a projectile is despawned.
-projectile_max_dist = 1000.0
+projectile_max_dist = 2000.0
 
 # Radius (u) of each projectile's ball collider.
 projectile_collider_radius = 2.0
@@ -186,17 +186,29 @@ stats_font_size = 20.0
 hull_dedup_min_dist = 0.5
 
 # Base side length for spawned equilateral triangles (at scale 1.0).
-triangle_base_side = 6.0
+triangle_base_side = 4.0
 
 # Half-extent for spawned squares (at scale 1.0).
-square_base_half = 4.0
+square_base_half = 5.0
 
 # Circumradius for spawned pentagons and hexagons (at scale 1.0).
-polygon_base_radius = 5.0
+polygon_base_radius = 6.0
+
+# Circumradius for spawned heptagons (7-sided) at scale 1.0.
+heptagon_base_radius = 7.0
+
+# Circumradius for spawned octagons (8-sided) at scale 1.0.
+octagon_base_radius = 8.0
+
+# Circumradius for the large planetoid asteroid (16-sided near-circle) at scale 1.0.
+planetoid_base_radius = 25.0
+
+# Unit-size assigned to a spawned planetoid (reflects dominant mass).
+planetoid_unit_size = 16
 
 # Asteroid size scale range (multiplier applied to base geometry).
-asteroid_size_scale_min = 0.5
-asteroid_size_scale_max = 1.5
+asteroid_size_scale_min = 0.8
+asteroid_size_scale_max = 1.6
 
 # Random initial velocity component range per axis (u/s).
 asteroid_initial_velocity_range = 15.0

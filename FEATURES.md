@@ -35,7 +35,8 @@
 - Asteroids spawn at startup, distributed across a `SIM_WIDTH`×`SIM_HEIGHT` unit simulation area (see `src/constants.rs`)
 - A **`PLAYER_BUFFER_RADIUS`** exclusion zone around the player start (origin) keeps the starting area clear
 - Grid-based seeding prevents random clumping while maintaining variety
-- Random shapes (triangles, squares, pentagons, hexagons) and sizes (`ASTEROID_SIZE_SCALE_MIN`–`ASTEROID_SIZE_SCALE_MAX`×), random initial velocities
+- Random shapes (triangles, squares, pentagons, hexagons, **heptagons, octagons**) and sizes (`ASTEROID_SIZE_SCALE_MIN`–`ASTEROID_SIZE_SCALE_MAX`×), random initial velocities
+- One **planetoid** (16-sided near-circle, unit size `PLANETOID_UNIT_SIZE`) spawns at a fixed offset from the origin and participates in full N-body gravity and merging like any other asteroid
 
 ### Camera Controls
 

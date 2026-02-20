@@ -172,6 +172,7 @@ Key constant groups (see `src/constants.rs` for current values):
 | Player combat | `PROJECTILE_SPEED`, `FIRE_COOLDOWN`, `PROJECTILE_LIFETIME` |
 | Player health | `PLAYER_MAX_HP`, `DAMAGE_SPEED_THRESHOLD`, `INVINCIBILITY_DURATION` |
 | Gamepad | `GAMEPAD_BRAKE_DAMPING`, `GAMEPAD_LEFT_DEADZONE`, etc. |
+| Asteroid geometry | `TRIANGLE_BASE_SIDE`, `SQUARE_BASE_HALF`, `POLYGON_BASE_RADIUS`, `HEPTAGON_BASE_RADIUS`, `OCTAGON_BASE_RADIUS`, `PLANETOID_BASE_RADIUS`, `PLANETOID_UNIT_SIZE` |
 
 ## Testing Framework
 
@@ -214,8 +215,8 @@ Key constant groups (see `src/constants.rs` for current values):
 
 #### Simulation Boundaries
 - **2D only**: All physics operates on the XY plane; no Z-axis forces or rendering depth
-- **Hard world boundary**: `CULL_DISTANCE` radius is fixed in source; asteroids beyond this are permanently removed
-- **Spawn area**: Initial asteroids distributed within `SIM_WIDTH`×`SIM_HEIGHT` with a `PLAYER_BUFFER_RADIUS` exclusion zone at origin; values require recompilation to change
+- **Hard world boundary**: `CULL_DISTANCE` (2000 units) radius; asteroids beyond this are permanently removed each frame
+- **Spawn area**: Initial asteroids distributed within `SIM_WIDTH`×`SIM_HEIGHT` (6000×4000) with a `PLAYER_BUFFER_RADIUS` exclusion zone at origin; values tunable via `assets/physics.toml` at runtime
 - **Max simulation density**: Gizmo-based force-vector annotations auto-disabled at high count (> `force_vector_hide_threshold`); asteroid, ship, and projectile fills use retained `Mesh2d` GPU assets that scale efficiently with entity count
 
 #### Physics Simplifications

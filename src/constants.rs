@@ -15,10 +15,10 @@
 ///
 /// Asteroids are distributed within ±SIM_WIDTH/2 of the origin.
 /// Increasing this spreads the initial field; decreasing creates denser opening clusters.
-pub const SIM_WIDTH: f32 = 3000.0;
+pub const SIM_WIDTH: f32 = 6000.0;
 
 /// Height of the initial asteroid spawn region (world units).
-pub const SIM_HEIGHT: f32 = 2000.0;
+pub const SIM_HEIGHT: f32 = 4000.0;
 
 /// Margin kept clear between the spawn region edge and the outer simulation boundary.
 pub const SPAWN_GRID_MARGIN: f32 = 150.0;
@@ -50,7 +50,7 @@ pub const MIN_GRAVITY_DIST: f32 = 5.0;
 ///
 /// Set equal to `CULL_DISTANCE` so that culled asteroids exert no phantom forces.
 /// Decreasing this value can improve performance at large asteroid counts.
-pub const MAX_GRAVITY_DIST: f32 = 1000.0;
+pub const MAX_GRAVITY_DIST: f32 = 2000.0;
 
 // ── Physics: Cluster Formation ────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ pub const FRICTION_ASTEROID: f32 = 1.0;
 /// Distance from the world origin beyond which asteroids are permanently removed.
 ///
 /// Matches `MAX_GRAVITY_DIST` so that nothing exerts gravity after being culled.
-pub const CULL_DISTANCE: f32 = 1000.0;
+pub const CULL_DISTANCE: f32 = 2000.0;
 
 // ── Physics: Neighbor Counting ────────────────────────────────────────────────
 
@@ -103,8 +103,8 @@ pub const GRID_CELL_SIZE: f32 = 500.0;
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 
-/// Minimum camera zoom scale (zoom *out*).  At 0.5 the full cull circle fits comfortably.
-pub const MIN_ZOOM: f32 = 0.5;
+/// Minimum camera zoom scale (zoom *out*).  At 0.25 the full 2000-unit cull circle fits comfortably.
+pub const MIN_ZOOM: f32 = 0.25;
 
 /// Maximum camera zoom scale (zoom *in*).  At 8.0 only ~150×100 world units are visible.
 pub const MAX_ZOOM: f32 = 8.0;
@@ -146,7 +146,7 @@ pub const PLAYER_RESTITUTION: f32 = 0.3;
 
 /// Distance from origin beyond which the player experiences extra velocity damping.
 /// Matches `CULL_DISTANCE` so the soft boundary coincides with the asteroid hard boundary.
-pub const OOB_RADIUS: f32 = 1000.0;
+pub const OOB_RADIUS: f32 = 2000.0;
 
 /// Minimum velocity decay factor applied per frame at maximum out-of-bounds depth.
 /// Range: (0.0, 1.0) — values closer to 1.0 are gentler; closer to 0.0 are harsher.
@@ -169,7 +169,7 @@ pub const PROJECTILE_LIFETIME: f32 = 3.0;
 
 /// Distance from origin beyond which a live projectile is despawned.
 /// Kept at `CULL_DISTANCE` so projectiles don't outlive the asteroids they can hit.
-pub const PROJECTILE_MAX_DIST: f32 = 1000.0;
+pub const PROJECTILE_MAX_DIST: f32 = 2000.0;
 
 /// Radius (u) of projectile ball collider.
 pub const PROJECTILE_COLLIDER_RADIUS: f32 = 2.0;
@@ -235,19 +235,34 @@ pub const STATS_FONT_SIZE: f32 = 20.0;
 pub const HULL_DEDUP_MIN_DIST: f32 = 0.5;
 
 /// Minimum side length for spawned equilateral triangle shape (at scale 1.0).
-pub const TRIANGLE_BASE_SIDE: f32 = 6.0;
+pub const TRIANGLE_BASE_SIDE: f32 = 8.0;
 
 /// Half-extent for spawned square shape (at scale 1.0).
-pub const SQUARE_BASE_HALF: f32 = 4.0;
+pub const SQUARE_BASE_HALF: f32 = 6.0;
 
 /// Circumradius for spawned pentagon and hexagon shapes (at scale 1.0).
-pub const POLYGON_BASE_RADIUS: f32 = 5.0;
+pub const POLYGON_BASE_RADIUS: f32 = 7.0;
+
+/// Circumradius for spawned heptagon (7-sided) shapes (at scale 1.0).
+pub const HEPTAGON_BASE_RADIUS: f32 = 8.5;
+
+/// Circumradius for spawned octagon (8-sided) shapes (at scale 1.0).
+pub const OCTAGON_BASE_RADIUS: f32 = 10.0;
+
+/// Circumradius for the large planetoid asteroid (at scale 1.0).
+/// Planetoids are 16-sided near-circles and participate in full N-body physics.
+pub const PLANETOID_BASE_RADIUS: f32 = 25.0;
+
+/// Unit-size count assigned to a spawned planetoid.
+/// Reflects the planetoid's large mass relative to small asteroids.
+pub const PLANETOID_UNIT_SIZE: u32 = 16;
 
 /// Asteroid size scale range: minimum multiplier applied to base geometry.
 pub const ASTEROID_SIZE_SCALE_MIN: f32 = 0.5;
 
 /// Asteroid size scale range: maximum multiplier applied to base geometry.
-pub const ASTEROID_SIZE_SCALE_MAX: f32 = 1.5;
+/// Increased to 2.5 to allow noticeably large individual asteroids.
+pub const ASTEROID_SIZE_SCALE_MAX: f32 = 2.5;
 
 /// Initial velocity range (u/s) assigned to each spawned asteroid axis component.
 pub const ASTEROID_INITIAL_VELOCITY_RANGE: f32 = 15.0;

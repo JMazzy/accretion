@@ -1,5 +1,38 @@
 # GRAV-SIM Changelog
 
+## Expanded Play Area, Larger Asteroid Sizes & Planetoid — February 20, 2026
+
+### Play/simulation area doubled; six asteroid shapes; planetoid added
+
+**Expanded world boundaries** (`src/constants.rs`, `assets/physics.toml`):
+- `CULL_DISTANCE` 1000 → 2000 u; `MAX_GRAVITY_DIST` 1000 → 2000 u (kept in sync to avoid phantom forces)
+- `OOB_RADIUS` and `PROJECTILE_MAX_DIST` updated to 2000 u to match the new boundary
+- Spawn region (`SIM_WIDTH`×`SIM_HEIGHT`) expanded 6000×4000 (was 3000×2000) so asteroids fill the larger cull circle
+- `MIN_ZOOM` lowered from 0.5 to 0.25 so the full 2000-unit area is visible when zoomed out
+- Spatial grid cell size unchanged (500 u); gravity lookups now check a 9×9 cell neighbourhood vs the previous 5×5 — still O(N·K)
+
+**Larger asteroid base geometry** (`src/constants.rs`, `assets/physics.toml`):
+- `TRIANGLE_BASE_SIDE` 6.0 → 8.0; `SQUARE_BASE_HALF` 4.0 → 6.0; `POLYGON_BASE_RADIUS` 5.0 → 7.0
+- `ASTEROID_SIZE_SCALE_MAX` 1.5 → 2.5, giving a noticeably wider visual size range
+
+**New polygon shapes** (`src/asteroid.rs`):
+- Added `generate_heptagon()`, `generate_octagon()`, and generic `generate_regular_polygon(sides, …)` helper
+- `generate_pentagon()` and `generate_hexagon()` refactored to use the generic helper
+- New constants: `HEPTAGON_BASE_RADIUS = 8.5`, `OCTAGON_BASE_RADIUS = 10.0`
+- Spawn pool expanded from 4 shapes to 6 (tri/sq/pent/hex/hept/oct); unit sizes 1–6 respectively
+- `min_vertices_for_mass()` and `canonical_vertices_for_mass()` extended for masses 8–9 (heptagon) and ≥10 (octagon)
+
+**Planetoid** (`src/asteroid.rs`, `src/main.rs`):
+- New `spawn_planetoid(commands, position, config)` public function
+- 16-sided near-circle with `PLANETOID_BASE_RADIUS = 25.0` and `PLANETOID_UNIT_SIZE = 16`
+- Full N-body physics: gravity-interacts, collides, and merges with other asteroids like any entity
+- One planetoid spawned at `(700, 400)` during `spawn_initial_world`
+- Configurable at runtime via `planetoid_base_radius` and `planetoid_unit_size` in `assets/physics.toml`
+
+**Build status:** `cargo clippy -- -D warnings` passes with zero warnings.
+
+---
+
 ## Score HUD, Stats Overlay & All-Off Defaults — February 20, 2026
 
 ### Score HUD replaces permanent stats text; stats become a toggleable overlay

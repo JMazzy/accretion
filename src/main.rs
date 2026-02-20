@@ -25,6 +25,8 @@ use testing::{
 
 fn spawn_initial_world(mut commands: Commands, config: Res<PhysicsConfig>) {
     asteroid::spawn_initial_asteroids(&mut commands, 200, &config);
+    // Spawn one large planetoid offset from the player origin.
+    asteroid::spawn_planetoid(&mut commands, Vec2::new(700.0, 400.0), &config);
 }
 
 /// Configure Rapier physics: disable gravity for the space simulation.
