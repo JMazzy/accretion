@@ -382,7 +382,21 @@ pub fn culling_system(
 }
 
 /// Form large asteroids by detecting clusters of touching asteroids
-/// and converting them into larger polygons
+/// and converting them into larger polygons.
+///
+/// ## Merge criterion: gravitational binding energy
+///
+/// A cluster merges only when its kinetic energy in the centre-of-mass frame
+/// is less than the sum of pairwise gravitational binding energies:
+///
+/// ```text
+/// E_binding = Σ_{i<j}  G · mᵢ · mⱼ / rᵢⱼ
+/// E_k_com   = Σᵢ  ½ · mᵢ · |vᵢ − v_cm|²  +  Σᵢ  ½ · Iᵢ · ωᵢ²
+/// merge iff  E_k_com < E_binding
+/// ```
+///
+/// Mass is approximated as `AsteroidSize` units (uniform density).
+/// Moment of inertia per member: `I = ½ · m · r_eff²` where `r_eff = √(m / π)`.
 pub fn asteroid_formation_system(
     mut commands: Commands,
     query: Query<(Entity, &Transform, &Velocity, &Vertices, &AsteroidSize), With<Asteroid>>,
@@ -390,8 +404,7 @@ pub fn asteroid_formation_system(
     mut stats: ResMut<SimulationStats>,
     config: Res<PhysicsConfig>,
 ) {
-    // Find clusters of slow-moving asteroids that are touching
-    let velocity_threshold = config.velocity_threshold_formation;
+    let gravity_const = config.gravity_const;
     let mut processed = std::collections::HashSet::new();
 
     let Ok(rapier) = rapier_context.single() else {
@@ -406,14 +419,11 @@ pub fn asteroid_formation_system(
             continue;
         }
 
-        // Only start clusters from slow asteroids
-        if v1.linvel.length() > velocity_threshold {
-            continue;
-        }
-
-        // Flood-fill to find all connected slow asteroids
-        // Store: (entity, transform, vertices, size)
-        let mut cluster: Vec<(Entity, &Transform, &Vertices, u32)> = vec![(e1, t1, _verts1, sz1.0)];
+        // Flood-fill to find all connected (touching) asteroids.
+        // No velocity pre-filter — the binding-energy check below gates the merge.
+        // Cluster stores: (entity, transform, velocity, vertices, size_units)
+        let mut cluster: Vec<(Entity, &Transform, &Velocity, &Vertices, u32)> =
+            vec![(e1, t1, v1, _verts1, sz1.0)];
         let mut queue = vec![e1];
         let mut visited = std::collections::HashSet::new();
         visited.insert(e1);
@@ -424,120 +434,146 @@ pub fn asteroid_formation_system(
                     continue;
                 }
 
-                // Only combine if slow
-                if v2.linvel.length() > velocity_threshold {
-                    continue;
-                }
-
                 // Check if they're touching via Rapier contact
                 if let Some(contact) = rapier.contact_pair(current, e2) {
                     if contact.has_any_active_contact() {
                         visited.insert(e2);
                         queue.push(e2);
-                        cluster.push((e2, t2, verts2, sz2.0));
+                        cluster.push((e2, t2, v2, verts2, sz2.0));
                     }
                 }
             }
         }
 
-        // If we have 2+ asteroids in the cluster, merge them
-        if cluster.len() >= 2 {
-            // Mark all as processed
-            for (entity, _, _, _) in &cluster {
-                processed.insert(*entity);
-            }
+        if cluster.len() < 2 {
+            continue;
+        }
 
-            // Compute center position
-            let mut center = Vec2::ZERO;
-            let mut avg_linvel = Vec2::ZERO;
-            let mut avg_angvel = 0.0;
+        // ── Gravitational binding energy check ────────────────────────────────
+        //
+        // Use AsteroidSize units as a mass proxy (uniform density → mass ∝ size).
+        let masses: Vec<f32> = cluster.iter().map(|&(_, _, _, _, s)| s as f32).collect();
+        let total_mass: f32 = masses.iter().sum();
 
-            for (entity, t, _v, _) in &cluster {
-                let pos = t.translation.truncate();
-                center += pos;
-                // Get velocity from the cached query data
-                for (e, _, vel, _, _) in &asteroids {
-                    if e == entity {
-                        avg_linvel += vel.linvel;
-                        avg_angvel += vel.angvel;
-                        break;
-                    }
+        // Centre-of-mass velocity (mass-weighted average)
+        let v_cm: Vec2 = cluster
+            .iter()
+            .zip(masses.iter())
+            .map(|(&(_, _, v, _, _), &m)| v.linvel * m)
+            .sum::<Vec2>()
+            / total_mass;
+
+        // Kinetic energy in the COM frame: translational + rotational per member.
+        // Moment of inertia for a uniform disk: I = ½ · m · r², r = √(m / π).
+        let ke_com: f32 = cluster
+            .iter()
+            .zip(masses.iter())
+            .map(|(&(_, _, v, _, _), &m)| {
+                let dv = v.linvel - v_cm;
+                let r_eff = (m / std::f32::consts::PI).sqrt();
+                let inertia = 0.5 * m * r_eff * r_eff;
+                0.5 * m * dv.length_squared() + 0.5 * inertia * v.angvel * v.angvel
+            })
+            .sum();
+
+        // Pairwise gravitational binding energy: E = Σ_{i<j} G·mᵢ·mⱼ / rᵢⱼ
+        let binding_energy: f32 = {
+            let mut e = 0.0_f32;
+            let n = cluster.len();
+            for a in 0..n {
+                for b in (a + 1)..n {
+                    let pos_a = cluster[a].1.translation.truncate();
+                    let pos_b = cluster[b].1.translation.truncate();
+                    // Clamp distance to ≥1 to avoid division-by-zero on overlapping bodies
+                    let dist = (pos_b - pos_a).length().max(1.0);
+                    e += gravity_const * masses[a] * masses[b] / dist;
                 }
             }
+            e
+        };
 
-            let count = cluster.len() as f32;
-            center /= count;
-            avg_linvel /= count;
-            avg_angvel /= count;
+        // Reject merge if cluster has too much kinetic energy to be gravitationally bound
+        if ke_com >= binding_energy {
+            continue;
+        }
 
-            // Collect ALL vertices from ALL cluster members in world-space
-            let mut world_vertices = Vec::new();
-            for (_entity, transform, vertices, _sz) in &cluster {
-                let rotation = transform.rotation;
-                let offset = transform.translation.truncate();
+        // ── Merge ─────────────────────────────────────────────────────────────
+        for (entity, _, _, _, _) in &cluster {
+            processed.insert(*entity);
+        }
 
-                for local_v in &vertices.0 {
-                    // Rotate local vertex by transform rotation
-                    let world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate();
-                    world_vertices.push(world_v);
-                }
+        // Composite inherits the centre-of-mass velocity (momentum-conserving).
+        // Angular velocity: simple average (moment-of-inertia weighting negligible here).
+        let avg_linvel = v_cm;
+        let avg_angvel: f32 =
+            cluster.iter().map(|&(_, _, v, _, _)| v.angvel).sum::<f32>() / cluster.len() as f32;
+
+        // Collect ALL vertices from ALL cluster members in world-space
+        let mut world_vertices = Vec::new();
+        for (_entity, transform, _vel, vertices, _sz) in &cluster {
+            let rotation = transform.rotation;
+            let offset = transform.translation.truncate();
+
+            for local_v in &vertices.0 {
+                // Rotate local vertex by transform rotation
+                let world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate();
+                world_vertices.push(world_v);
             }
+        }
 
-            // Compute convex hull from all world-space vertices
-            if let Some(hull) = compute_convex_hull_from_points(&world_vertices) {
-                // Need at least 3 vertices for a valid composite asteroid
-                if hull.len() >= 3 {
-                    // Use the hull's geometric centroid as the spawn position so that the
-                    // stored local vertices are centred on (0,0) in local space.
-                    // Using the average of cluster entity positions would leave the vertices
-                    // off-centre, causing the physics body and drawn outline to misalign.
-                    let hull_centroid: Vec2 =
-                        hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
-                    let hull_local: Vec<Vec2> = hull.iter().map(|v| *v - hull_centroid).collect();
+        // Compute convex hull from all world-space vertices
+        if let Some(hull) = compute_convex_hull_from_points(&world_vertices) {
+            // Need at least 3 vertices for a valid composite asteroid
+            if hull.len() >= 3 {
+                // Use the hull's geometric centroid as the spawn position so that the
+                // stored local vertices are centred on (0,0) in local space.
+                // Using the average of cluster entity positions would leave the vertices
+                // off-centre, causing the physics body and drawn outline to misalign.
+                let hull_centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
+                let hull_local: Vec<Vec2> = hull.iter().map(|v| *v - hull_centroid).collect();
 
-                    // Sanity check: skip merges that would produce pathologically large shapes.
-                    // A legitimate merge of N small asteroids should never produce a hull
-                    // that extends more than ~50 units per constituent member from the center.
-                    let max_extent = hull_local
-                        .iter()
-                        .map(|v| v.length())
-                        .fold(0.0_f32, f32::max);
-                    let extent_limit = config.hull_extent_base
-                        + cluster.len() as f32 * config.hull_extent_per_member;
-                    if max_extent > extent_limit {
-                        // Refuse to create this merge — it indicates corrupted vertex data.
-                        // Despawn nothing; leave the source asteroids intact.
-                        continue;
-                    }
+                // Sanity check: skip merges that would produce pathologically large shapes.
+                // A legitimate merge of N small asteroids should never produce a hull
+                // that extends more than ~50 units per constituent member from the center.
+                let max_extent = hull_local
+                    .iter()
+                    .map(|v| v.length())
+                    .fold(0.0_f32, f32::max);
+                let extent_limit =
+                    config.hull_extent_base + cluster.len() as f32 * config.hull_extent_per_member;
+                if max_extent > extent_limit {
+                    // Refuse to create this merge — it indicates corrupted vertex data.
+                    // Despawn nothing; leave the source asteroids intact.
+                    continue;
+                }
 
-                    // Sum unit sizes of all cluster members
-                    let total_size: u32 = cluster.iter().map(|(_, _, _, s)| s).sum();
+                // Sum unit sizes of all cluster members
+                let total_size: u32 = cluster.iter().map(|(_, _, _, _, s)| s).sum();
 
-                    let avg_color = Color::srgb(0.5, 0.5, 0.5);
-                    let _composite = crate::asteroid::spawn_asteroid_with_vertices(
-                        &mut commands,
-                        hull_centroid,
-                        &hull_local,
-                        avg_color,
-                        total_size,
-                    );
+                let avg_color = Color::srgb(0.5, 0.5, 0.5);
+                let composite = crate::asteroid::spawn_asteroid_with_vertices(
+                    &mut commands,
+                    hull_centroid,
+                    &hull_local,
+                    avg_color,
+                    total_size,
+                );
 
-                    // Update velocity
-                    if let Ok(mut cmd) = commands.get_entity(_composite) {
-                        cmd.insert(Velocity {
-                            linvel: avg_linvel,
-                            angvel: avg_angvel,
-                        });
-                    }
+                // Update velocity
+                if let Ok(mut cmd) = commands.get_entity(composite) {
+                    cmd.insert(Velocity {
+                        linvel: avg_linvel,
+                        angvel: avg_angvel,
+                    });
+                }
 
-                    // Track merge: N asteroids became 1, so we merged (N-1) asteroids
-                    let merge_count = (cluster.len() - 1) as u32;
-                    stats.merged_total += merge_count;
+                // Track merge: N asteroids became 1, so we merged (N-1) asteroids
+                let merge_count = (cluster.len() - 1) as u32;
+                stats.merged_total += merge_count;
 
-                    // Despawn all source asteroids
-                    for (entity, _, _, _) in cluster {
-                        commands.entity(entity).despawn();
-                    }
+                // Despawn all source asteroids
+                for (entity, _, _, _, _) in cluster {
+                    commands.entity(entity).despawn();
                 }
             }
         }

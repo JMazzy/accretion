@@ -39,13 +39,10 @@ max_gravity_dist = 1000.0
 
 # ── Physics: Cluster Formation ────────────────────────────────────────────────
 
-# Maximum linear speed (u/s) for velocity synchronisation before merging.
+# Maximum linear speed (u/s) for velocity synchronisation of touching asteroids.
 # Lower → only nearly-stationary asteroids are synced; higher → more aggressive.
+# Note: merging is now governed by gravitational binding energy, not velocity threshold.
 velocity_threshold_locking = 5.0
-
-# Maximum linear speed (u/s) for merge eligibility.
-# Slightly above velocity_threshold_locking so asteroids sync first, then merge.
-velocity_threshold_formation = 10.0
 
 # Sanity-check limits for merged hull extents.
 # allowed_extent = hull_extent_base + cluster_members × hull_extent_per_member

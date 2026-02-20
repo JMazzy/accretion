@@ -45,7 +45,6 @@ pub struct PhysicsConfig {
 
     // ── Physics: Cluster Formation ────────────────────────────────────────────
     pub velocity_threshold_locking: f32,
-    pub velocity_threshold_formation: f32,
     pub hull_extent_base: f32,
     pub hull_extent_per_member: f32,
 
@@ -132,7 +131,6 @@ impl Default for PhysicsConfig {
             max_gravity_dist: MAX_GRAVITY_DIST,
             // Cluster Formation
             velocity_threshold_locking: VELOCITY_THRESHOLD_LOCKING,
-            velocity_threshold_formation: VELOCITY_THRESHOLD_FORMATION,
             hull_extent_base: HULL_EXTENT_BASE,
             hull_extent_per_member: HULL_EXTENT_PER_MEMBER,
             // Collision

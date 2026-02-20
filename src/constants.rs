@@ -59,14 +59,9 @@ pub const MAX_GRAVITY_DIST: f32 = 1000.0;
 ///
 /// Lower values → only nearly-stationary asteroids are synced.
 /// Higher values → more aggressive locking, may cause visible velocity jumps.
+/// Note: cluster formation is now gated by gravitational binding energy rather
+/// than a velocity threshold — this constant only governs velocity sync, not merging.
 pub const VELOCITY_THRESHOLD_LOCKING: f32 = 5.0;
-
-/// Maximum linear speed (u/s) at which a touching asteroid can join a merge cluster
-/// in `asteroid_formation_system`.
-///
-/// Slightly higher than `VELOCITY_THRESHOLD_LOCKING` so that asteroids are first
-/// velocity-synced and then eligible to merge in the next pass.
-pub const VELOCITY_THRESHOLD_FORMATION: f32 = 10.0;
 
 /// Maximum per-member hull extent (u) relative to cluster size beyond which a
 /// proposed merged hull is rejected as corrupted data.

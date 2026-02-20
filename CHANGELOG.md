@@ -1,5 +1,39 @@
 # GRAV-SIM Changelog
 
+## Gravitational Binding Energy Merging — February 19, 2026
+
+### Replaced velocity-threshold merge criterion with gravitational binding energy
+
+Cluster merging now uses a physically rigorous energy balance: a cluster of touching asteroids only forms a composite when its kinetic energy in the centre-of-mass frame falls below the sum of pairwise gravitational binding energies.
+
+**Merge condition:**
+```
+E_binding = Σ_{i<j}  G · mᵢ · mⱼ / rᵢⱼ
+E_k_com   = Σᵢ  ½·mᵢ·|vᵢ − v_cm|²  +  Σᵢ  ½·Iᵢ·ωᵢ²
+merge iff  E_k_com < E_binding
+```
+
+**Implementation details:**
+- `asteroid_formation_system` flood-fills via Rapier contacts with **no velocity pre-filter** — the energy check gates the merge instead
+- Mass proxy: `AsteroidSize` units (uniform density → mass ∝ size)
+- COM velocity: mass-weighted (`v_cm = Σmᵢvᵢ / M`); composite inherits this (momentum-conserving)
+- Moment of inertia per member: `I = ½·m·r²` where `r = √(m/π)` (uniform disk estimate)
+- Pairwise distances clamped to ≥1 unit to avoid division-by-zero on overlapping bodies
+
+**Removed:**
+- `VELOCITY_THRESHOLD_FORMATION` constant from `src/constants.rs`
+- `velocity_threshold_formation` field from `PhysicsConfig` and `assets/physics.toml`
+- Velocity pre-filter from `asteroid_formation_system` flood-fill
+- Velocity pre-filter from flood-fill neighbour expansion loop
+
+**`VELOCITY_THRESHOLD_LOCKING`** remains unchanged — it still governs `particle_locking_system` which synchronises co-moving touching asteroids for stability (independent of the merge decision).
+
+**Files changed:** `src/simulation.rs`, `src/constants.rs`, `src/config.rs`, `assets/physics.toml`, `ARCHITECTURE.md`
+
+**Build & test status:** `cargo check` ✅ `cargo clippy -- -D warnings` ✅ `cargo build --release` ✅ All 10 physics tests pass ✅
+
+---
+
 ## Runtime Physics Configuration — 2026
 
 ### `assets/physics.toml` loaded at startup
@@ -591,7 +625,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 #### Physics
 
-- **Gravitational binding energy merging**: Replace velocity-threshold merge criterion with a potential-energy check so clusters only stick when kinetic energy falls below gravitational binding energy
+- ~~**Gravitational binding energy merging**: Replace velocity-threshold merge criterion with a potential-energy check so clusters only stick when kinetic energy falls below gravitational binding energy~~ ✅ Completed
 - **Concave asteroid deformation**: Track per-vertex damage; move impact vertices inward and recompute hull to simulate progressive surface cratering
 - **Rotational-inertia gravity torque**: Include second-moment-of-area in force application so asymmetric composites develop realistic spin
 - **Soft boundary reflection**: Replace hard cull removal with a potential-well that gently bounces asteroids back toward the simulation centre

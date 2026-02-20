@@ -75,18 +75,23 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ### Cluster Formation & Merging
 
-- **Detection**: Flood-fill algorithm through Rapier contact manifolds
+- **Detection**: Flood-fill algorithm through Rapier contact manifolds (no velocity pre-filter)
 - **Execution**: Must run in `PostUpdate` after Rapier `FixedUpdate` populates contacts
-- **Velocity thresholds** (both in `src/constants.rs`):
-  - `VELOCITY_THRESHOLD_LOCKING` — maximum speed for velocity synchronisation
-  - `VELOCITY_THRESHOLD_FORMATION` — maximum speed for merge eligibility
+- **Merge criterion: gravitational binding energy**
+  - A cluster merges only if its kinetic energy in the centre-of-mass frame falls below the sum of pairwise gravitational binding energies:
+    - `E_binding = Σ_{i<j} G · mᵢ · mⱼ / rᵢⱼ`
+    - `E_k_com = Σᵢ ½mᵢ|vᵢ − v_cm|² + Σᵢ ½Iᵢωᵢ²`
+    - Merge condition: `E_k_com < E_binding`
+  - Mass proxy: `AsteroidSize` units (uniform density → mass ∝ size)
+  - Moment of inertia estimate per member: `I = ½ · m · r²` where `r = √(m / π)`
+- **Velocity synchronisation** (pre-formation, `particle_locking_system`): `VELOCITY_THRESHOLD_LOCKING` — stabilises co-moving touching asteroids before the formation system runs
 - **Hull computation**:
   1. Collect all vertices from cluster members in **world-space**
   2. Apply transform rotation to local vertices: `world_v = center + rotation * local_v`
   3. Compute convex hull from complete world-space vertex set
   4. Convert hull back to **local-space relative to center** for rendering
   5. Spawn composite with local-space hull for correct visualization
-- **Velocity inheritance**: Average linear and angular velocity from cluster members
+- **Velocity inheritance**: Centre-of-mass velocity (mass-weighted average of linear velocities); simple average for angular velocity
 
 ### Environmental Damping
 
@@ -151,7 +156,7 @@ Key constant groups (see `src/constants.rs` for current values):
 |---|---|
 | World bounds | `SIM_WIDTH`, `SIM_HEIGHT`, `PLAYER_BUFFER_RADIUS` |
 | Gravity | `GRAVITY_CONST`, `MIN_GRAVITY_DIST`, `MAX_GRAVITY_DIST` |
-| Cluster formation | `VELOCITY_THRESHOLD_LOCKING`, `VELOCITY_THRESHOLD_FORMATION` |
+| Cluster formation | `VELOCITY_THRESHOLD_LOCKING` (velocity sync), `GRAVITY_CONST` (binding energy) |
 | Collision | `RESTITUTION_SMALL`, `FRICTION_ASTEROID` |
 | Culling | `CULL_DISTANCE` |
 | Spatial grid | `GRID_CELL_SIZE` |
@@ -226,7 +231,7 @@ Physics constants are defined in `src/constants.rs` as compile-time defaults and
 
 #### Physics Improvements
 - **Concave asteroid deformation**: Track per-vertex damage state; move impact vertex inward and recompute hull to simulate craters and progressive destruction
-- **Gravitational binding energy merge criterion**: Replace velocity-threshold merging with a binding-energy check; clusters only merge if their kinetic energy is below the gravitational potential energy of the cluster, producing more physically realistic aggregation
+- ~~**Gravitational binding energy merge criterion**: Replace velocity-threshold merging with a binding-energy check; clusters only merge if their kinetic energy is below the gravitational potential energy of the cluster, producing more physically realistic aggregation~~ ✅ Completed
 - **Rotational-inertia-aware gravity torque**: Include mass distribution (second moment of area) in gravity force application so oddly-shaped composites develop realistic rotation
 - **Soft boundary with elastic reflection**: Replace hard cull-at-1000u removal with a potential-well boundary that gently reflects asteroids back toward the simulation centre
 - **KD-tree neighbor search**: Replace the static 500-unit spatial grid with a dynamic KD-tree to better handle highly non-uniform asteroid distributions (dense cluster + sparse outer field)
