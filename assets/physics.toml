@@ -1,0 +1,208 @@
+# GRAV-SIM Physics Configuration
+#
+# All values here override the compiled defaults in src/constants.rs.
+# Missing keys fall back to the compiled defaults — you only need to list
+# the values you want to change.
+#
+# Restart the simulation after editing this file; no recompilation needed.
+# Validate changes by running: ./test_all.sh
+#
+# ── World Bounds ──────────────────────────────────────────────────────────────
+
+# Width / height of the initial asteroid spawn region (world units).
+# Asteroids are placed within ±sim_width/2 of the origin.
+sim_width = 3000.0
+sim_height = 2000.0
+
+# Gap between the spawn grid edge and the outer simulation boundary.
+spawn_grid_margin = 150.0
+
+# Radius around the player start position (origin) kept clear of asteroids.
+# Increase for more breathing room; decrease for faster early encounters.
+player_buffer_radius = 100.0
+
+# ── Physics: Gravity ──────────────────────────────────────────────────────────
+
+# Inverse-square gravity strength.
+# Higher → stronger attraction → faster cluster formation.
+# Tested range: 5.0–15.0.  Above ~20.0 causes runaway acceleration at close range.
+gravity_const = 10.0
+
+# Asteroids closer than this (world units) are excluded from gravity calculations.
+# Rapier handles contact physics below this threshold to prevent energy injection.
+# Tested range: 3.0–10.0.
+min_gravity_dist = 5.0
+
+# Maximum distance at which gravity is applied.
+# Set equal to cull_distance so culled asteroids exert no phantom forces.
+max_gravity_dist = 1000.0
+
+# ── Physics: Cluster Formation ────────────────────────────────────────────────
+
+# Maximum linear speed (u/s) for velocity synchronisation before merging.
+# Lower → only nearly-stationary asteroids are synced; higher → more aggressive.
+velocity_threshold_locking = 5.0
+
+# Maximum linear speed (u/s) for merge eligibility.
+# Slightly above velocity_threshold_locking so asteroids sync first, then merge.
+velocity_threshold_formation = 10.0
+
+# Sanity-check limits for merged hull extents.
+# allowed_extent = hull_extent_base + cluster_members × hull_extent_per_member
+# Merges producing larger hulls are rejected as corrupted.
+hull_extent_base = 60.0
+hull_extent_per_member = 20.0
+
+# ── Physics: Collision ────────────────────────────────────────────────────────
+
+# Restitution for small (unit) asteroids.  0.0 = perfectly inelastic.
+restitution_small = 0.0
+
+# Friction coefficient for asteroid–asteroid contacts.
+friction_asteroid = 1.0
+
+# ── Physics: Culling ──────────────────────────────────────────────────────────
+
+# Distance from origin beyond which asteroids are permanently removed.
+# Should match max_gravity_dist to avoid phantom forces from culled asteroids.
+cull_distance = 1000.0
+
+# ── Physics: Neighbor Counting ────────────────────────────────────────────────
+
+# Radius used to decide whether two asteroids are "close neighbours".
+neighbor_threshold = 3.0
+
+# ── Spatial Grid ──────────────────────────────────────────────────────────────
+
+# World-space size of each spatial grid cell.
+# Must be >= largest query radius / 2 to keep cell-check count manageable.
+grid_cell_size = 500.0
+
+# ── Camera ────────────────────────────────────────────────────────────────────
+
+# Zoom scale limits (camera.scale = zoom → larger = zoomed out).
+min_zoom = 0.5
+max_zoom = 8.0
+
+# Zoom scale change per scroll-wheel event.
+zoom_speed = 0.1
+
+# ── Player: Movement ──────────────────────────────────────────────────────────
+
+# Forward thrust force (N) while W is held.
+thrust_force = 25000.0
+
+# Reverse thrust force (N) while S is held.
+reverse_force = 12500.0
+
+# Angular velocity (rad/s) while A / D are held.
+rotation_speed = 3.0
+
+# Rapier linear / angular damping on the player ship.
+player_linear_damping = 0.1
+player_angular_damping = 10.0
+
+# Radius (world units) of the player ship's ball collider.
+player_collider_radius = 8.0
+
+# Restitution coefficient for the player ship.
+player_restitution = 0.3
+
+# ── Player: Out-of-Bounds ─────────────────────────────────────────────────────
+
+# Distance from origin where the soft boundary begins.
+oob_radius = 1000.0
+
+# Minimum velocity decay factor per frame at max out-of-bounds depth.
+# Closer to 1.0 = gentler drag; closer to 0.0 = harsher.
+oob_damping = 0.97
+
+# Width of the damping ramp zone.  Damping increases linearly from 0% at
+# oob_radius to (1.0 - oob_damping)*100% at oob_radius + oob_ramp_width.
+oob_ramp_width = 200.0
+
+# ── Player: Combat ────────────────────────────────────────────────────────────
+
+# Projectile muzzle speed (u/s).
+projectile_speed = 500.0
+
+# Minimum seconds between consecutive shots.
+fire_cooldown = 0.2
+
+# Seconds before a live projectile is automatically despawned.
+projectile_lifetime = 3.0
+
+# Distance from origin beyond which a projectile is despawned.
+projectile_max_dist = 1000.0
+
+# Radius (u) of each projectile's ball collider.
+projectile_collider_radius = 2.0
+
+# ── Player: Health ────────────────────────────────────────────────────────────
+
+# Player ship starting and maximum HP.
+player_max_hp = 100.0
+
+# Relative speed (u/s) below which asteroid impacts deal zero damage.
+damage_speed_threshold = 30.0
+
+# Seconds of invincibility after taking damage (prevents rapid stacking).
+invincibility_duration = 0.5
+
+# ── Gamepad ───────────────────────────────────────────────────────────────────
+
+# Left-stick dead zone fraction (inputs below this are ignored).
+gamepad_left_deadzone = 0.15
+
+# Velocity decay factor per frame while the brake button (B / East) is held.
+gamepad_brake_damping = 0.82
+
+# Seconds of aim inactivity before auto-snapping back to ship forward.
+aim_idle_snap_secs = 1.0
+
+# Right-stick dead zone fraction.
+gamepad_right_deadzone = 0.2
+
+# Right-stick deflection fraction required to trigger auto-fire.
+gamepad_fire_threshold = 0.5
+
+# Minimum angular error (rad) before the ship actively corrects heading.
+gamepad_heading_snap_threshold = 0.05
+
+# ── Rendering ─────────────────────────────────────────────────────────────────
+
+# Live asteroid count above which force-vector gizmos are skipped.
+force_vector_hide_threshold = 200
+
+# Scale factor for force-vector gizmo lines.
+force_vector_display_scale = 80.0
+
+# Minimum force magnitude to draw a force-vector gizmo.
+force_vector_min_length = 0.1
+
+# Font size for the on-screen statistics overlay.
+stats_font_size = 20.0
+
+# ── Asteroid Geometry ─────────────────────────────────────────────────────────
+
+# Minimum distance (u) between hull vertices before they're considered duplicates.
+hull_dedup_min_dist = 0.5
+
+# Base side length for spawned equilateral triangles (at scale 1.0).
+triangle_base_side = 6.0
+
+# Half-extent for spawned squares (at scale 1.0).
+square_base_half = 4.0
+
+# Circumradius for spawned pentagons and hexagons (at scale 1.0).
+polygon_base_radius = 5.0
+
+# Asteroid size scale range (multiplier applied to base geometry).
+asteroid_size_scale_min = 0.5
+asteroid_size_scale_max = 1.5
+
+# Random initial velocity component range per axis (u/s).
+asteroid_initial_velocity_range = 15.0
+
+# Random initial angular velocity range (rad/s).
+asteroid_initial_angvel_range = 5.0

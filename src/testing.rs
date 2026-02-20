@@ -195,8 +195,7 @@ pub fn spawn_test_gentle_approach(mut commands: Commands, mut test_config: ResMu
     // Spawn two asteroids with a gentle initial velocity toward each other so they
     // arrive well below the 10 u/s merge threshold and stick together.
     let grey = Color::srgb(0.5, 0.5, 0.5);
-    let e1 =
-        spawn_asteroid_with_vertices(&mut commands, Vec2::new(-25.0, 0.0), &vertices, grey, 1);
+    let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-25.0, 0.0), &vertices, grey, 1);
     let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(25.0, 0.0), &vertices, grey, 1);
 
     commands.entity(e1).insert(Velocity {

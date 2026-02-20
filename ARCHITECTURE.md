@@ -21,10 +21,12 @@ Pure asteroid-based simulation where asteroids naturally aggregate through gravi
 ```text
 src/
 ├── main.rs               - Bevy app setup, window configuration, test mode routing
-├── constants.rs          - All tuneable physics and gameplay constants (single source of truth)
+├── constants.rs          - All tuneable physics and gameplay constants (compile-time defaults)
+├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
 ├── spatial_partition.rs  - Spatial grid for O(1) neighbor lookup (replaces O(N²) brute-force)
+├── rendering.rs          - Gizmo wireframe rendering and stats overlay systems
 ├── player/               - Player ship entity, WASD controls, projectile firing, camera follow
 ├── graphics.rs           - Camera setup for 2D rendering
 ├── testing.rs            - Automated test scenarios for physics validation
@@ -212,8 +214,9 @@ Key constant groups (see `src/constants.rs` for current values):
 - **Cluster formation is discrete**: Merging is all-or-nothing per frame; a cluster either fully merges in one PostUpdate step or waits until the next frame
 - **Single-pass hull computation**: Composite hull is computed once at merge time; subsequent impacts reduce vertex count but do not recompute the full hull from physics state
 
-#### Hardcoded Configuration
-All physics-tuning constants are defined in `src/constants.rs` and require `cargo build` to change. See the Physics Constants Reference section above for the full list.
+#### Runtime Configuration
+
+Physics constants are defined in `src/constants.rs` as compile-time defaults and mirrored into a `PhysicsConfig` Bevy resource (`src/config.rs`) at startup. If `assets/physics.toml` is present it overrides the defaults — no recompilation is required. If the file is absent the compiled-in defaults are used silently. The resource is injected before all other startup systems so every system reads up-to-date values on the first frame.
 
 #### Version Constraints
 - **Bevy 0.17** + **bevy_rapier2d 0.32**: Current versions. Migration from 0.13 completed February 2026.
@@ -238,7 +241,7 @@ All physics-tuning constants are defined in `src/constants.rs` and require `carg
 - **Post-processing effects**: Bloom on high-energy impacts and merges; chromatic aberration during player damage invincibility
 
 #### Gameplay & Extensibility
-- **Configuration file support**: Load physics constants from an `assets/physics.toml` file at startup, enabling tuning without recompilation
+- ~~**Configuration file support**: Load physics constants from an `assets/physics.toml` file at startup, enabling tuning without recompilation~~ ✅ **Completed** — `assets/physics.toml` loaded at startup via `PhysicsConfig` resource
 - **Score and progression system**: Points for asteroid destruction scaled by size; wave-based difficulty ramp spawning more and larger asteroids over time
 - **Power-up asteroids**: Special-coloured asteroids that grant the player temporary buffs (shield, rapid-fire, gravity bomb) on destruction
 - **Boss asteroids**: Single very-large composite (size ≥ 20) with scripted split behaviour acting as a wave-ending target
@@ -247,7 +250,7 @@ All physics-tuning constants are defined in `src/constants.rs` and require `carg
 #### Test & Developer Tooling
 - **Automated regression baseline**: Store golden frame-log snapshots in `tests/golden/` and compare on each test run, automatically catching physics constant drift
 - **In-game physics inspector**: Toggle an overlay showing entity IDs, velocities, and contact counts on-screen for live debugging without restarting in test mode
-- **Hot-reload constants**: Watch `assets/physics.toml` for changes at runtime and apply updated constants on the fly (requires the configuration file feature above)
+- **Hot-reload constants**: Watch `assets/physics.toml` for changes at runtime and apply updated constants on the fly
 
 ## Development Commands
 

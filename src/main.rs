@@ -4,6 +4,7 @@ use bevy_rapier2d::prelude::*;
 use std::env;
 
 mod asteroid;
+mod config;
 mod constants;
 mod error;
 mod graphics;
@@ -13,6 +14,7 @@ mod simulation;
 mod spatial_partition;
 mod testing;
 
+use config::PhysicsConfig;
 use testing::{
     spawn_test_culling_verification, spawn_test_gentle_approach, spawn_test_gravity,
     spawn_test_gravity_boundary, spawn_test_high_speed_collision, spawn_test_large_small_pair,
@@ -20,12 +22,8 @@ use testing::{
     spawn_test_perf_benchmark, spawn_test_three_triangles, spawn_test_two_triangles, TestConfig,
 };
 
-fn spawn_initial_world(mut commands: Commands) {
-    asteroid::spawn_initial_asteroids(&mut commands, 200);
-}
-
-fn setup_player_startup(commands: Commands) {
-    player::spawn_player(commands);
+fn spawn_initial_world(mut commands: Commands, config: Res<PhysicsConfig>) {
+    asteroid::spawn_initial_asteroids(&mut commands, 200, &config);
 }
 
 /// Configure Rapier physics: disable gravity for the space simulation.
@@ -50,6 +48,9 @@ fn main() {
         ..Default::default()
     }))
     .insert_resource(ClearColor(Color::BLACK))
+    // Insert PhysicsConfig with compiled defaults; load_physics_config will
+    // overwrite it from assets/physics.toml (if present) in the Startup schedule.
+    .insert_resource(PhysicsConfig::default())
     // pixels_per_meter(1.0) keeps world units identical to old physics behaviour
     // (scale = 1.0 was the default in bevy_rapier2d 0.18).  Setting this to any
     // larger value shrinks collider mass in physics-space quadratically and causes
@@ -60,8 +61,12 @@ fn main() {
     .add_systems(
         Startup,
         (
-            graphics::setup_camera,
-            rendering::setup_stats_text.after(graphics::setup_camera),
+            // Load config first so every other startup system sees the final values.
+            config::load_physics_config,
+            graphics::setup_camera.after(config::load_physics_config),
+            rendering::setup_stats_text
+                .after(graphics::setup_camera)
+                .after(config::load_physics_config),
             setup_physics_config,
         ),
     );
@@ -79,51 +84,55 @@ fn main() {
         match test_name.as_str() {
             "two_triangles" => app.add_systems(
                 Startup,
-                spawn_test_two_triangles.after(graphics::setup_camera),
+                spawn_test_two_triangles.after(config::load_physics_config),
             ),
             "three_triangles" => app.add_systems(
                 Startup,
-                spawn_test_three_triangles.after(graphics::setup_camera),
+                spawn_test_three_triangles.after(config::load_physics_config),
             ),
-            "gravity" => app.add_systems(Startup, spawn_test_gravity.after(graphics::setup_camera)),
+            "gravity" => app.add_systems(
+                Startup,
+                spawn_test_gravity.after(config::load_physics_config),
+            ),
             "high_speed_collision" => app.add_systems(
                 Startup,
-                spawn_test_high_speed_collision.after(graphics::setup_camera),
+                spawn_test_high_speed_collision.after(config::load_physics_config),
             ),
-            "near_miss" => {
-                app.add_systems(Startup, spawn_test_near_miss.after(graphics::setup_camera))
-            }
+            "near_miss" => app.add_systems(
+                Startup,
+                spawn_test_near_miss.after(config::load_physics_config),
+            ),
             "gentle_approach" => app.add_systems(
                 Startup,
-                spawn_test_gentle_approach.after(graphics::setup_camera),
+                spawn_test_gentle_approach.after(config::load_physics_config),
             ),
             "culling_verification" => app.add_systems(
                 Startup,
-                spawn_test_culling_verification.after(graphics::setup_camera),
+                spawn_test_culling_verification.after(config::load_physics_config),
             ),
             "mixed_size_asteroids" => app.add_systems(
                 Startup,
-                spawn_test_mixed_size_asteroids.after(graphics::setup_camera),
+                spawn_test_mixed_size_asteroids.after(config::load_physics_config),
             ),
             "large_small_pair" => app.add_systems(
                 Startup,
-                spawn_test_large_small_pair.after(graphics::setup_camera),
+                spawn_test_large_small_pair.after(config::load_physics_config),
             ),
             "gravity_boundary" => app.add_systems(
                 Startup,
-                spawn_test_gravity_boundary.after(graphics::setup_camera),
+                spawn_test_gravity_boundary.after(config::load_physics_config),
             ),
             "passing_asteroid" => app.add_systems(
                 Startup,
-                spawn_test_passing_asteroid.after(graphics::setup_camera),
+                spawn_test_passing_asteroid.after(config::load_physics_config),
             ),
             "perf_benchmark" => app.add_systems(
                 Startup,
-                spawn_test_perf_benchmark.after(graphics::setup_camera),
+                spawn_test_perf_benchmark.after(config::load_physics_config),
             ),
             _ => app.add_systems(
                 Startup,
-                spawn_test_two_triangles.after(graphics::setup_camera),
+                spawn_test_two_triangles.after(config::load_physics_config),
             ),
         };
 
@@ -143,8 +152,12 @@ fn main() {
         app.insert_resource(TestConfig::default()).add_systems(
             Startup,
             (
-                spawn_initial_world.after(graphics::setup_camera),
-                setup_player_startup.after(graphics::setup_camera),
+                spawn_initial_world
+                    .after(config::load_physics_config)
+                    .after(graphics::setup_camera),
+                player::spawn_player
+                    .after(config::load_physics_config)
+                    .after(graphics::setup_camera),
             ),
         );
     }

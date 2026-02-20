@@ -14,10 +14,7 @@
 //! | `stats_display_system` | Update | Update the live/culled/merged text each frame |
 
 use crate::asteroid::{Asteroid, Vertices};
-use crate::constants::{
-    CULL_DISTANCE, FORCE_VECTOR_DISPLAY_SCALE, FORCE_VECTOR_HIDE_THRESHOLD,
-    FORCE_VECTOR_MIN_LENGTH, STATS_FONT_SIZE,
-};
+use crate::config::PhysicsConfig;
 use crate::simulation::SimulationStats;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::ExternalForce;
@@ -32,7 +29,7 @@ pub struct StatsTextDisplay;
 ///
 /// Uses a `Node` + `Text` hierarchy so the text is fixed to the
 /// screen corner and unaffected by camera zoom or translation.
-pub fn setup_stats_text(mut commands: Commands) {
+pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
     commands
         .spawn((
             Node {
@@ -47,7 +44,7 @@ pub fn setup_stats_text(mut commands: Commands) {
             parent.spawn((
                 Text::new("Live: 0 | Culled: 0 | Merged: 0"),
                 TextFont {
-                    font_size: STATS_FONT_SIZE,
+                    font_size: config.stats_font_size,
                     ..default()
                 },
                 TextColor(Color::srgb(0.0, 1.0, 1.0)),
@@ -83,8 +80,9 @@ pub fn gizmo_rendering_system(
     mut gizmos: Gizmos,
     query: Query<(&Transform, &Vertices, &ExternalForce), With<Asteroid>>,
     stats: Res<SimulationStats>,
+    config: Res<PhysicsConfig>,
 ) {
-    let draw_force_vectors = stats.live_count < FORCE_VECTOR_HIDE_THRESHOLD;
+    let draw_force_vectors = stats.live_count < config.force_vector_hide_threshold;
 
     for (transform, vertices, force) in query.iter() {
         if vertices.0.len() < 2 {
@@ -106,13 +104,13 @@ pub fn gizmo_rendering_system(
 
         // Force-vector overlay (red line from centre, proportional to magnitude)
         if draw_force_vectors {
-            let force_vec = force.force * FORCE_VECTOR_DISPLAY_SCALE;
-            if force_vec.length() > FORCE_VECTOR_MIN_LENGTH {
+            let force_vec = force.force * config.force_vector_display_scale;
+            if force_vec.length() > config.force_vector_min_length {
                 gizmos.line_2d(pos, pos + force_vec, Color::srgb(1.0, 0.0, 0.0));
             }
         }
     }
 
     // Culling boundary circle (yellow) rendered at world origin regardless of camera
-    gizmos.circle_2d(Vec2::ZERO, CULL_DISTANCE, Color::srgb(1.0, 1.0, 0.0));
+    gizmos.circle_2d(Vec2::ZERO, config.cull_distance, Color::srgb(1.0, 1.0, 0.0));
 }

@@ -16,11 +16,7 @@
 //! - [`player_oob_damping_system`] — soft boundary enforcement
 
 use super::state::{AimDirection, AimIdleTimer, Player, PlayerIntent, PreferredGamepad};
-use crate::constants::{
-    AIM_IDLE_SNAP_SECS, GAMEPAD_BRAKE_DAMPING, GAMEPAD_HEADING_SNAP_THRESHOLD,
-    GAMEPAD_LEFT_DEADZONE, OOB_DAMPING, OOB_RADIUS, OOB_RAMP_WIDTH, REVERSE_FORCE, ROTATION_SPEED,
-    THRUST_FORCE,
-};
+use crate::config::PhysicsConfig;
 use bevy::input::gamepad::{GamepadAxis, GamepadButton, GamepadConnection, GamepadConnectionEvent};
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -54,7 +50,11 @@ pub fn player_intent_clear_system(
 /// Additive: safe to run alongside gamepad intent system because each field is
 /// overwritten, not accumulated (both sources can't be active simultaneously in
 /// normal play).
-pub fn keyboard_to_intent_system(keys: Res<ButtonInput<KeyCode>>, mut intent: ResMut<PlayerIntent>) {
+pub fn keyboard_to_intent_system(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut intent: ResMut<PlayerIntent>,
+    config: Res<PhysicsConfig>,
+) {
     if keys.pressed(KeyCode::KeyW) {
         intent.thrust_forward = 1.0;
     }
@@ -62,9 +62,9 @@ pub fn keyboard_to_intent_system(keys: Res<ButtonInput<KeyCode>>, mut intent: Re
         intent.thrust_reverse = 1.0;
     }
     if keys.pressed(KeyCode::KeyA) {
-        intent.angvel = Some(ROTATION_SPEED);
+        intent.angvel = Some(config.rotation_speed);
     } else if keys.pressed(KeyCode::KeyD) {
-        intent.angvel = Some(-ROTATION_SPEED);
+        intent.angvel = Some(-config.rotation_speed);
     }
 }
 
@@ -115,6 +115,7 @@ pub fn gamepad_to_intent_system(
     gamepads: Query<&Gamepad>,
     mut intent: ResMut<PlayerIntent>,
     mut idle: ResMut<AimIdleTimer>,
+    config: Res<PhysicsConfig>,
 ) {
     let Ok(transform) = q_transform.single() else {
         return;
@@ -136,7 +137,7 @@ pub fn gamepad_to_intent_system(
     let ly = gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
     let left_stick = Vec2::new(lx, ly);
 
-    if left_stick.length() < GAMEPAD_LEFT_DEADZONE {
+    if left_stick.length() < config.gamepad_left_deadzone {
         return;
     }
 
@@ -155,11 +156,13 @@ pub fn gamepad_to_intent_system(
         angle_diff += std::f32::consts::TAU;
     }
 
-    intent.angvel = Some(if angle_diff.abs() > GAMEPAD_HEADING_SNAP_THRESHOLD {
-        ROTATION_SPEED * angle_diff.signum()
-    } else {
-        0.0
-    });
+    intent.angvel = Some(
+        if angle_diff.abs() > config.gamepad_heading_snap_threshold {
+            config.rotation_speed * angle_diff.signum()
+        } else {
+            0.0
+        },
+    );
 
     intent.thrust_forward = left_stick.length().min(1.0);
 }
@@ -182,6 +185,7 @@ pub fn gamepad_to_intent_system(
 pub fn apply_player_intent_system(
     mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
     intent: Res<PlayerIntent>,
+    config: Res<PhysicsConfig>,
 ) {
     let Ok((transform, mut force, mut velocity)) = q.single_mut() else {
         return;
@@ -190,17 +194,17 @@ pub fn apply_player_intent_system(
     let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
 
     if intent.thrust_forward > 0.0 {
-        force.force += forward * THRUST_FORCE * intent.thrust_forward;
+        force.force += forward * config.thrust_force * intent.thrust_forward;
     }
     if intent.thrust_reverse > 0.0 {
-        force.force -= forward * REVERSE_FORCE * intent.thrust_reverse;
+        force.force -= forward * config.reverse_force * intent.thrust_reverse;
     }
     if let Some(av) = intent.angvel {
         velocity.angvel = av;
     }
     if intent.brake {
-        velocity.linvel *= GAMEPAD_BRAKE_DAMPING;
-        velocity.angvel *= GAMEPAD_BRAKE_DAMPING;
+        velocity.linvel *= config.gamepad_brake_damping;
+        velocity.angvel *= config.gamepad_brake_damping;
     }
 }
 
@@ -217,9 +221,10 @@ pub fn aim_snap_system(
     mut aim: ResMut<AimDirection>,
     mut idle: ResMut<AimIdleTimer>,
     time: Res<Time>,
+    config: Res<PhysicsConfig>,
 ) {
     idle.secs += time.delta_secs();
-    if idle.secs >= AIM_IDLE_SNAP_SECS {
+    if idle.secs >= config.aim_idle_snap_secs {
         if let Ok(transform) = q_player.single() {
             aim.0 = transform.rotation.mul_vec3(Vec3::Y).truncate();
         }
@@ -233,15 +238,18 @@ pub fn aim_snap_system(
 /// The damping factor ramps smoothly from 0% at the boundary to a maximum of
 /// `(1.0 − OOB_DAMPING) × 100%` at `OOB_RADIUS + OOB_RAMP_WIDTH`.
 /// The player can always re-enter under thrust; they are never hard-stopped.
-pub fn player_oob_damping_system(mut q: Query<(&Transform, &mut Velocity), With<Player>>) {
+pub fn player_oob_damping_system(
+    mut q: Query<(&Transform, &mut Velocity), With<Player>>,
+    config: Res<PhysicsConfig>,
+) {
     let Ok((transform, mut velocity)) = q.single_mut() else {
         return;
     };
 
     let dist = transform.translation.truncate().length();
-    if dist > OOB_RADIUS {
-        let exceed = (dist - OOB_RADIUS).min(OOB_RAMP_WIDTH) / OOB_RAMP_WIDTH;
-        let factor = 1.0 - exceed * (1.0 - OOB_DAMPING);
+    if dist > config.oob_radius {
+        let exceed = (dist - config.oob_radius).min(config.oob_ramp_width) / config.oob_ramp_width;
+        let factor = 1.0 - exceed * (1.0 - config.oob_damping);
         velocity.linvel *= factor;
         velocity.angvel *= factor;
     }
@@ -265,6 +273,7 @@ mod tests {
         app.add_plugins(MinimalPlugins);
         // Resources required by apply_player_intent_system.
         app.insert_resource(PlayerIntent::default());
+        app.insert_resource(PhysicsConfig::default());
         app
     }
 
@@ -300,9 +309,14 @@ mod tests {
             },
         );
 
-        let force = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<ExternalForce>().unwrap().force;
+        let force = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<ExternalForce>()
+            .unwrap()
+            .force;
 
         assert!(
             force.length() > 0.0,
@@ -323,9 +337,14 @@ mod tests {
             },
         );
 
-        let force = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<ExternalForce>().unwrap().force;
+        let force = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<ExternalForce>()
+            .unwrap()
+            .force;
 
         // Ship faces +Y (identity rotation), so force should be (0, THRUST_FORCE).
         assert!(
@@ -355,9 +374,14 @@ mod tests {
             },
         );
 
-        let force = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<ExternalForce>().unwrap().force;
+        let force = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<ExternalForce>()
+            .unwrap()
+            .force;
 
         // Local +Y in world space is world +X after 90° CCW rotation.
         assert!(
@@ -373,9 +397,14 @@ mod tests {
 
         run_apply(&mut app, PlayerIntent::default());
 
-        let force = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<ExternalForce>().unwrap().force;
+        let force = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<ExternalForce>()
+            .unwrap()
+            .force;
 
         assert_eq!(
             force,
@@ -397,9 +426,14 @@ mod tests {
             },
         );
 
-        let force = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<ExternalForce>().unwrap().force;
+        let force = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<ExternalForce>()
+            .unwrap()
+            .force;
 
         // Ship faces +Y; reverse force should be negative Y.
         assert!(
@@ -426,9 +460,14 @@ mod tests {
             },
         );
 
-        let angvel = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<Velocity>().unwrap().angvel;
+        let angvel = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<Velocity>()
+            .unwrap()
+            .angvel;
 
         assert!(
             (angvel - ROTATION_SPEED).abs() < 1e-4,
@@ -452,9 +491,14 @@ mod tests {
 
         run_apply(&mut app, PlayerIntent::default());
 
-        let angvel = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<Velocity>().unwrap().angvel;
+        let angvel = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<Velocity>()
+            .unwrap()
+            .angvel;
 
         assert!(
             (angvel - 2.5).abs() < 1e-4,
@@ -475,9 +519,14 @@ mod tests {
             },
         );
 
-        let force = app.world().iter_entities()
-            .find(|e| e.contains::<Player>()).unwrap()
-            .get::<ExternalForce>().unwrap().force;
+        let force = app
+            .world()
+            .iter_entities()
+            .find(|e| e.contains::<Player>())
+            .unwrap()
+            .get::<ExternalForce>()
+            .unwrap()
+            .force;
 
         let expected = THRUST_FORCE * 0.5;
         assert!(

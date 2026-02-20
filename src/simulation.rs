@@ -7,16 +7,12 @@
 use crate::asteroid::{
     compute_convex_hull_from_points, Asteroid, AsteroidSize, NeighborCount, Vertices,
 };
-use crate::constants::{
-    CULL_DISTANCE, GRAVITY_CONST, HULL_EXTENT_BASE, HULL_EXTENT_PER_MEMBER, MAX_GRAVITY_DIST,
-    MAX_ZOOM, MIN_GRAVITY_DIST, MIN_ZOOM, NEIGHBOR_THRESHOLD, VELOCITY_THRESHOLD_FORMATION,
-    VELOCITY_THRESHOLD_LOCKING, ZOOM_SPEED,
-};
+use crate::config::PhysicsConfig;
 use crate::player::{
     aim_snap_system, apply_player_intent_system, camera_follow_system,
     despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
-    keyboard_to_intent_system, player_collision_damage_system, player_intent_clear_system,
-    player_gizmo_system, player_oob_damping_system, projectile_asteroid_hit_system,
+    keyboard_to_intent_system, player_collision_damage_system, player_gizmo_system,
+    player_intent_clear_system, player_oob_damping_system, projectile_asteroid_hit_system,
     projectile_fire_system, AimDirection, AimIdleTimer, PlayerIntent, PreferredGamepad,
 };
 use crate::rendering::{gizmo_rendering_system, stats_display_system};
@@ -56,16 +52,16 @@ impl Plugin for SimulationPlugin {
                 (
                     // ── Group 1: physics bookkeeping + input pipeline ─────────
                     (
-                        stats_counting_system,      // Count asteroids for stats
-                        culling_system,             // Remove far asteroids
+                        stats_counting_system, // Count asteroids for stats
+                        culling_system,        // Remove far asteroids
                         neighbor_counting_system,
                         particle_locking_system,
-                        gamepad_connection_system,  // Track preferred gamepad
+                        gamepad_connection_system, // Track preferred gamepad
                         player_intent_clear_system, // Reset ExternalForce + PlayerIntent
-                        keyboard_to_intent_system,  // WASD/rotation keys → PlayerIntent
-                        gamepad_to_intent_system,   // Gamepad left-stick + B → PlayerIntent
+                        keyboard_to_intent_system, // WASD/rotation keys → PlayerIntent
+                        gamepad_to_intent_system,  // Gamepad left-stick + B → PlayerIntent
                         apply_player_intent_system, // PlayerIntent → ExternalForce / Velocity
-                        mouse_aim_system,           // Mouse cursor updates AimDirection
+                        mouse_aim_system,          // Mouse cursor updates AimDirection
                     )
                         .chain(),
                     // ── Group 2: game logic + rendering ──────────────────────
@@ -109,8 +105,9 @@ impl Plugin for SimulationPlugin {
 pub fn particle_locking_system(
     mut query: Query<(Entity, &mut Velocity), With<Asteroid>>,
     rapier_context: ReadRapierContext,
+    config: Res<PhysicsConfig>,
 ) {
-    let velocity_threshold = VELOCITY_THRESHOLD_LOCKING;
+    let velocity_threshold = config.velocity_threshold_locking;
     let mut pairs_to_merge: Vec<(Entity, Entity)> = Vec::new();
 
     // Iterate only active contact pairs from Rapier (O(C) not O(N²))
@@ -178,10 +175,11 @@ pub(crate) fn gravity_force_between(
 pub fn nbody_gravity_system(
     mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
     grid: Res<SpatialGrid>,
+    config: Res<PhysicsConfig>,
 ) {
-    let gravity_const = GRAVITY_CONST;
-    let min_gravity_dist = MIN_GRAVITY_DIST;
-    let max_gravity_dist = MAX_GRAVITY_DIST;
+    let gravity_const = config.gravity_const;
+    let min_gravity_dist = config.min_gravity_dist;
+    let max_gravity_dist = config.max_gravity_dist;
     let min_gravity_dist_sq = min_gravity_dist * min_gravity_dist;
     let max_gravity_dist_sq = max_gravity_dist * max_gravity_dist;
 
@@ -283,11 +281,13 @@ pub fn mouse_aim_system(
 pub fn user_input_system(
     mut camera_state: ResMut<CameraState>,
     mut scroll_evr: MessageReader<MouseWheel>,
+    config: Res<PhysicsConfig>,
 ) {
     // Zoom: mouse wheel (zoom value is applied each frame in camera_zoom_system)
     for ev in scroll_evr.read() {
         let delta = ev.y;
-        camera_state.zoom = (camera_state.zoom - (delta * ZOOM_SPEED)).clamp(MIN_ZOOM, MAX_ZOOM);
+        camera_state.zoom = (camera_state.zoom - (delta * config.zoom_speed))
+            .clamp(config.min_zoom, config.max_zoom);
     }
 }
 
@@ -307,8 +307,9 @@ pub fn camera_zoom_system(
 pub fn neighbor_counting_system(
     mut query: Query<(Entity, &Transform, &mut NeighborCount), With<Asteroid>>,
     grid: Res<SpatialGrid>,
+    config: Res<PhysicsConfig>,
 ) {
-    let neighbor_threshold = NEIGHBOR_THRESHOLD;
+    let neighbor_threshold = config.neighbor_threshold;
 
     // Collect all entity positions first as a HashMap for O(1) lookups
     let entity_positions: HashMap<Entity, Vec2> = query
@@ -342,8 +343,9 @@ pub fn neighbor_counting_system(
 pub fn stats_counting_system(
     mut stats: ResMut<SimulationStats>,
     query: Query<(Entity, &Transform), With<Asteroid>>,
+    config: Res<PhysicsConfig>,
 ) {
-    let cull_distance = CULL_DISTANCE;
+    let cull_distance = config.cull_distance;
     let mut live_count = 0;
     let mut culled_this_frame = 0;
 
@@ -362,8 +364,12 @@ pub fn stats_counting_system(
 }
 
 /// Cull asteroids far off-screen
-pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform), With<Asteroid>>) {
-    let cull_distance = CULL_DISTANCE;
+pub fn culling_system(
+    mut commands: Commands,
+    query: Query<(Entity, &Transform), With<Asteroid>>,
+    config: Res<PhysicsConfig>,
+) {
+    let cull_distance = config.cull_distance;
 
     for (entity, transform) in query.iter() {
         let dist = transform.translation.truncate().length();
@@ -382,9 +388,10 @@ pub fn asteroid_formation_system(
     query: Query<(Entity, &Transform, &Velocity, &Vertices, &AsteroidSize), With<Asteroid>>,
     rapier_context: ReadRapierContext,
     mut stats: ResMut<SimulationStats>,
+    config: Res<PhysicsConfig>,
 ) {
     // Find clusters of slow-moving asteroids that are touching
-    let velocity_threshold = VELOCITY_THRESHOLD_FORMATION;
+    let velocity_threshold = config.velocity_threshold_formation;
     let mut processed = std::collections::HashSet::new();
 
     let Ok(rapier) = rapier_context.single() else {
@@ -495,8 +502,8 @@ pub fn asteroid_formation_system(
                         .iter()
                         .map(|v| v.length())
                         .fold(0.0_f32, f32::max);
-                    let extent_limit =
-                        HULL_EXTENT_BASE + cluster.len() as f32 * HULL_EXTENT_PER_MEMBER;
+                    let extent_limit = config.hull_extent_base
+                        + cluster.len() as f32 * config.hull_extent_per_member;
                     if max_extent > extent_limit {
                         // Refuse to create this merge — it indicates corrupted vertex data.
                         // Despawn nothing; leave the source asteroids intact.

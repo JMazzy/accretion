@@ -1,5 +1,17 @@
 # GRAV-SIM Changelog
 
+## Runtime Physics Configuration — 2026
+
+### `assets/physics.toml` loaded at startup
+
+All physics constants are now exposed as a `PhysicsConfig` Bevy resource (`src/config.rs`). At startup `load_physics_config` reads `assets/physics.toml` (via `serde` + `toml`) and overwrites the compiled-in defaults from `src/constants.rs`. If the file is absent the defaults apply silently; a malformed file logs a warning and falls back to defaults. Every ECS system now receives `Res<PhysicsConfig>` instead of referencing constants directly, so the full simulation — gravity, collision thresholds, player movement, projectile behaviour, rendering — can be tuned without recompilation.
+
+**Files changed**: `Cargo.toml` (added `serde`, `toml`), `src/config.rs` (new), `assets/physics.toml` (new), `src/lib.rs`, `src/main.rs`, `src/simulation.rs`, `src/rendering.rs`, `src/asteroid.rs`, `src/player/{mod,control,combat}.rs`.
+
+**Build status**: `cargo check` ✅  `cargo clippy -- -D warnings` ✅  (zero errors, zero warnings)
+
+---
+
 ## Post-Migration Gameplay Fixes — February 19, 2026
 
 ### Thrust regression (`pixels_per_meter` rollback)
@@ -568,7 +580,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 - **2D simulation only**: All physics operates on the XY plane; no 3D depth or out-of-plane forces
 - **Convex-only colliders**: Asteroid shapes are always convex polygons; concave craters are not modelled, only approximated by their convex hull
 - **Hard world boundary**: 1000-unit cull radius is fixed in source; requires recompilation to change
-- **No configuration file**: All physics constants (gravity, player thrust, damage thresholds, grid cell size) are hard-coded in source; tuning requires `cargo build`
+- ~~**No configuration file**: All physics constants (gravity, player thrust, damage thresholds, grid cell size) are hard-coded in source; tuning requires `cargo build`~~ ✅ Fixed — `assets/physics.toml` loaded at startup via `PhysicsConfig` resource
 - **No respawn mechanic**: Player destruction is permanent in the current session; no death/restart loop
 - **Gizmo rendering overhead**: Wireframe rendering via Bevy gizmos incurs CPU cost per vertex per frame; force-vector annotations are disabled above 200 live asteroids, but performance may visibly degrade above ~500 simultaneous entities
 - **Cluster formation is one-pass**: Asteroid merging happens in a single PostUpdate pass; very large simultaneous contact events may need multiple frames to fully resolve
@@ -595,7 +607,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 #### Gameplay & Extensibility
 
-- **Configuration file**: Load `assets/physics.toml` at startup so constants can be tuned without recompilation
+- ~~**Configuration file**: Load `assets/physics.toml` at startup so constants can be tuned without recompilation~~ ✅ Completed
 - **Score and wave system**: Points for destruction scaled by asteroid size; progressive wave spawner increasing count and size over time
 - **Power-up asteroids**: Special asteroids granting temporary buffs (shield, rapid-fire, gravity bomb) on destruction
 - **Boss asteroids**: Single very-large composite (size ≥ 20) with scripted split behaviour as a wave-end objective

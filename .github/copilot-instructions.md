@@ -17,7 +17,8 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - **Framework**: Bevy (ECS, rendering, windowing) + bevy_rapier2d (collision detection, rigid body dynamics). See `Cargo.toml` for current versions.
 - **Core Modules**: See "Module Structure" in `ARCHITECTURE.md`.
 - **Key files**:
-  - `src/constants.rs` - All tuneable physics and gameplay constants (single source of truth)
+  - `src/constants.rs` - Compile-time defaults for all tuneable physics and gameplay constants
+  - `src/config.rs` - `PhysicsConfig` Bevy resource; loaded from `assets/physics.toml` at startup (falls back to defaults if absent)
   - `src/main.rs` - Bevy app main entry and test mode routing
   - `src/asteroid.rs` - Core asteroid definitions and spawn functions
   - `src/simulation.rs` - All ECS systems
@@ -108,6 +109,7 @@ See **[FEATURES.md](../FEATURES.md)** for the full list of controls, camera beha
 - ✅ Automated test framework with environment variable triggering
 - ✅ PostUpdate system scheduling for physics-aware logic
 - ✅ Spatial grid for O(N·K) gravity and neighbor queries
+- ✅ Runtime physics configuration via `assets/physics.toml` (no recompile needed)
 
 ## Testing Strategy (Session-Learned Best Practices)
 
@@ -175,7 +177,7 @@ cargo check
   - `snake_case` for functions, variables, modules
   - `PascalCase` for types, structs, enums, traits
   - `SCREAMING_SNAKE_CASE` for constants
-- **Physics Tuning**: All constants are defined in `src/constants.rs` (see "Physics Constants Reference" in `ARCHITECTURE.md`) and require `cargo build` to change. Do **not** hard-code specific values in documentation or instructions outside of `ARCHITECTURE.md`.
+- **Physics Tuning**: Constants are defined in `src/constants.rs` as compile-time defaults and mirrored into a `PhysicsConfig` Bevy resource. Edit `assets/physics.toml` to override values at runtime without recompilation. Do **not** hard-code specific numeric values in documentation or instructions; reference constant names from `src/constants.rs` or the Physics Constants Reference in `ARCHITECTURE.md`.
 
 ## Integration Points
 
@@ -254,10 +256,11 @@ The project maintains three consolidated documentation files:
 
 When tuning physics constants:
 
-1. Update the constant value in `src/constants.rs`
-2. Update the constant reference in ARCHITECTURE.md with both the value and justification
-3. Add a line to CHANGELOG.md explaining the change and its observable effect
-4. Run relevant tests to validate the change (see Build Verification below)
+1. To tune **without recompilation**: edit the value in `assets/physics.toml` and restart the simulation
+2. To change the **compiled-in default**: update the constant in `src/constants.rs` AND the matching field default in `PhysicsConfig::default()` inside `src/config.rs`
+3. Update the constant reference in `ARCHITECTURE.md` with both the value and justification
+4. Add a line to `CHANGELOG.md` explaining the change and its observable effect
+5. Run relevant tests to validate the change (see Build Verification below)
 
 ## Build Verification for Code Changes
 

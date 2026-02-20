@@ -30,11 +30,7 @@ use crate::asteroid::{
     canonical_vertices_for_mass, compute_convex_hull_from_points, min_vertices_for_mass,
     spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
 };
-use crate::constants::{
-    DAMAGE_SPEED_THRESHOLD, FIRE_COOLDOWN, GAMEPAD_FIRE_THRESHOLD, GAMEPAD_RIGHT_DEADZONE,
-    INVINCIBILITY_DURATION, PROJECTILE_COLLIDER_RADIUS, PROJECTILE_LIFETIME, PROJECTILE_MAX_DIST,
-    PROJECTILE_SPEED,
-};
+use crate::config::PhysicsConfig;
 use bevy::input::gamepad::GamepadAxis;
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
@@ -60,6 +56,7 @@ pub fn projectile_fire_system(
     mut cooldown: ResMut<PlayerFireCooldown>,
     mut idle: ResMut<AimIdleTimer>,
     time: Res<Time>,
+    config: Res<PhysicsConfig>,
 ) {
     cooldown.timer = (cooldown.timer - time.delta_secs()).max(0.0);
 
@@ -74,11 +71,11 @@ pub fn projectile_fire_system(
             let rx = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
             let ry = gamepad.get(GamepadAxis::RightStickY).unwrap_or(0.0);
             let right_stick = Vec2::new(rx, ry);
-            if right_stick.length() > GAMEPAD_RIGHT_DEADZONE {
+            if right_stick.length() > config.gamepad_right_deadzone {
                 aim.0 = right_stick.normalize_or_zero();
                 // Right stick is active — prevent idle aim snap.
                 idle.secs = 0.0;
-                if right_stick.length() > GAMEPAD_FIRE_THRESHOLD {
+                if right_stick.length() > config.gamepad_fire_threshold {
                     gamepad_wants_fire = true;
                 }
             }
@@ -91,7 +88,7 @@ pub fn projectile_fire_system(
     if !(kb_fire || mouse_fire || gamepad_wants_fire) || cooldown.timer > 0.0 {
         return;
     }
-    cooldown.timer = FIRE_COOLDOWN;
+    cooldown.timer = config.fire_cooldown;
 
     let fire_dir = if aim.0.length_squared() > 0.01 {
         aim.0.normalize_or_zero()
@@ -107,10 +104,10 @@ pub fn projectile_fire_system(
         Visibility::default(),
         RigidBody::KinematicVelocityBased,
         Velocity {
-            linvel: fire_dir * PROJECTILE_SPEED,
+            linvel: fire_dir * config.projectile_speed,
             angvel: 0.0,
         },
-        Collider::ball(PROJECTILE_COLLIDER_RADIUS),
+        Collider::ball(config.projectile_collider_radius),
         // Sensor: detects collision events for game logic but generates no contact
         // forces.  Without this, Rapier 0.22+ kinematic bodies push dynamic
         // asteroids — transferring significant momentum like a physical projectile
@@ -133,12 +130,13 @@ pub fn despawn_old_projectiles_system(
     mut commands: Commands,
     mut q: Query<(Entity, &mut Projectile, &Transform)>,
     time: Res<Time>,
+    config: Res<PhysicsConfig>,
 ) {
     let dt = time.delta_secs();
     for (entity, mut proj, transform) in q.iter_mut() {
         proj.age += dt;
         let dist = transform.translation.truncate().length();
-        if proj.age >= PROJECTILE_LIFETIME || dist > PROJECTILE_MAX_DIST {
+        if proj.age >= config.projectile_lifetime || dist > config.projectile_max_dist {
             commands.entity(entity).despawn();
         }
     }
@@ -157,6 +155,7 @@ pub fn player_collision_damage_system(
     q_asteroids: Query<&Velocity, With<Asteroid>>,
     rapier_context: ReadRapierContext,
     time: Res<Time>,
+    config: Res<PhysicsConfig>,
 ) {
     let Ok((player_entity, mut health, player_vel)) = q_player.single_mut() else {
         return;
@@ -193,15 +192,15 @@ pub fn player_collision_damage_system(
 
         if let Ok(ast_vel) = q_asteroids.get(asteroid_entity) {
             let rel_speed = (player_vel.linvel - ast_vel.linvel).length();
-            if rel_speed > DAMAGE_SPEED_THRESHOLD {
-                total_damage += (rel_speed - DAMAGE_SPEED_THRESHOLD) * 0.5;
+            if rel_speed > config.damage_speed_threshold {
+                total_damage += (rel_speed - config.damage_speed_threshold) * 0.5;
             }
         }
     }
 
     if total_damage > 0.0 {
         health.hp -= total_damage;
-        health.inv_timer = INVINCIBILITY_DURATION;
+        health.inv_timer = config.invincibility_duration;
         println!(
             "Player hit! HP: {:.1}/{:.1}",
             health.hp.max(0.0),

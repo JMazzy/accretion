@@ -37,9 +37,7 @@ pub use state::{
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────
 
-use crate::constants::{
-    PLAYER_ANGULAR_DAMPING, PLAYER_COLLIDER_RADIUS, PLAYER_LINEAR_DAMPING, PLAYER_RESTITUTION,
-};
+use crate::config::PhysicsConfig;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
@@ -52,20 +50,20 @@ use bevy_rapier2d::prelude::*;
 /// Collision groups:
 /// - `GROUP_2` — ship belongs to this group
 /// - collides with `GROUP_1` (asteroids) only; not with `GROUP_3` (projectiles)
-pub fn spawn_player(mut commands: Commands) {
+pub fn spawn_player(mut commands: Commands, config: Res<PhysicsConfig>) {
     commands.spawn((
         Player,
         PlayerHealth::default(),
         // Physics
         RigidBody::Dynamic,
-        Collider::ball(PLAYER_COLLIDER_RADIUS),
+        Collider::ball(config.player_collider_radius),
         Velocity::zero(),
         ExternalForce::default(),
         Damping {
-            linear_damping: PLAYER_LINEAR_DAMPING,
-            angular_damping: PLAYER_ANGULAR_DAMPING,
+            linear_damping: config.player_linear_damping,
+            angular_damping: config.player_angular_damping,
         },
-        Restitution::coefficient(PLAYER_RESTITUTION),
+        Restitution::coefficient(config.player_restitution),
         CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_2,
             bevy_rapier2d::geometry::Group::GROUP_1,
