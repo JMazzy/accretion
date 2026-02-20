@@ -10,11 +10,11 @@ Pure asteroid-based simulation where asteroids naturally aggregate through gravi
 
 ## System Architecture
 
-### Frameworks & Dependencies
+#### Frameworks & Dependencies
 
-- **Bevy 0.17**: ECS architecture, rendering, event handling, windowing
-- **bevy_rapier2d 0.32** (Rapier 0.22): Physics engine for collision detection, rigid body dynamics, and impulse-based response
-- **Rand 0.8**: Random number generation for asteroid coloring
+- **[Bevy 0.17](https://bevyengine.org/)** ([GitHub](https://github.com/bevyengine/bevy)): ECS architecture, rendering, event handling, windowing
+- **[bevy_rapier2d 0.32](https://rapier.rs/)** ([GitHub](https://github.com/dimforge/rapier)): Physics engine for collision detection, rigid body dynamics, and impulse-based response
+- **[Rand 0.8](https://docs.rs/rand/latest/rand/)**: Random number generation for asteroid coloring
 
 ### Module Structure
 

@@ -1,6 +1,8 @@
-# Particle
+# Gravity Simulator (grav-sim)
 
-A simulation video game based on particle-based destructible environments, inspired by games like "The Powder Toy" and "Noita".
+An **ECS-based asteroid simulation engine** built on [Bevy](https://bevyengine.org/) with physics powered by [Rapier](https://rapier.rs/). Asteroids naturally aggregate through N-body gravity attraction and collision-based merging into larger composite polygonal structures.
+
+**Tech Stack**: [Rust](https://www.rust-lang.org/) · [Bevy 0.17](https://github.com/bevyengine/bevy) · [Rapier2D 0.32](https://github.com/dimforge/rapier)
 
 ## Building
 

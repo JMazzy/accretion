@@ -8,7 +8,7 @@
 
 ## Architecture
 
-The "grav-sim" project is an ECS-based **asteroid simulation engine** built on **Bevy** with physics powered by **Rapier2D**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
+The "grav-sim" project is an ECS-based **asteroid simulation engine** built on **[Bevy](https://bevyengine.org/)** with physics powered by **[Rapier2D](https://rapier.rs/)**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
 
 > For authoritative version numbers, module layout, ECS system execution order, and physics constants see **[ARCHITECTURE.md](../ARCHITECTURE.md)**.  
 > For user controls, camera behaviour, and UI details see **[FEATURES.md](../FEATURES.md)**.
@@ -183,10 +183,10 @@ cargo check
 
 - **External APIs**: None - fully self-contained simulation
 - **Dependencies** (see `Cargo.toml` for current versions):
-  - `bevy` - ECS engine, rendering, windowing
-  - `bevy_rapier2d` - Physics engine integration for Bevy
-  - `rand` - Random grey shades for asteroid coloring
-  - `glam` - Math library (Vec2, Quat) via Bevy
+  - [`bevy`](https://bevyengine.org/) ([GitHub](https://github.com/bevyengine/bevy)) - ECS engine, rendering, windowing
+  - [`bevy_rapier2d`](https://rapier.rs/) ([GitHub](https://github.com/dimforge/rapier)) - Physics engine integration for Bevy
+  - [`rand`](https://docs.rs/rand/latest/rand/) - Random number generation for asteroid coloring
+  - [`glam`](https://docs.rs/glam/latest/glam/) - Math library (Vec2, Quat) via Bevy
 - **Cross-Component Communication**:
   - Components: `Asteroid`, `Vertices` (local-space), `NeighborCount`, plus Rapier/Bevy physics components
   - Systems read/write components; Rapier applies physics automatically in FixedUpdate
