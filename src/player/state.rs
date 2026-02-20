@@ -7,7 +7,6 @@
 //! - [`super::rendering`] — gizmo drawing + camera
 
 use crate::constants::{INVINCIBILITY_DURATION, PLAYER_MAX_HP};
-use bevy::input::gamepad::Gamepad;
 use bevy::prelude::*;
 
 // ── Components ─────────────────────────────────────────────────────────────────
@@ -76,7 +75,7 @@ impl Default for AimDirection {
 /// Updated by `gamepad_connection_system`.  Always prefers the *last* connected
 /// gamepad; cleared when that gamepad disconnects.
 #[derive(Resource, Default)]
-pub struct PreferredGamepad(pub Option<Gamepad>);
+pub struct PreferredGamepad(pub Option<Entity>);
 
 /// Tracks how long (seconds) since any active aim input was last received.
 ///

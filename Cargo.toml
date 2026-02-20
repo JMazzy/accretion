@@ -7,10 +7,9 @@ description = "A simulation video game based on particle-based destructible envi
 
 
 [dependencies]
-bevy = { version = "0.13", features = ["dynamic_linking"] }
-bevy_rapier2d = { version = "0.25", features = ["simd-stable"] }
+bevy = { version = "0.17", features = ["dynamic_linking"] }
+bevy_rapier2d = { version = "0.32", features = ["simd-stable"] }
 rand = "0.8"
-rapier2d = { version = "0.18", features = ["simd-stable"] }
 
 [dev-dependencies]
 

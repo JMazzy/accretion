@@ -35,7 +35,7 @@ use crate::constants::{
     INVINCIBILITY_DURATION, PROJECTILE_COLLIDER_RADIUS, PROJECTILE_LIFETIME, PROJECTILE_MAX_DIST,
     PROJECTILE_SPEED,
 };
-use bevy::input::gamepad::{GamepadAxis, GamepadAxisType};
+use bevy::input::gamepad::GamepadAxis;
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -55,34 +55,32 @@ pub fn projectile_fire_system(
     keys: Res<ButtonInput<KeyCode>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     preferred: Res<PreferredGamepad>,
-    axes: Res<Axis<GamepadAxis>>,
+    gamepads: Query<&Gamepad>,
     mut aim: ResMut<AimDirection>,
     mut cooldown: ResMut<PlayerFireCooldown>,
     mut idle: ResMut<AimIdleTimer>,
     time: Res<Time>,
 ) {
-    cooldown.timer = (cooldown.timer - time.delta_seconds()).max(0.0);
+    cooldown.timer = (cooldown.timer - time.delta_secs()).max(0.0);
 
-    let Ok(transform) = q_player.get_single() else {
+    let Ok(transform) = q_player.single() else {
         return;
     };
 
     // ── Gamepad right stick: update aim + auto-fire when pushed past threshold ──
     let mut gamepad_wants_fire = false;
-    if let Some(gamepad) = preferred.0 {
-        let rx = axes
-            .get(GamepadAxis::new(gamepad, GamepadAxisType::RightStickX))
-            .unwrap_or(0.0);
-        let ry = axes
-            .get(GamepadAxis::new(gamepad, GamepadAxisType::RightStickY))
-            .unwrap_or(0.0);
-        let right_stick = Vec2::new(rx, ry);
-        if right_stick.length() > GAMEPAD_RIGHT_DEADZONE {
-            aim.0 = right_stick.normalize_or_zero();
-            // Right stick is active — prevent idle aim snap.
-            idle.secs = 0.0;
-            if right_stick.length() > GAMEPAD_FIRE_THRESHOLD {
-                gamepad_wants_fire = true;
+    if let Some(gamepad_entity) = preferred.0 {
+        if let Ok(gamepad) = gamepads.get(gamepad_entity) {
+            let rx = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
+            let ry = gamepad.get(GamepadAxis::RightStickY).unwrap_or(0.0);
+            let right_stick = Vec2::new(rx, ry);
+            if right_stick.length() > GAMEPAD_RIGHT_DEADZONE {
+                aim.0 = right_stick.normalize_or_zero();
+                // Right stick is active — prevent idle aim snap.
+                idle.secs = 0.0;
+                if right_stick.length() > GAMEPAD_FIRE_THRESHOLD {
+                    gamepad_wants_fire = true;
+                }
             }
         }
     }
@@ -105,8 +103,8 @@ pub fn projectile_fire_system(
 
     commands.spawn((
         Projectile { age: 0.0 },
-        TransformBundle::from_transform(Transform::from_translation(spawn_pos.extend(0.0))),
-        VisibilityBundle::default(),
+        Transform::from_translation(spawn_pos.extend(0.0)),
+        Visibility::default(),
         RigidBody::KinematicVelocityBased,
         Velocity {
             linvel: fire_dir * PROJECTILE_SPEED,
@@ -131,7 +129,7 @@ pub fn despawn_old_projectiles_system(
     mut q: Query<(Entity, &mut Projectile, &Transform)>,
     time: Res<Time>,
 ) {
-    let dt = time.delta_seconds();
+    let dt = time.delta_secs();
     for (entity, mut proj, transform) in q.iter_mut() {
         proj.age += dt;
         let dist = transform.translation.truncate().length();
@@ -152,26 +150,33 @@ pub fn player_collision_damage_system(
     mut commands: Commands,
     mut q_player: Query<(Entity, &mut PlayerHealth, &Velocity), With<Player>>,
     q_asteroids: Query<&Velocity, With<Asteroid>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadRapierContext,
     time: Res<Time>,
 ) {
-    let Ok((player_entity, mut health, player_vel)) = q_player.get_single_mut() else {
+    let Ok((player_entity, mut health, player_vel)) = q_player.single_mut() else {
         return;
     };
 
-    health.inv_timer = (health.inv_timer - time.delta_seconds()).max(0.0);
+    health.inv_timer = (health.inv_timer - time.delta_secs()).max(0.0);
     if health.inv_timer > 0.0 {
         return;
     }
 
     let mut total_damage = 0.0_f32;
 
-    for contact_pair in rapier_context.contact_pairs() {
-        if !contact_pair.has_any_active_contacts() {
+    let Ok(rapier) = rapier_context.single() else {
+        return;
+    };
+    for contact_pair in rapier.contact_pairs_with(player_entity) {
+        if !contact_pair.has_any_active_contact() {
             continue;
         }
-        let e1 = contact_pair.collider1();
-        let e2 = contact_pair.collider2();
+        let Some(e1) = contact_pair.collider1() else {
+            continue;
+        };
+        let Some(e2) = contact_pair.collider2() else {
+            continue;
+        };
 
         let asteroid_entity = if e1 == player_entity {
             e2
@@ -213,7 +218,7 @@ pub fn player_collision_damage_system(
 /// most once per frame even if they appear in multiple cascade events.
 pub fn projectile_asteroid_hit_system(
     mut commands: Commands,
-    mut collision_events: EventReader<CollisionEvent>,
+    mut collision_events: MessageReader<CollisionEvent>,
     q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity, &Vertices), With<Asteroid>>,
     q_projectiles: Query<Entity, With<Projectile>>,
     q_proj_transforms: Query<&Transform, With<Projectile>>,
@@ -313,12 +318,11 @@ pub fn projectile_asteroid_hit_system(
                     let final_mass = half_size.max(1);
                     // Enforce mass→shape: if the hull has fewer vertices than the
                     // mass requires, substitute the canonical regular polygon.
-                    let local: Vec<Vec2> =
-                        if hull.len() < min_vertices_for_mass(final_mass) {
-                            canonical_vertices_for_mass(final_mass)
-                        } else {
-                            hull.iter().map(|v| *v - centroid).collect()
-                        };
+                    let local: Vec<Vec2> = if hull.len() < min_vertices_for_mass(final_mass) {
+                        canonical_vertices_for_mass(final_mass)
+                    } else {
+                        hull.iter().map(|v| *v - centroid).collect()
+                    };
                     let grey = 0.4 + rand::random::<f32>() * 0.3;
                     let push_sign = if (centroid - pos).dot(impact_dir) >= 0.0 {
                         1.0
@@ -332,7 +336,7 @@ pub fn projectile_asteroid_hit_system(
                         &mut commands,
                         centroid,
                         &local,
-                        Color::rgb(grey, grey, grey),
+                        Color::srgb(grey, grey, grey),
                         final_mass,
                     );
                     commands.entity(new_ent).insert(Velocity {
@@ -376,12 +380,11 @@ pub fn projectile_asteroid_hit_system(
                 let new_mass = (n - 1).max(1);
                 // Enforce mass→shape: if the hull has fewer vertices than the
                 // mass requires, substitute the canonical regular polygon.
-                let new_local: Vec<Vec2> =
-                    if hull_world.len() < min_vertices_for_mass(new_mass) {
-                        canonical_vertices_for_mass(new_mass)
-                    } else {
-                        hull_world.iter().map(|v| *v - hull_centroid).collect()
-                    };
+                let new_local: Vec<Vec2> = if hull_world.len() < min_vertices_for_mass(new_mass) {
+                    canonical_vertices_for_mass(new_mass)
+                } else {
+                    hull_world.iter().map(|v| *v - hull_centroid).collect()
+                };
 
                 commands.entity(asteroid_entity).despawn();
 
@@ -390,7 +393,7 @@ pub fn projectile_asteroid_hit_system(
                     &mut commands,
                     hull_centroid,
                     &new_local,
-                    Color::rgb(grey, grey, grey),
+                    Color::srgb(grey, grey, grey),
                     new_mass,
                 );
                 commands.entity(new_ent).insert(Velocity {
@@ -524,7 +527,10 @@ mod tests {
             Vec2::new(10.0, -5.0),
         ];
         let (front, back) = split_convex_polygon(&tri, Vec2::ZERO, Vec2::X);
-        assert!(!front.is_empty() || !back.is_empty(), "at least one side should have vertices");
+        assert!(
+            !front.is_empty() || !back.is_empty(),
+            "at least one side should have vertices"
+        );
     }
 
     #[test]
@@ -560,7 +566,10 @@ mod tests {
         let a = v[1] - v[0];
         let b = v[2] - v[0];
         let area = (a.x * b.y - a.y * b.x).abs() / 2.0;
-        assert!(area > 1.0, "unit fragment triangle must have positive area, got {area}");
+        assert!(
+            area > 1.0,
+            "unit fragment triangle must have positive area, got {area}"
+        );
     }
 
     #[test]
@@ -654,8 +663,8 @@ mod tests {
             Vec2::NEG_X,
             Vec2::Y,
             Vec2::NEG_Y,
-            Vec2::new(FRAC_PI_4.cos(), FRAC_PI_4.sin()),   // 45°
-            Vec2::new(-FRAC_PI_4.cos(), FRAC_PI_4.sin()),  // 135°
+            Vec2::new(FRAC_PI_4.cos(), FRAC_PI_4.sin()), // 45°
+            Vec2::new(-FRAC_PI_4.cos(), FRAC_PI_4.sin()), // 135°
         ]
     }
 
@@ -740,9 +749,9 @@ mod tests {
         // This is a tricky edge case that can produce near-duplicate intersection points.
         let diamond = vec![
             Vec2::new(-10.0, -5.0),
-            Vec2::new(0.0, 8.0),   // ON y-axis
+            Vec2::new(0.0, 8.0), // ON y-axis
             Vec2::new(10.0, -5.0),
-            Vec2::new(0.0, -8.0),  // ON y-axis
+            Vec2::new(0.0, -8.0), // ON y-axis
         ];
         // Split along Y (axis = X), so the two vertices on the y-axis are on the plane
         assert_split_produces_valid_colliders("diamond_on_axis", &diamond, Vec2::X);
@@ -761,8 +770,7 @@ mod tests {
         }
         let hull_world = crate::asteroid::compute_convex_hull_from_points(&new_world)
             .unwrap_or_else(|| new_world.clone());
-        let centroid: Vec2 =
-            hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
+        let centroid: Vec2 = hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
         let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - centroid).collect();
 
         let collider = bevy_rapier2d::prelude::Collider::convex_hull(&new_local);
@@ -837,9 +845,7 @@ mod tests {
     ) {
         let origin = Vec2::ZERO;
         let (front_raw, back_raw) = split_convex_polygon(verts, origin, axis);
-        for (side, raw, mass) in
-            [("front", &front_raw, mass_a), ("back", &back_raw, mass_b)]
-        {
+        for (side, raw, mass) in [("front", &front_raw, mass_a), ("back", &back_raw, mass_b)] {
             if raw.len() < 3 {
                 continue; // empty half is fine
             }
@@ -955,7 +961,7 @@ fn spawn_unit_fragment(commands: &mut Commands, pos: Vec2, velocity: Vec2, angve
         Vec2::new(-side / 2.0, -h / 2.0),
         Vec2::new(side / 2.0, -h / 2.0),
     ];
-    let ent = spawn_asteroid_with_vertices(commands, pos, &verts, Color::rgb(grey, grey, grey), 1);
+    let ent = spawn_asteroid_with_vertices(commands, pos, &verts, Color::srgb(grey, grey, grey), 1);
     commands.entity(ent).insert(Velocity {
         linvel: velocity,
         angvel,

@@ -36,14 +36,14 @@ pub fn player_gizmo_system(
     aim: Res<AimDirection>,
 ) {
     // ── Ship ──────────────────────────────────────────────────────────────────
-    if let Ok((transform, health)) = q_player.get_single() {
+    if let Ok((transform, health)) = q_player.single() {
         let pos = transform.translation.truncate();
         let rot = transform.rotation;
         let verts = ship_vertices();
 
         let hp_frac = (health.hp / health.max_hp).clamp(0.0, 1.0);
         // Tint: cyan at full health, red at zero health
-        let ship_color = Color::rgb(1.0 - hp_frac * 0.8, hp_frac * 0.6 + 0.2, hp_frac);
+        let ship_color = Color::srgb(1.0 - hp_frac * 0.8, hp_frac * 0.6 + 0.2, hp_frac);
 
         // Ship outline
         for i in 0..verts.len() {
@@ -61,8 +61,8 @@ pub fn player_gizmo_system(
         // Aim indicator: orange line + dot at the fire direction tip
         if aim.0.length_squared() > 0.01 {
             let aim_tip = pos + aim.0.normalize_or_zero() * 35.0;
-            gizmos.line_2d(pos, aim_tip, Color::rgb(1.0, 0.5, 0.0));
-            gizmos.circle_2d(aim_tip, 3.0, Color::rgb(1.0, 0.5, 0.0));
+            gizmos.line_2d(pos, aim_tip, Color::srgb(1.0, 0.5, 0.0));
+            gizmos.circle_2d(aim_tip, 3.0, Color::srgb(1.0, 0.5, 0.0));
         }
 
         // ── Health bar (axis-aligned, above ship) ─────────────────────────────
@@ -72,16 +72,16 @@ pub fn player_gizmo_system(
         let bar_end_full = pos + Vec2::new(bar_half, bar_y_offset);
         let bar_end_hp = bar_start + Vec2::new(bar_half * 2.0 * hp_frac, 0.0);
         // Background (dark red track)
-        gizmos.line_2d(bar_start, bar_end_full, Color::rgba(0.4, 0.0, 0.0, 0.8));
+        gizmos.line_2d(bar_start, bar_end_full, Color::srgba(0.4, 0.0, 0.0, 0.8));
         // Fill (green at full HP → red at zero)
         if hp_frac > 0.0 {
-            let fill_color = Color::rgb(1.0 - hp_frac, hp_frac, 0.0);
+            let fill_color = Color::srgb(1.0 - hp_frac, hp_frac, 0.0);
             gizmos.line_2d(bar_start, bar_end_hp, fill_color);
         }
     }
 
     // ── Projectiles ───────────────────────────────────────────────────────────
-    let proj_color = Color::rgb(1.0, 0.9, 0.2); // yellow
+    let proj_color = Color::srgb(1.0, 0.9, 0.2); // yellow
     for transform in q_projectiles.iter() {
         let p = transform.translation.truncate();
         gizmos.circle_2d(p, 3.0, proj_color);
@@ -98,10 +98,10 @@ pub fn camera_follow_system(
     q_player: Query<&Transform, With<Player>>,
     mut q_camera: Query<&mut Transform, (With<Camera>, Without<Player>)>,
 ) {
-    let Ok(player_transform) = q_player.get_single() else {
+    let Ok(player_transform) = q_player.single() else {
         return;
     };
-    let Ok(mut cam) = q_camera.get_single_mut() else {
+    let Ok(mut cam) = q_camera.single_mut() else {
         return;
     };
 

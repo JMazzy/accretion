@@ -89,12 +89,7 @@ impl Plugin for SimulationPlugin {
             // merged and despawned by the formation system in the same frame.
             .add_systems(
                 PostUpdate,
-                (
-                    asteroid_formation_system,
-                    apply_deferred,
-                    projectile_asteroid_hit_system,
-                )
-                    .chain(),
+                (asteroid_formation_system, projectile_asteroid_hit_system).chain(),
             );
     }
 }
@@ -104,19 +99,26 @@ impl Plugin for SimulationPlugin {
 /// instead of iterating all N² entity pairs to find touching ones.
 pub fn particle_locking_system(
     mut query: Query<(Entity, &mut Velocity), With<Asteroid>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadRapierContext,
 ) {
     let velocity_threshold = VELOCITY_THRESHOLD_LOCKING;
     let mut pairs_to_merge: Vec<(Entity, Entity)> = Vec::new();
 
     // Iterate only active contact pairs from Rapier (O(C) not O(N²))
-    for contact_pair in rapier_context.contact_pairs() {
-        if !contact_pair.has_any_active_contacts() {
+    let Ok(rapier) = rapier_context.single() else {
+        return;
+    };
+    for contact_pair in rapier
+        .simulation
+        .contact_pairs(rapier.colliders, rapier.rigidbody_set)
+    {
+        if !contact_pair.has_any_active_contact() {
             continue;
         }
 
-        let e1 = contact_pair.collider1();
-        let e2 = contact_pair.collider2();
+        let (Some(e1), Some(e2)) = (contact_pair.collider1(), contact_pair.collider2()) else {
+            continue;
+        };
 
         // Only sync velocities if both asteroids are slow
         if let (Ok((_, v1)), Ok((_, v2))) = (query.get(e1), query.get(e2)) {
@@ -239,7 +241,7 @@ pub fn mouse_aim_system(
     mut idle: ResMut<AimIdleTimer>,
     windows: Query<&Window>,
 ) {
-    let Ok(window) = windows.get_single() else {
+    let Ok(window) = windows.single() else {
         return;
     };
     let Some(cursor) = window.cursor_position() else {
@@ -271,7 +273,7 @@ pub fn mouse_aim_system(
 /// Left-click now fires projectiles (handled in `projectile_fire_system`).
 pub fn user_input_system(
     mut camera_state: ResMut<CameraState>,
-    mut scroll_evr: EventReader<MouseWheel>,
+    mut scroll_evr: MessageReader<MouseWheel>,
 ) {
     // Zoom: mouse wheel (zoom value is applied each frame in camera_zoom_system)
     for ev in scroll_evr.read() {
@@ -369,13 +371,16 @@ pub fn culling_system(mut commands: Commands, query: Query<(Entity, &Transform),
 pub fn asteroid_formation_system(
     mut commands: Commands,
     query: Query<(Entity, &Transform, &Velocity, &Vertices, &AsteroidSize), With<Asteroid>>,
-    rapier_context: Res<RapierContext>,
+    rapier_context: ReadRapierContext,
     mut stats: ResMut<SimulationStats>,
 ) {
     // Find clusters of slow-moving asteroids that are touching
     let velocity_threshold = VELOCITY_THRESHOLD_FORMATION;
     let mut processed = std::collections::HashSet::new();
 
+    let Ok(rapier) = rapier_context.single() else {
+        return;
+    };
     let asteroids: Vec<_> = query.iter().collect();
 
     for i in 0..asteroids.len() {
@@ -409,8 +414,8 @@ pub fn asteroid_formation_system(
                 }
 
                 // Check if they're touching via Rapier contact
-                if let Some(contact) = rapier_context.contact_pair(current, e2) {
-                    if contact.has_any_active_contacts() {
+                if let Some(contact) = rapier.contact_pair(current, e2) {
+                    if contact.has_any_active_contact() {
                         visited.insert(e2);
                         queue.push(e2);
                         cluster.push((e2, t2, verts2, sz2.0));
@@ -492,7 +497,7 @@ pub fn asteroid_formation_system(
                     // Sum unit sizes of all cluster members
                     let total_size: u32 = cluster.iter().map(|(_, _, _, s)| s).sum();
 
-                    let avg_color = Color::rgb(0.5, 0.5, 0.5);
+                    let avg_color = Color::srgb(0.5, 0.5, 0.5);
                     let _composite = crate::asteroid::spawn_asteroid_with_vertices(
                         &mut commands,
                         hull_centroid,
@@ -502,7 +507,7 @@ pub fn asteroid_formation_system(
                     );
 
                     // Update velocity
-                    if let Some(mut cmd) = commands.get_entity(_composite) {
+                    if let Ok(mut cmd) = commands.get_entity(_composite) {
                         cmd.insert(Velocity {
                             linvel: avg_linvel,
                             angvel: avg_angvel,
@@ -534,14 +539,19 @@ mod tests {
         let f = gravity_force_between(Vec2::ZERO, Vec2::new(100.0, 0.0), 10.0, 1.0, 1_000_000.0)
             .expect("pair should be in range");
         assert!(f.x > 0.0, "force x should be positive (toward body j)");
-        assert!(f.y.abs() < 1e-6, "no vertical component for horizontal pair");
+        assert!(
+            f.y.abs() < 1e-6,
+            "no vertical component for horizontal pair"
+        );
     }
 
     #[test]
     fn gravity_inverse_square_law() {
         let g = 10.0_f32;
-        let f1 = gravity_force_between(Vec2::ZERO, Vec2::new(10.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
-        let f2 = gravity_force_between(Vec2::ZERO, Vec2::new(20.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
+        let f1 =
+            gravity_force_between(Vec2::ZERO, Vec2::new(10.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
+        let f2 =
+            gravity_force_between(Vec2::ZERO, Vec2::new(20.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
         let ratio = f1.x / f2.x;
         assert!(
             (ratio - 4.0).abs() < 1e-4,

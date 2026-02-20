@@ -453,7 +453,11 @@ mod tests {
 
     #[test]
     fn hull_three_non_collinear_returns_three_points() {
-        let pts = vec![Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0), Vec2::new(5.0, 10.0)];
+        let pts = vec![
+            Vec2::new(0.0, 0.0),
+            Vec2::new(10.0, 0.0),
+            Vec2::new(5.0, 10.0),
+        ];
         let hull = compute_convex_hull_from_points(&pts).expect("should produce hull");
         assert_eq!(hull.len(), 3);
     }
@@ -499,7 +503,11 @@ mod tests {
         ];
         let hull = compute_convex_hull_from_points(&pts).expect("should produce hull");
         // After dedup: 3 unique groups → triangle hull
-        assert_eq!(hull.len(), 3, "near-duplicate points should be merged before hull");
+        assert_eq!(
+            hull.len(),
+            3,
+            "near-duplicate points should be merged before hull"
+        );
     }
 
     #[test]
@@ -567,7 +575,11 @@ mod tests {
         // and centroid y must lie within the vertex y-range.
         let verts = generate_triangle(1.0);
         let c = verts.iter().copied().sum::<Vec2>() / verts.len() as f32;
-        assert!(c.x.abs() < 1e-5, "centroid x should be 0 by symmetry, got {}", c.x);
+        assert!(
+            c.x.abs() < 1e-5,
+            "centroid x should be 0 by symmetry, got {}",
+            c.x
+        );
         let min_y = verts.iter().map(|v| v.y).fold(f32::INFINITY, f32::min);
         let max_y = verts.iter().map(|v| v.y).fold(f32::NEG_INFINITY, f32::max);
         assert!(
@@ -606,7 +618,10 @@ mod tests {
         // produce a valid Rapier convex hull (not a ball fallback).
         let verts = generate_triangle(1.0);
         let collider = bevy_rapier2d::prelude::Collider::convex_hull(&verts);
-        assert!(collider.is_some(), "valid triangle should produce a convex hull collider");
+        assert!(
+            collider.is_some(),
+            "valid triangle should produce a convex hull collider"
+        );
     }
 
     // ── min_vertices_for_mass / canonical_vertices_for_mass ───────────────────
@@ -619,7 +634,11 @@ mod tests {
     #[test]
     fn min_vertices_for_mass_mass_2_through_4_are_4() {
         for m in [2, 3, 4] {
-            assert_eq!(min_vertices_for_mass(m), 4, "mass {m} should need 4 vertices");
+            assert_eq!(
+                min_vertices_for_mass(m),
+                4,
+                "mass {m} should need 4 vertices"
+            );
         }
     }
 
@@ -631,7 +650,11 @@ mod tests {
     #[test]
     fn min_vertices_for_mass_mass_6_and_above_are_6() {
         for m in [6, 7, 8, 10, 20] {
-            assert_eq!(min_vertices_for_mass(m), 6, "mass {m} should need 6 vertices");
+            assert_eq!(
+                min_vertices_for_mass(m),
+                6,
+                "mass {m} should need 6 vertices"
+            );
         }
     }
 
@@ -679,11 +702,12 @@ pub fn blend_colors(particles: &[(Entity, Vec2, Color)]) -> Color {
     let mut b = 0.0;
 
     for (_, _, color) in particles {
-        r += color.r();
-        g += color.g();
-        b += color.b();
+        let c = Srgba::from(*color);
+        r += c.red;
+        g += c.green;
+        b += c.blue;
     }
 
     let count = particles.len() as f32;
-    Color::rgb(r / count, g / count, b / count)
+    Color::srgb(r / count, g / count, b / count)
 }

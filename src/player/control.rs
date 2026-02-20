@@ -14,10 +14,7 @@ use crate::constants::{
     GAMEPAD_LEFT_DEADZONE, OOB_DAMPING, OOB_RADIUS, OOB_RAMP_WIDTH, REVERSE_FORCE, ROTATION_SPEED,
     THRUST_FORCE,
 };
-use bevy::input::gamepad::{
-    GamepadAxis, GamepadAxisType, GamepadButton, GamepadButtonType, GamepadConnection,
-    GamepadConnectionEvent,
-};
+use bevy::input::gamepad::{GamepadAxis, GamepadButton, GamepadConnection, GamepadConnectionEvent};
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
@@ -29,7 +26,7 @@ use bevy_rapier2d::prelude::*;
 /// sources (keyboard + gamepad) are simultaneously active their contributions
 /// are safely added because this reset happens first.
 pub fn player_force_reset_system(mut q: Query<&mut ExternalForce, With<Player>>) {
-    if let Ok(mut force) = q.get_single_mut() {
+    if let Ok(mut force) = q.single_mut() {
         force.force = Vec2::ZERO;
         force.torque = 0.0;
     }
@@ -47,7 +44,7 @@ pub fn player_control_system(
     mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
-    let Ok((transform, mut force, mut velocity)) = q.get_single_mut() else {
+    let Ok((transform, mut force, mut velocity)) = q.single_mut() else {
         return;
     };
 
@@ -76,20 +73,20 @@ pub fn player_control_system(
 /// non-gamepad HID devices (e.g. RGB LED controllers on Linux) that connect
 /// first are superseded by the real gamepad.
 pub fn gamepad_connection_system(
-    mut events: EventReader<GamepadConnectionEvent>,
+    mut events: MessageReader<GamepadConnectionEvent>,
     mut preferred: ResMut<PreferredGamepad>,
 ) {
     for event in events.read() {
         match &event.connection {
-            GamepadConnection::Connected(_info) => {
+            GamepadConnection::Connected { .. } => {
                 preferred.0 = Some(event.gamepad);
                 info!(
-                    "[gamepad] Gamepad {} connected (now preferred)",
-                    event.gamepad.id
+                    "[gamepad] Gamepad {:?} connected (now preferred)",
+                    event.gamepad
                 );
             }
             GamepadConnection::Disconnected => {
-                info!("[gamepad] Gamepad {} disconnected", event.gamepad.id);
+                info!("[gamepad] Gamepad {:?} disconnected", event.gamepad);
                 if preferred.0 == Some(event.gamepad) {
                     preferred.0 = None;
                 }
@@ -112,30 +109,29 @@ pub fn gamepad_connection_system(
 pub fn gamepad_movement_system(
     mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
     preferred: Res<PreferredGamepad>,
-    axes: Res<Axis<GamepadAxis>>,
-    buttons: Res<ButtonInput<GamepadButton>>,
+    gamepads: Query<&Gamepad>,
     mut idle: ResMut<AimIdleTimer>,
 ) {
-    let Ok((transform, mut force, mut velocity)) = q.get_single_mut() else {
+    let Ok((transform, mut force, mut velocity)) = q.single_mut() else {
         return;
     };
 
-    let Some(gamepad) = preferred.0 else {
+    let Some(gamepad_entity) = preferred.0 else {
+        return;
+    };
+
+    let Ok(gamepad) = gamepads.get(gamepad_entity) else {
         return;
     };
 
     // ── Brake (B / East button) ────────────────────────────────────────────────
-    if buttons.pressed(GamepadButton::new(gamepad, GamepadButtonType::East)) {
+    if gamepad.pressed(GamepadButton::East) {
         velocity.linvel *= GAMEPAD_BRAKE_DAMPING;
         velocity.angvel *= GAMEPAD_BRAKE_DAMPING;
     }
 
-    let lx = axes
-        .get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickX))
-        .unwrap_or(0.0);
-    let ly = axes
-        .get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickY))
-        .unwrap_or(0.0);
+    let lx = gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
+    let ly = gamepad.get(GamepadAxis::LeftStickY).unwrap_or(0.0);
     let left_stick = Vec2::new(lx, ly);
 
     if left_stick.length() < GAMEPAD_LEFT_DEADZONE {
@@ -181,9 +177,9 @@ pub fn aim_snap_system(
     mut idle: ResMut<AimIdleTimer>,
     time: Res<Time>,
 ) {
-    idle.secs += time.delta_seconds();
+    idle.secs += time.delta_secs();
     if idle.secs >= AIM_IDLE_SNAP_SECS {
-        if let Ok(transform) = q_player.get_single() {
+        if let Ok(transform) = q_player.single() {
             aim.0 = transform.rotation.mul_vec3(Vec3::Y).truncate();
         }
     }
@@ -197,7 +193,7 @@ pub fn aim_snap_system(
 /// `(1.0 − OOB_DAMPING) × 100%` at `OOB_RADIUS + OOB_RAMP_WIDTH`.
 /// The player can always re-enter under thrust; they are never hard-stopped.
 pub fn player_oob_damping_system(mut q: Query<(&Transform, &mut Velocity), With<Player>>) {
-    let Ok((transform, mut velocity)) = q.get_single_mut() else {
+    let Ok((transform, mut velocity)) = q.single_mut() else {
         return;
     };
 

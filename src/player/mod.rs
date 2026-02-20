@@ -29,7 +29,9 @@ pub use control::{
     player_force_reset_system, player_oob_damping_system,
 };
 pub use rendering::{camera_follow_system, player_gizmo_system};
-pub use state::{AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PreferredGamepad};
+pub use state::{
+    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PreferredGamepad,
+};
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────
 
@@ -68,8 +70,8 @@ pub fn spawn_player(mut commands: Commands) {
         ),
         ActiveEvents::COLLISION_EVENTS,
         // Transform / visibility
-        TransformBundle::from_transform(Transform::from_translation(Vec3::ZERO)),
-        VisibilityBundle::default(),
+        Transform::from_translation(Vec3::ZERO),
+        Visibility::default(),
     ));
 
     println!("✓ Player ship spawned at origin");

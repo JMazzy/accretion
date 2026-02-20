@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::window::WindowResolution;
 use bevy_rapier2d::prelude::*;
 use std::env;
 
@@ -23,8 +24,15 @@ fn spawn_initial_world(mut commands: Commands) {
     asteroid::spawn_initial_asteroids(&mut commands, 200);
 }
 
-fn spawn_player_startup(commands: Commands) {
+fn setup_player_startup(commands: Commands) {
     player::spawn_player(commands);
+}
+
+/// Configure Rapier physics: disable gravity for the space simulation.
+fn setup_physics_config(mut config: Query<&mut RapierConfiguration>) {
+    for mut cfg in config.iter_mut() {
+        cfg.gravity = Vec2::ZERO;
+    }
 }
 
 fn main() {
@@ -36,17 +44,13 @@ fn main() {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Particle Simulation".into(),
-            resolution: (1200.0, 680.0).into(),
+            resolution: WindowResolution::new(1200, 680),
             ..Default::default()
         }),
         ..Default::default()
     }))
     .insert_resource(ClearColor(Color::BLACK))
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(50.0))
-    .insert_resource(RapierConfiguration {
-        gravity: Vec2::ZERO,
-        ..Default::default()
-    })
     .add_plugins(simulation::SimulationPlugin)
     .insert_resource(player::PlayerFireCooldown::default())
     .add_systems(
@@ -54,6 +58,7 @@ fn main() {
         (
             graphics::setup_camera,
             rendering::setup_stats_text.after(graphics::setup_camera),
+            setup_physics_config,
         ),
     );
 
@@ -131,14 +136,13 @@ fn main() {
 
         println!("Running test: {}", test_name);
     } else {
-        app.insert_resource(TestConfig::default())
-            .add_systems(
-                Startup,
-                (
-                    spawn_initial_world.after(graphics::setup_camera),
-                    spawn_player_startup.after(graphics::setup_camera),
-                ),
-            );
+        app.insert_resource(TestConfig::default()).add_systems(
+            Startup,
+            (
+                spawn_initial_world.after(graphics::setup_camera),
+                setup_player_startup.after(graphics::setup_camera),
+            ),
+        );
     }
 
     app.run();

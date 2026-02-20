@@ -48,7 +48,7 @@ pub fn spawn_test_two_triangles(mut commands: Commands, mut test_config: ResMut<
 
     // Spawn two triangles such that their edges ACTUALLY TOUCH at origin
     // Each extends ±3 units horizontally, so spawn at -3 and +3 to put edges at 0 and 0
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, 0.0), &vertices, grey, 1);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, 0.0), &vertices, grey, 1);
 
@@ -73,7 +73,7 @@ pub fn spawn_test_three_triangles(mut commands: Commands, mut test_config: ResMu
 
     // Spawn three triangles at positions forming a touching triangle cluster
     // Each extends ±3 units horizontally, so position them to form a touching hexagon
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(-3.0, -3.0), &vertices, grey, 1);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(3.0, -3.0), &vertices, grey, 1);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 3.0), &vertices, grey, 1);
@@ -96,7 +96,7 @@ pub fn spawn_test_gravity(mut commands: Commands, mut test_config: ResMut<TestCo
     ];
 
     // Spawn two asteroids FAR APART to test gravity attraction
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(-50.0, 0.0), &vertices, grey, 1);
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(50.0, 0.0), &vertices, grey, 1);
 
@@ -123,7 +123,7 @@ pub fn spawn_test_high_speed_collision(
     ];
 
     // Spawn two asteroids approaching each other at high speed
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
     let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-30.0, 0.0), &vertices, grey, 1);
     let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(30.0, 0.0), &vertices, grey, 1);
 
@@ -157,7 +157,7 @@ pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<Test
     ];
 
     // Spawn two asteroids that will pass very close but not touch
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
     let e1 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(-40.0, 3.0), &vertices, grey, 1);
     let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(40.0, -3.0), &vertices, grey, 1);
 
@@ -176,8 +176,12 @@ pub fn spawn_test_near_miss(mut commands: Commands, mut test_config: ResMut<Test
 
 /// Spawn test scenario: slow-speed gravity approach (should result in clean merge)
 pub fn spawn_test_gentle_approach(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+    use bevy_rapier2d::prelude::Velocity;
+
     test_config.test_name = "gentle_approach".to_string();
-    test_config.frame_limit = 600;
+    // Two asteroids 50 units apart at 2 u/s closing speed need ~700 frames to
+    // actually touch; 800 gives comfortable margin including post-collision settling.
+    test_config.frame_limit = 800;
 
     // Create triangle vertices
     let side = 6.0;
@@ -188,10 +192,21 @@ pub fn spawn_test_gentle_approach(mut commands: Commands, mut test_config: ResMu
         Vec2::new(side / 2.0, -height / 2.0),
     ];
 
-    // Spawn two asteroids closer together for faster gravity interaction
-    let grey = Color::rgb(0.5, 0.5, 0.5);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(-25.0, 0.0), &vertices, grey, 1);
-    spawn_asteroid_with_vertices(&mut commands, Vec2::new(25.0, 0.0), &vertices, grey, 1);
+    // Spawn two asteroids with a gentle initial velocity toward each other so they
+    // arrive well below the 10 u/s merge threshold and stick together.
+    let grey = Color::srgb(0.5, 0.5, 0.5);
+    let e1 =
+        spawn_asteroid_with_vertices(&mut commands, Vec2::new(-25.0, 0.0), &vertices, grey, 1);
+    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(25.0, 0.0), &vertices, grey, 1);
+
+    commands.entity(e1).insert(Velocity {
+        linvel: Vec2::new(2.0, 0.0),
+        angvel: 0.0,
+    });
+    commands.entity(e2).insert(Velocity {
+        linvel: Vec2::new(-2.0, 0.0),
+        angvel: 0.0,
+    });
 
     println!("✓ Spawned test: Slow gravity approach");
 }
@@ -215,7 +230,7 @@ pub fn spawn_test_culling_verification(
         Vec2::new(side / 2.0, -height / 2.0),
     ];
 
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
 
     // Spawn asteroid 1 at center (stationary)
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey, 1);
@@ -255,8 +270,8 @@ pub fn spawn_test_mixed_size_asteroids(
         Vec2::new(-15.0, 15.0),
     ];
 
-    let grey_dark = Color::rgb(0.3, 0.3, 0.3);
-    let grey_light = Color::rgb(0.7, 0.7, 0.7);
+    let grey_dark = Color::srgb(0.3, 0.3, 0.3);
+    let grey_light = Color::srgb(0.7, 0.7, 0.7);
 
     // Spawn large asteroid at center
     spawn_asteroid_with_vertices(
@@ -329,8 +344,8 @@ pub fn spawn_test_large_small_pair(mut commands: Commands, mut test_config: ResM
         Vec2::new(-15.0, 15.0),
     ];
 
-    let grey_dark = Color::rgb(0.3, 0.3, 0.3);
-    let grey_light = Color::rgb(0.7, 0.7, 0.7);
+    let grey_dark = Color::srgb(0.3, 0.3, 0.3);
+    let grey_light = Color::srgb(0.7, 0.7, 0.7);
 
     // Spawn large asteroid at center
     spawn_asteroid_with_vertices(
@@ -369,7 +384,7 @@ pub fn spawn_test_gravity_boundary(mut commands: Commands, mut test_config: ResM
         Vec2::new(side / 2.0, -height / 2.0),
     ];
 
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
 
     // Spawn asteroid 1 at center
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey, 1);
@@ -411,7 +426,7 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
         ));
     }
 
-    let grey = Color::rgb(0.5, 0.5, 0.5);
+    let grey = Color::srgb(0.5, 0.5, 0.5);
 
     // Spawn large stationary asteroid at origin
     let large_entity =
@@ -443,7 +458,7 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
                 Group::GROUP_1,
                 Group::GROUP_1 | Group::GROUP_2 | Group::GROUP_3,
             ),
-            TransformBundle::from_transform(Transform::from_xyz(-150.0, 50.0, 0.0)),
+            Transform::from_xyz(-150.0, 50.0, 0.0),
         ))
         .id();
 
@@ -468,7 +483,7 @@ pub fn spawn_test_perf_benchmark(mut commands: Commands, mut test_config: ResMut
     test_config.test_name = "perf_benchmark".to_string();
     test_config.frame_limit = 300;
 
-    let grey = Color::rgb(0.6, 0.6, 0.6);
+    let grey = Color::srgb(0.6, 0.6, 0.6);
 
     // Standard equilateral triangle vertices (same as spawn_asteroid)
     let side = 6.0_f32;
@@ -521,7 +536,7 @@ pub fn test_logging_system(
 
     // For perf_benchmark: record every frame's delta time, print periodic summaries
     if test_config.test_name == "perf_benchmark" {
-        let dt_ms = time.delta_seconds() * 1000.0;
+        let dt_ms = time.delta_secs() * 1000.0;
         test_config.perf_frame_times.push(dt_ms);
 
         if test_config.frame_count == 1 {
@@ -621,7 +636,7 @@ pub fn test_logging_system(
 pub fn test_verification_system(
     test_config: Res<TestConfig>,
     q: Query<(&Transform, &Vertices), With<Asteroid>>,
-    mut exit: EventWriter<bevy::app::AppExit>,
+    mut exit: MessageWriter<bevy::app::AppExit>,
 ) {
     if !test_config.enabled || test_config.frame_count != test_config.frame_limit {
         return;
@@ -680,7 +695,7 @@ pub fn test_verification_system(
     let _ = std::io::stdout().flush();
 
     // Exit after test completes
-    exit.send(bevy::app::AppExit);
+    exit.write(bevy::app::AppExit::Success);
 }
 
 /// Verify if test passed

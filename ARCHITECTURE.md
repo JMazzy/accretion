@@ -2,7 +2,7 @@
 
 ## Overview
 
-GRAV-SIM is an ECS-based **asteroid simulation engine** built on **Bevy 0.13** with physics powered by **Rapier2D**. The simulation features natural asteroid aggregation through N-body gravity attraction and collision-based merging into larger composite structures.
+GRAV-SIM is an ECS-based **asteroid simulation engine** built on **Bevy 0.17** with physics powered by **Rapier2D**. The simulation features natural asteroid aggregation through N-body gravity attraction and collision-based merging into larger composite structures.
 
 ### Core Purpose
 
@@ -12,8 +12,8 @@ Pure asteroid-based simulation where asteroids naturally aggregate through gravi
 
 ### Frameworks & Dependencies
 
-- **Bevy 0.13**: ECS architecture, rendering, event handling, windowing
-- **Rapier2D 0.18**: Physics engine for collision detection, rigid body dynamics, and impulse-based response
+- **Bevy 0.17**: ECS architecture, rendering, event handling, windowing
+- **bevy_rapier2d 0.32** (Rapier 0.22): Physics engine for collision detection, rigid body dynamics, and impulse-based response
 - **Rand 0.8**: Random number generation for asteroid coloring
 
 ### Module Structure
@@ -233,8 +233,8 @@ All physics-tuning constants are defined directly in source files and require `c
 - Asteroid spawn counts and bounds — `src/asteroid.rs`
 
 #### Version Constraints
-- **Bevy 0.13**: API is stable for this version; upgrading to Bevy 0.14+ will require migration (scheduling API, `TransformBundle` removal, text rendering changes)
-- **Rapier 0.18 / bevy\_rapier2d 0.25**: Contact manifold query API (`rapier_context.contact_pair()`) may change in future Rapier releases; currently used in formation and particle-locking systems
+- **Bevy 0.17** + **bevy_rapier2d 0.32**: Current versions. Migration from 0.13 completed February 2026.
+- **Contact manifold API**: `ReadRapierContext` system param; contacts queried via `ctx.single()?.simulation.contact_pairs(colliders, rigidbody_set)` in formation and particle-locking systems.
 
 ### Future Enhancement Roadmap
 

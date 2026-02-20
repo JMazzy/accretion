@@ -107,7 +107,10 @@ mod tests {
     #[test]
     fn world_to_cell_exactly_one_cell_width() {
         // At exactly GRID_CELL_SIZE the cell index advances to 1
-        assert_eq!(SpatialGrid::world_to_cell(Vec2::new(GRID_CELL_SIZE, 0.0)), (1, 0));
+        assert_eq!(
+            SpatialGrid::world_to_cell(Vec2::new(GRID_CELL_SIZE, 0.0)),
+            (1, 0)
+        );
     }
 
     #[test]
@@ -155,7 +158,10 @@ mod tests {
         let target = e(1);
         grid.insert(target, Vec2::new(10.0, 10.0));
         let neighbors = grid.get_neighbors_excluding(e(99), Vec2::new(10.0, 10.0), GRID_CELL_SIZE);
-        assert!(neighbors.contains(&target), "inserted entity should appear as neighbor");
+        assert!(
+            neighbors.contains(&target),
+            "inserted entity should appear as neighbor"
+        );
     }
 
     #[test]
@@ -164,7 +170,10 @@ mod tests {
         let me = e(1);
         grid.insert(me, Vec2::ZERO);
         let neighbors = grid.get_neighbors_excluding(me, Vec2::ZERO, GRID_CELL_SIZE * 10.0);
-        assert!(!neighbors.contains(&me), "entity should not appear in its own neighbor list");
+        assert!(
+            !neighbors.contains(&me),
+            "entity should not appear in its own neighbor list"
+        );
     }
 
     #[test]
@@ -176,7 +185,10 @@ mod tests {
         // Place far entity >2 cells away so radius_in_cells(1.0) = 1 won't reach it
         grid.insert(far, Vec2::new(GRID_CELL_SIZE * 3.0, 0.0));
         let neighbors = grid.get_neighbors_excluding(e(99), Vec2::ZERO, 1.0);
-        assert!(!neighbors.contains(&far), "entity 3 cells away should not appear");
+        assert!(
+            !neighbors.contains(&far),
+            "entity 3 cells away should not appear"
+        );
     }
 
     #[test]
@@ -201,8 +213,7 @@ mod tests {
         grid.insert(e(1), Vec2::ZERO);
         grid.insert(e(2), Vec2::new(50.0, 0.0));
         grid.clear();
-        let neighbors =
-            grid.get_neighbors_excluding(e(99), Vec2::ZERO, GRID_CELL_SIZE * 100.0);
+        let neighbors = grid.get_neighbors_excluding(e(99), Vec2::ZERO, GRID_CELL_SIZE * 100.0);
         assert!(neighbors.is_empty(), "grid should be empty after clear");
     }
 
