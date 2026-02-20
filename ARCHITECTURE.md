@@ -21,10 +21,11 @@ Pure asteroid-based simulation where asteroids naturally aggregate through gravi
 ```text
 src/
 ├── main.rs               - Bevy app setup, window configuration, test mode routing
+├── constants.rs          - All tuneable physics and gameplay constants (single source of truth)
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
 ├── spatial_partition.rs  - Spatial grid for O(1) neighbor lookup (replaces O(N²) brute-force)
-├── player.rs             - Player ship entity, WASD controls, projectile firing, camera follow
+├── player/               - Player ship entity, WASD controls, projectile firing, camera follow
 ├── graphics.rs           - Camera setup for 2D rendering
 ├── testing.rs            - Automated test scenarios for physics validation
 └── lib.rs                - Library exports
@@ -56,30 +57,27 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ### Gravity System (`nbody_gravity_system`)
 
-- **Constant**: `gravity_const = 10.0` (mutual attraction)
-- **Minimum distance threshold**: `min_gravity_dist = 5.0` units
-  - **Why**: Prevents energy injection during close encounters; Rapier handles collision physics below this range
-- **Maximum gravity distance**: `max_gravity_dist = 1000.0` units (matches cull distance)
-- **Force**: Applied between pairs as `F = gravity_const / distance²`
+- **Constant**: `GRAVITY_CONST` (`src/constants.rs`) — mutual attraction strength
+- **Minimum distance threshold**: `MIN_GRAVITY_DIST` — asteroids closer than this are excluded; Rapier handles contact physics below this range to prevent energy injection during close encounters
+- **Maximum gravity distance**: `MAX_GRAVITY_DIST` — matches `CULL_DISTANCE` so culled asteroids exert no phantom forces
+- **Force**: Applied between pairs as `F = GRAVITY_CONST / distance²`
 - **Optimization**: Uses `SpatialGrid` for O(N·K) grid-based candidate lookup instead of O(N²) brute-force iteration
-- **Behavior**:
-  - Asteroids at 100 units apart attract smoothly
-  - Reach collision speeds based on initial spacing
-  - Collide and merge into stable composites
 
 ### Collision Detection
 
 - **Engine**: Rapier2D automatic contact manifold population
-- **Range**: Activated for distances < 20 units (where gravity is disabled)
-- **Response**: Restitution coefficients:
-  - Triangle asteroids: `0.5` (50% bouncy)
-  - Composite asteroids: `0.7` (70% bouncy)
+- **Range**: Activated below `MIN_GRAVITY_DIST` (where gravity is skipped)
+- **Response**: Restitution coefficients defined in `src/constants.rs`:
+  - `RESTITUTION_SMALL` — small/unit asteroids
+  - Composite asteroids use Rapier's default (no override currently applied)
 
 ### Cluster Formation & Merging
 
 - **Detection**: Flood-fill algorithm through Rapier contact manifolds
 - **Execution**: Must run in `PostUpdate` after Rapier `FixedUpdate` populates contacts
-- **Velocity threshold**: `10.0 u/s` (allows faster asteroids to merge if in contact)
+- **Velocity thresholds** (both in `src/constants.rs`):
+  - `VELOCITY_THRESHOLD_LOCKING` — maximum speed for velocity synchronisation
+  - `VELOCITY_THRESHOLD_FORMATION` — maximum speed for merge eligibility
 - **Hull computation**:
   1. Collect all vertices from cluster members in **world-space**
   2. Apply transform rotation to local vertices: `world_v = center + rotation * local_v`
@@ -96,9 +94,9 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ### Culling & Boundary
 
-- **Culling distance**: 1000 units from origin
+- **Culling distance**: `CULL_DISTANCE` (`src/constants.rs`) from origin
 - **Purpose**: Prevents asteroids from flying indefinitely; cleans up far objects
-- Note: artificial velocity damping ramps outside 600 units have been removed.
+- Artificial velocity damping ramps have been removed; the boundary is a hard cull.
 
 ## ECS Systems Execution Order
 
@@ -106,7 +104,7 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 1. **`stats_counting_system`** - Counts live/culled asteroids
 2. **`rebuild_spatial_grid_system`** - Rebuilds spatial grid from current positions (O(N))
-3. **`culling_system`** - Removes asteroids beyond 1000 units
+3. **`culling_system`** - Removes asteroids beyond `CULL_DISTANCE`
 4. **`neighbor_counting_system`** - Counts nearby asteroids using grid (O(N·K))
 5. **`particle_locking_system`** - Synchronizes velocities of slow touching asteroids via Rapier contact_pairs iterator (O(C), C = active contacts)
 6. **`player_control_system`** - Applies WASD thrust/rotation to player ship
@@ -133,11 +131,9 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ## Spatial Grid (`spatial_partition.rs`)
 
-The `SpatialGrid` resource partitions world space into 500-unit cells for efficient neighbor queries.
+The `SpatialGrid` resource partitions world space into fixed-size cells for efficient neighbor queries.
 
-- **Cell size**: 500 units — deliberately large to avoid excessive cell-check overhead
-  - A query for `max_gravity_dist=1000` checks only a 5×5=25 cell area
-  - Using 100-unit cells with the same query would check 21×21=441 cells, worse than O(N²) at low asteroid counts
+- **Cell size**: `GRID_CELL_SIZE` (`src/constants.rs`) — must be ≥ the largest query radius / 2 to avoid excessive cell-check overhead
 - **Lookup**: `get_neighbors_excluding(entity, pos, max_distance)` returns candidates from nearby cells
 - **Rebuild**: Called at the start of each Update and FixedUpdate frame
 - **Complexity**: O(N) rebuild, O(K) lookup where K = avg entities per cell neighborhood
@@ -145,33 +141,24 @@ The `SpatialGrid` resource partitions world space into 500-unit cells for effici
 
 ## Physics Constants Reference
 
-All constants defined in `src/simulation.rs`:
+All tuneable constants are centralised in **`src/constants.rs`** with doc-comments explaining each value's purpose, tested range, and observable effect. The file is the single source of truth — never duplicate values into documentation.
 
-```rust
-// Simulation physics (src/simulation.rs)
-gravity_const           = 10.0    // Mutual attraction strength
-min_gravity_dist        = 5.0     // Skip gravity if closer (Rapier handles it)
-max_gravity_dist        = 1000.0  // Gravity works across entire simulation
-cull_distance           = 1000.0  // Remove entities beyond this
-min_zoom                = 0.5     // Minimum camera zoom (full circle visible)
-max_zoom                = 8.0     // Maximum camera zoom (detail view)
+Key constant groups (see `src/constants.rs` for current values):
 
-// Spatial grid (src/spatial_partition.rs)
-grid_cell_size          = 500.0   // Must be >= max_query_distance / 2
-
-// Player (src/player.rs)
-thrust_force            = 120.0   // Forward thrust (N) while W held
-reverse_force           = 60.0    // Reverse thrust (N) while S held
-rotation_speed          = 3.0     // Angular velocity (rad/s) while A or D held
-projectile_speed        = 500.0   // Projectile speed (units/s)
-fire_cooldown           = 0.2     // Seconds between shots
-projectile_lifetime     = 3.0     // Seconds before projectile despawns
-player_max_hp           = 100.0   // Player ship full health
-damage_speed_threshold  = 30.0    // Minimum relative speed (u/s) that deals damage
-invincibility_duration  = 0.5     // Seconds of damage immunity after a hit
-oob_radius              = 1000.0  // Soft boundary beyond which player is damped
-oob_damping             = 0.97    // Velocity decay factor applied per frame outside OOB_RADIUS
-```
+| Group | Constants |
+|---|---|
+| World bounds | `SIM_WIDTH`, `SIM_HEIGHT`, `PLAYER_BUFFER_RADIUS` |
+| Gravity | `GRAVITY_CONST`, `MIN_GRAVITY_DIST`, `MAX_GRAVITY_DIST` |
+| Cluster formation | `VELOCITY_THRESHOLD_LOCKING`, `VELOCITY_THRESHOLD_FORMATION` |
+| Collision | `RESTITUTION_SMALL`, `FRICTION_ASTEROID` |
+| Culling | `CULL_DISTANCE` |
+| Spatial grid | `GRID_CELL_SIZE` |
+| Camera | `MIN_ZOOM`, `MAX_ZOOM`, `ZOOM_SPEED` |
+| Player movement | `THRUST_FORCE`, `REVERSE_FORCE`, `ROTATION_SPEED` |
+| Player OOB | `OOB_RADIUS`, `OOB_DAMPING`, `OOB_RAMP_WIDTH` |
+| Player combat | `PROJECTILE_SPEED`, `FIRE_COOLDOWN`, `PROJECTILE_LIFETIME` |
+| Player health | `PLAYER_MAX_HP`, `DAMAGE_SPEED_THRESHOLD`, `INVINCIBILITY_DURATION` |
+| Gamepad | `GAMEPAD_BRAKE_DAMPING`, `GAMEPAD_LEFT_DEADZONE`, etc. |
 
 ## Testing Framework
 
@@ -180,7 +167,7 @@ oob_damping             = 0.97    // Velocity decay factor applied per frame out
 - **Trigger**: `GRAV_SIM_TEST=<test_name>` environment variable
 - **Runs**: Single test scenario for exact reproducibility
 - **Framework**: Custom spawning functions in `src/testing.rs`
-- **Player isolation**: In test mode the player entity is **not spawned** — player systems run but find no `Player` component and are no-ops. This ensures asteroid-only tests are not affected by the player ship's collider (8-unit ball at origin) or its input/damage systems.
+- **Player isolation**: In test mode the player entity is **not spawned** — player systems run but find no `Player` component and are no-ops. This ensures asteroid-only tests are not affected by the player ship's collider (radius = `PLAYER_COLLIDER_RADIUS`) or its input/damage systems.
 
 ### Available Tests
 
@@ -214,23 +201,19 @@ oob_damping             = 0.97    // Velocity decay factor applied per frame out
 
 #### Simulation Boundaries
 - **2D only**: All physics operates on the XY plane; no Z-axis forces or rendering depth
-- **Hard world boundary**: 1000-unit cull radius is fixed in source; asteroids beyond this are permanently removed
-- **Spawn area**: Initial asteroids distributed in a 3000×2000 unit region with a 400-unit player buffer at origin; values require recompilation to change
+- **Hard world boundary**: `CULL_DISTANCE` radius is fixed in source; asteroids beyond this are permanently removed
+- **Spawn area**: Initial asteroids distributed within `SIM_WIDTH`×`SIM_HEIGHT` with a `PLAYER_BUFFER_RADIUS` exclusion zone at origin; values require recompilation to change
 - **Max simulation density**: Gizmo-based wireframe rendering starts showing overhead beyond ~200 simultaneous live asteroids (force-vector annotations auto-disabled at this threshold)
 
 #### Physics Simplifications
 - **Convex-only colliders**: All asteroid shapes are convex polygons; concavities from impacts are approximated by their convex hull, not modelled directly
-- **Gravity cutoff**: Gravity is disabled inside 5 units (Rapier handles close contacts) and beyond 1000 units; there is no smooth transition
+- **Gravity cutoff**: Gravity is disabled inside `MIN_GRAVITY_DIST` (Rapier handles close contacts) and beyond `MAX_GRAVITY_DIST`; there is no smooth transition
 - **No rotational gravity torque**: Gravity applies only linear force (no torque based on off-centre mass distribution)
 - **Cluster formation is discrete**: Merging is all-or-nothing per frame; a cluster either fully merges in one PostUpdate step or waits until the next frame
 - **Single-pass hull computation**: Composite hull is computed once at merge time; subsequent impacts reduce vertex count but do not recompute the full hull from physics state
 
 #### Hardcoded Configuration
-All physics-tuning constants are defined directly in source files and require `cargo build` to change:
-- Gravity, distance thresholds, velocity thresholds — `src/simulation.rs`
-- Player movement, projectile, health constants — `src/player.rs`
-- Grid cell size — `src/spatial_partition.rs`
-- Asteroid spawn counts and bounds — `src/asteroid.rs`
+All physics-tuning constants are defined in `src/constants.rs` and require `cargo build` to change. See the Physics Constants Reference section above for the full list.
 
 #### Version Constraints
 - **Bevy 0.17** + **bevy_rapier2d 0.32**: Current versions. Migration from 0.13 completed February 2026.
@@ -296,7 +279,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 - ✅ Cluster detection (multiple asteroids)
 - ✅ Gravity attraction (distance-based acceleration)
 - ✅ High-speed collisions (impact merging)
-- ✅ **Near-miss stability** (validates gravity fix: 20→38 u/s, not 20→426 u/s)
+- ✅ **Near-miss stability** (validates gravity fix: pass-by speed stays within expected range, not runaway acceleration)
 - ✅ Long-range gravity dynamics
 - ✅ Culling system (no phantom forces)
 - ✅ Mixed-size interactions
@@ -305,4 +288,4 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 ### Critical Fix Validated
 
-**Gravity Threshold Fix**: Changed minimum gravity distance from clamping at 2 units to skipping entirely when <20 units apart. This prevents energy injection during close encounters and high-speed passes, ensuring stable physics across all scenarios.
+**Gravity Threshold Fix**: Changed minimum gravity distance behaviour from clamping to skipping entirely when below `MIN_GRAVITY_DIST`. This prevents energy injection during close encounters and high-speed passes, ensuring stable physics across all scenarios.

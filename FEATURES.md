@@ -25,17 +25,17 @@
 | **Right stick** | Aim and auto-fire projectiles in stick direction                       |
 | **B button**    | Brake — applies strong velocity damping each frame while held          |
 
-- **Left stick movement**: the ship rotates at a fixed angular speed until aligned with the stick direction, then applies forward thrust proportional to stick magnitude. Thrust is suppressed while rotating sharply (> 0.5 rad off-target) to avoid fighting the turn.
-- **B button brake**: while held, multiplies both linear and angular velocity by `GAMEPAD_BRAKE_DAMPING` (~0.82) every frame, bringing the ship to a near-stop in roughly half a second at 60 fps. Forward thrust is independent and can still be applied simultaneously via the left stick.
-- **Right stick auto-fire**: once the right stick exceeds ~50% deflection, projectiles auto-fire at the fire cooldown rate. Pulling the stick further does not change fire rate.
-- **Dead zones**: left stick < 15%, right stick < 20% are ignored to prevent drift.
+- **Left stick movement**: the ship rotates at a fixed angular speed until aligned with the stick direction, then applies forward thrust proportional to stick magnitude. Thrust is suppressed while rotating sharply (above the heading correction threshold in `src/constants.rs`) to avoid fighting the turn.
+- **B button brake**: while held, multiplies both linear and angular velocity by `GAMEPAD_BRAKE_DAMPING` every frame, bringing the ship to a near-stop in roughly half a second at 60 fps. Forward thrust is independent and can still be applied simultaneously via the left stick.
+- **Right stick auto-fire**: once the right stick exceeds `GAMEPAD_FIRE_THRESHOLD` deflection, projectiles auto-fire at the fire cooldown rate. Pulling the stick further does not change fire rate.
+- **Dead zones**: left stick below `GAMEPAD_LEFT_DEADZONE`, right stick below `GAMEPAD_RIGHT_DEADZONE` are ignored to prevent drift.
 
 ### Initial World
 
-- **100 asteroids** spawn at startup, distributed across a 3000×2000 unit simulation area
-- A **400-unit exclusion zone** around the player start (origin) keeps the starting area clear
-- Grid-based seeding (6×4 cells) prevents random clumping while maintaining variety
-- Random shapes (triangles, squares, pentagons, hexagons) and sizes (0.5–1.5×), random initial velocities
+- Asteroids spawn at startup, distributed across a `SIM_WIDTH`×`SIM_HEIGHT` unit simulation area (see `src/constants.rs`)
+- A **`PLAYER_BUFFER_RADIUS`** exclusion zone around the player start (origin) keeps the starting area clear
+- Grid-based seeding prevents random clumping while maintaining variety
+- Random shapes (triangles, squares, pentagons, hexagons) and sizes (`ASTEROID_SIZE_SCALE_MIN`–`ASTEROID_SIZE_SCALE_MAX`×), random initial velocities
 
 ### Camera Controls
 
@@ -43,8 +43,8 @@
 
 - **Scroll up**: Zoom out (smaller scale, larger viewport)
 - **Scroll down**: Zoom in (larger scale, smaller viewport)
-- **Zoom range**: 0.5× (full simulation circle visible) to 8.0× (detail magnification)
-- **Smooth scaling**: ±0.1 scale units per scroll event
+- **Zoom range**: `MIN_ZOOM`× (full simulation circle visible) to `MAX_ZOOM`× (detail magnification)
+- **Smooth scaling**: ±`ZOOM_SPEED` scale units per scroll event
 - **Camera follows the player** automatically; no manual pan
 
 ### Coordinate System
@@ -64,14 +64,14 @@ Located in top-left corner (follows camera pan):
 Live: XX | Culled: YY | Merged: ZZ
 ```
 
-- **Live**: Number of asteroids currently in simulation (within 1000-unit boundary)
+- **Live**: Number of asteroids currently in simulation (within `CULL_DISTANCE` boundary)
 - **Culled**: Total number of asteroids removed by culling system
 - **Merged**: Total number of merge events (N asteroids → 1 counts as 1 merge)
 - **Updates**: Every frame in real-time
 
 ### Culling Boundary Visualization
 
-- **Visual**: Yellow circle with 1000-unit radius at origin
+- **Visual**: Yellow circle with `CULL_DISTANCE` radius at origin
 - **Purpose**: Shows edge where asteroids will be auto-removed
 - **Follows Camera**: Rendered in world-space, moves with pan
 - **Color**: RGB(1.0, 1.0, 0.0) - Bright yellow for visibility
@@ -100,7 +100,7 @@ pub struct SimulationStats {
 ### Counting System
 
 - **`stats_counting_system`**: Runs every frame
-  - Counts live asteroids within 1000-unit boundary
+  - Counts live asteroids within `CULL_DISTANCE` boundary
   - Tracks culled asteroids (those beyond boundary)
   - Tracks merge events when clusters form
   - Output: Updates on-screen display and console logging
@@ -158,13 +158,13 @@ This ensures accurate spawning regardless of camera state.
 
 The player ship has a health pool that depletes when struck by asteroids at high relative speeds.
 
-| Property                 | Value    | Description                                                     |
-| ------------------------ | -------- | --------------------------------------------------------------- |
-| `PLAYER_MAX_HP`          | 100.0    | Full health at spawn                                            |
-| `DAMAGE_SPEED_THRESHOLD` | 30.0 u/s | Minimum relative speed before damage is dealt                   |
-| `INVINCIBILITY_DURATION` | 0.5 s    | Immunity period after each hit to prevent rapid damage stacking |
+| Property                 | Description                                                     |
+| ------------------------ | --------------------------------------------------------------- |
+| `PLAYER_MAX_HP`          | Full health at spawn                                            |
+| `DAMAGE_SPEED_THRESHOLD` | Minimum relative speed before damage is dealt                   |
+| `INVINCIBILITY_DURATION` | Immunity period after each hit to prevent rapid damage stacking |
 
-**Damage formula**: `damage = (relative_speed − 30.0) × 0.5` — slow grazes deal no damage; high-speed impacts deal proportionally more.
+**Damage formula**: `damage = (relative_speed − DAMAGE_SPEED_THRESHOLD) × 0.5` — slow grazes deal no damage; high-speed impacts deal proportionally more.
 
 **Visual feedback**: The ship's wireframe colour shifts from cyan (full health) to red as HP decreases. A pixel-wide health bar floats above the ship showing the current HP fraction (green → red as health drops).
 
@@ -198,10 +198,10 @@ If the geometric split produces fewer vertices than the minimum for that mass (e
 
 ### Out-of-Bounds Behaviour
 
-The player ship is not culled like asteroids, but experiences increasing velocity damping when outside the 1000-unit boundary:
+The player ship is not culled like asteroids, but experiences increasing velocity damping when outside the `OOB_RADIUS` boundary:
 
-- **OOB radius**: 1000 units from origin (matches asteroid cull boundary)
-- **Damping factor**: 0.97 (velocity scaled per frame), ramped smoothly — 0% at the boundary, reaching full 3% per frame at +200 units beyond
+- **OOB radius**: `OOB_RADIUS` from origin (matches asteroid cull boundary)
+- **Damping factor**: `OOB_DAMPING` (velocity scaled per frame), ramped smoothly over `OOB_RAMP_WIDTH` from 0% at the boundary to full effect beyond
 - **Effect**: Gentle drag that discourages escaping the simulation; the player can still re-enter under thrust
 
 ## UI/UX Notes

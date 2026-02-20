@@ -10,102 +10,95 @@
 
 The "grav-sim" project is an ECS-based **asteroid simulation engine** built on **Bevy** with physics powered by **Rapier2D**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
 
+> For authoritative version numbers, module layout, ECS system execution order, and physics constants see **[ARCHITECTURE.md](../ARCHITECTURE.md)**.  
+> For user controls, camera behaviour, and UI details see **[FEATURES.md](../FEATURES.md)**.
+
 - **Purpose**: Pure asteroid-based simulation where asteroids naturally aggregate through gravitational attraction and collision to form larger composite asteroids (polygons) that visually rotate based on physics.
-- **Framework**:
-  - **Bevy 0.14**: Game engine providing ECS architecture, rendering, and event handling
-  - **Rapier2D 0.18**: Physics engine for collision detection, rigid body dynamics, and impulse-based response
-- **Core Modules**:
-  - `asteroid.rs` - Unified asteroid components and spawn functions; convex hull computation
-  - `simulation.rs` - Physics systems: N-body gravity, cluster detection, composite formation
-  - `graphics.rs` - Camera setup for 2D rendering
-  - `testing.rs` - Automated test scenarios for physics validation
-  - `main.rs` - Bevy app setup, window configuration, and test mode routing
-- **Entity Types**: All asteroids are unified entities with local-space vertices
-  - Spawn as triangles or polygons depending on configuration
-  - Composite asteroids formed when 2+ asteroids touch and merge
-- **ECS Systems** (Execution Order - CRITICAL):
-  - **Update Schedule**:
-    1. **Culling** - Removes asteroids beyond 1000 units
-    2. **Neighbor counting** - Counts nearby asteroids
-    3. **N-body gravity** - Applies mutual attraction
-    4. **Settling damping** - Applies friction to slow asteroids
-    5. **Particle locking** - Velocity synchronization for slow asteroids
-    6. **Environmental damping** - Stabilizes dense clusters
-    7. **User input** - Left-click spawns asteroids
-    8. **Gizmo rendering** - Renders wireframe outlines
-  - **PostUpdate Schedule**: 9. **Asteroid formation** - MUST run AFTER Rapier physics (FixedUpdate) populates contacts 10. **Test logging & verification** - MUST run after formation to see merged results
+- **Framework**: Bevy (ECS, rendering, windowing) + bevy_rapier2d (collision detection, rigid body dynamics). See `Cargo.toml` for current versions.
+- **Core Modules**: See "Module Structure" in `ARCHITECTURE.md`.
+- **Key files**:
+  - `src/constants.rs` - All tuneable physics and gameplay constants (single source of truth)
+  - `src/main.rs` - Bevy app main entry and test mode routing
+  - `src/asteroid.rs` - Core asteroid definitions and spawn functions
+  - `src/simulation.rs` - All ECS systems
+  - `src/spatial_partition.rs` - Spatial grid for O(N·K) neighbor lookup
+  - `src/graphics.rs` - Camera/rendering setup
+  - `src/player/` - Player ship, controls, combat, rendering
+  - `src/testing.rs` - Automated test scenarios
+- **Entity Types**: All asteroids are unified entities with local-space vertices.
+  - Spawn as triangles or polygons depending on configuration.
+  - Composite asteroids formed when 2+ asteroids touch and merge.
+- **ECS Systems** (Execution Order - CRITICAL): See "ECS Systems Execution Order" in `ARCHITECTURE.md`.
+  - Formation system **must** run in `PostUpdate` after Rapier `FixedUpdate` populates contacts.
+  - Test systems **must** run in `PostUpdate` after formation to observe merged results.
 
 ## Physics Rules
 
+> All numeric constants (restitution, gravity strength, distance thresholds, velocity thresholds, damping factors, culling distance, etc.) are defined in `src/constants.rs` and documented with current values in the "Physics Constants Reference" section of **[ARCHITECTURE.md](../ARCHITECTURE.md)**. Do not hard-code or repeat those values here.
+
 ### Small Asteroid Properties (Triangles)
 
-- **Shape**: Equilateral triangle (relative vertices stored, rotated by transform)
-- **Collider**: 2.0 unit ball
-- **Mass**: 1.0 unit
-- **Restitution**: 0.5 (50% bouncy, space-like)
-- **Color**: Random grey shade (0.3–0.9) per asteroid
-- **Damping**: No linear or angular damping by default
+- **Shape**: Equilateral triangle with relative vertices stored, rotated by transform.
+- **Collider**: Ball collider; radius in `src/asteroid.rs`.
+- **Restitution**: Lower than large asteroids (see `ARCHITECTURE.md`).
+- **Color**: Random grey shade per asteroid.
 
 ### Large Asteroid Properties (Polygons)
 
-- **Formation**: Created when 2+ small asteroids touch and move < 1.0 u/s
-- **Shape**: Convex hull of constituent asteroids (computed via gift wrapping algorithm)
-- **Collider**: Exact convex polygon from physics engine
-- **Mass**: Sum of constituent masses
-- **Restitution**: 0.7 (70% bouncy)
-- **Color**: Random grey shade (0.3–0.9)
-- **Rendering**: White wireframe outline, vertices rotated by transform's rotation
-- **Velocity**: Inherits averaged linear and angular velocity from constituents
+- **Formation**: Created when 2+ asteroids touch and their relative velocity is below the merge threshold.
+- **Shape**: Convex hull of constituent asteroids (gift-wrapping algorithm).
+- **Collider**: Exact convex polygon.
+- **Mass**: Sum of constituent masses.
+- **Rendering**: White wireframe outline, vertices rotated by transform rotation.
+- **Velocity**: Inherits averaged linear and angular velocity from constituents.
 
 ### N-Body Gravity
 
-- **Constant**: 2.0 (gentle mutual attraction to avoid velocity blowup)
-- **Minimum distance threshold**: 2.0 units (clamps distance-squared to prevent singularities)
-- **Maximum gravity distance**: 300.0 units (prevents phantom forces from distant asteroids)
-- **Application**: Applied uniformly between all asteroid pairs within range
-- **Observed Behavior**: Asteroids at 100 units apart attract over ~350 frames, reach velocities ~28+ m/s, then collide and merge
+- Applied between all asteroid pairs within a maximum distance (beyond which forces are skipped).
+- A minimum distance threshold prevents energy injection during close encounters; Rapier handles contact physics below that threshold.
+- Uses `SpatialGrid` for O(N·K) lookup instead of O(N²) brute-force.
 
 ### Velocity Synchronization
 
-- **Activation**: When two asteroids touch and both move < 5.0 u/s
-- **Effect**: Velocities averaged between them (linear and angular)
-- **Purpose**: Prepares asteroids for smooth composite formation
+- When two touching asteroids both move below a slow threshold, velocities are averaged (linear + angular).
+- Prepares asteroids for smooth composite formation.
 
 ### Cluster Formation & Merging (CRITICAL IMPLEMENTATION)
 
-- **Detection**: Flood-fill algorithm through Rapier contact manifolds
-- **Contact query**: MUST run in PostUpdate after Rapier FixedUpdate populates contacts
-- **Velocity threshold**: 10.0 u/s (allows faster asteroids to merge if in contact)
+- **Detection**: Flood-fill algorithm through Rapier contact manifolds.
+- **Contact query**: MUST run in `PostUpdate` after Rapier `FixedUpdate` populates contacts.
+- **Velocity threshold**: Cluster members may still merge even at moderate speeds (see `ARCHITECTURE.md`).
 - **Hull computation**:
-  - Collect ALL vertices from cluster members in WORLD-SPACE
-  - Apply transform rotation to local vertices: `world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate()`
-  - Compute convex hull from complete world-space vertex set
-  - Convert hull back to LOCAL-SPACE: `hull_local = hull.iter().map(|v| v - center).collect()`
-  - Spawn composite with local-space hull for correct rendering
-- **Velocity inheritance**: Average linear and angular velocity from cluster members
-- **Prevention**: Processed asteroids tracked per-frame to prevent duplicate merging
+  - Collect ALL vertices from cluster members in **world-space**.
+  - Apply transform rotation: `world_v = center + rotation * local_v`
+  - Compute convex hull from the world-space vertex set.
+  - Convert hull back to **local-space** relative to the new centroid.
+  - Spawn composite with local-space hull for correct rendering.
+- **Velocity inheritance**: Average linear and angular velocity from cluster members.
+- **Prevention**: Processed asteroids tracked per-frame to prevent duplicate merging.
 
 ### Environmental Damping
 
-- **Activation**: Applied to asteroids with >6 neighbors within 3.0 units
-- **Damping factor**: 0.5% per frame (factor: 0.995)
-- **Purpose**: Prevents numerical instability in extreme density clusters
+- Artificial environmental damping has been **removed**. Energy dissipation occurs only via collision restitution.
 
-### Culling & Damping
+### Culling & Boundary
 
-- **Damping zone**: Asteroids beyond 600 units from origin experience increasing damping
-- **Culling distance**: 1000 units (asteroids removed when exceeding this)
-- **Damping ramp**: Smoothly increases from 0% to 5% over 400-unit range
-- **Purpose**: Prevents asteroids from flying indefinitely; cleans up far objects
+- Asteroids beyond the cull distance (see `ARCHITECTURE.md`) are removed each frame.
+- Artificial velocity damping ramps have been removed; the boundary is a hard cull.
 
 ## User Interaction
 
-- **Left-click**: Spawns a small triangle asteroid at cursor position
-- **No automatic spawning**: Simulation starts empty; user drives all spawning
-- **Coordinate system**: Screen (0,0) top-left → World (0,0) center; X right, Y up
+See **[FEATURES.md](../FEATURES.md)** for the full list of controls, camera behaviour, and UI details.
+
+- **Left-click / Space**: Fire projectile or spawn asteroid (mode-dependent); see `FEATURES.md`.
+- **WASD + mouse**: Player ship movement and aiming.
+- **Mouse wheel**: Camera zoom.
+- **Coordinate system**: Screen (0,0) top-left → World (0,0) center; X right, Y up.
 
 ## Current Implementation Status
 
+- ✅ Player ship with WASD movement, mouse aiming, and projectile firing
+- ✅ Asteroid destruction: destroy / scatter / split / chip based on size
 - ✅ Pure asteroid-only unified system (all entities equal)
 - ✅ Cluster-based formation with flood-fill contact detection
 - ✅ Wireframe rendering with rotation (no sprite overlays)
@@ -114,24 +107,22 @@ The "grav-sim" project is an ECS-based **asteroid simulation engine** built on *
 - ✅ Gravity attraction → collision → merging pipeline
 - ✅ Automated test framework with environment variable triggering
 - ✅ PostUpdate system scheduling for physics-aware logic
+- ✅ Spatial grid for O(N·K) gravity and neighbor queries
 
 ## Testing Strategy (Session-Learned Best Practices)
 
 ### Test Framework
 
 - **Environment Variable**: `GRAV_SIM_TEST=<test_name>` triggers test mode from `main.rs`
-- **Available Tests**:
-  - `two_triangles`: Verifies 2 touching asteroids merge into 1 composite
-  - `three_triangles`: Verifies 3-asteroid cluster merges into 1 composite
-  - `gravity`: Verifies distant asteroids attract, collide, and merge over time
+- **Available Tests**: See "Available Tests" in `ARCHITECTURE.md` for the current list
 - **Test Config Resource**: Tracks frame count, asteroid counts, test name for automated verification
+- **Player isolation**: In test mode the player entity is **not spawned** — player systems run but are no-ops
 
 ### Test Logging Strategy
 
-- Log at key frames: 1, 10, 30, 50, 100, 150, 200, 250, 300, etc.
-- Log both **positions** and **velocities** to understand physics behavior
-- Example output: `[Frame 300] pos: (-11.3, 0.0), vel_len: 28.565` for gravity test
-- This reveals whether asteroids are attracting (velocity increasing, distance decreasing) or repelling
+- Log at periodic key frames to understand physics behavior
+- Log both **positions** and **velocities** to observe whether asteroids are attracting or repelling
+- This reveals phase transitions: attraction → collision → merge
 
 ### Test Verification
 
@@ -179,29 +170,20 @@ cargo check
 
 ## Project Conventions
 
-- **File Structure**: Standard Rust layout:
-  - `src/` - library and binary code
-  - `src/main.rs` - Bevy app main entry
-  - `src/asteroid.rs` - Core asteroid definitions and spawn functions
-  - `src/simulation.rs` - All ECS systems
-  - `src/graphics.rs` - Camera/rendering setup
+- **File Structure**: Standard Rust layout (see "Module Structure" in `ARCHITECTURE.md` for the canonical list).
 - **Naming Conventions**:
   - `snake_case` for functions, variables, modules
   - `PascalCase` for types, structs, enums, traits
   - `SCREAMING_SNAKE_CASE` for constants
-- **Physics Tuning**: Constants defined at top of physics system functions:
-  - Gravity constant and distance thresholds in `nbody_gravity_system`
-  - Velocity thresholds in `particle_locking_system` and `asteroid_formation_system`
-  - Damping factors in `environmental_damping_system` and `culling_system`
+- **Physics Tuning**: All constants are defined in `src/constants.rs` (see "Physics Constants Reference" in `ARCHITECTURE.md`) and require `cargo build` to change. Do **not** hard-code specific values in documentation or instructions outside of `ARCHITECTURE.md`.
 
 ## Integration Points
 
 - **External APIs**: None - fully self-contained simulation
-- **Dependencies**:
-  - `bevy` (0.13) - ECS engine, rendering, windowing
-  - `bevy_rapier2d` (0.25) - Physics engine integration for Bevy
-  - `rapier2d` (0.18) - Core physics via SIMD-optimized convex hulls and collision detection
-  - `rand` (0.8) - Random grey shades for asteroid coloring
+- **Dependencies** (see `Cargo.toml` for current versions):
+  - `bevy` - ECS engine, rendering, windowing
+  - `bevy_rapier2d` - Physics engine integration for Bevy
+  - `rand` - Random grey shades for asteroid coloring
   - `glam` - Math library (Vec2, Quat) via Bevy
 - **Cross-Component Communication**:
   - Components: `Asteroid`, `Vertices` (local-space), `NeighborCount`, plus Rapier/Bevy physics components
@@ -228,12 +210,9 @@ cargo check
 
 ### Gravity Constant Tuning
 
-- **Tested range**: 2.0 works well; too high (15.0+) causes instability
-- **Observable metrics**:
-  - At 100 units separation: ~350 frames to collision
-  - Velocity reaches ~28-30 m/s at collision
-  - Collided asteroids merge immediately into stable composite
-- **Indicates system is healthy**: Smooth acceleration, no bouncing apart after contact
+- See "Physics Constants Reference" in `ARCHITECTURE.md` for the current value and justification.
+- **Observable metrics**: smooth acceleration, stable velocities, asteroids merge on contact.
+- **Indicates system is healthy**: Smooth acceleration, no bouncing apart after contact.
 
 ## Documentation Maintenance
 
@@ -269,13 +248,13 @@ The project maintains three consolidated documentation files:
 - **Avoid temporary documentation files**: Do not create session-specific or change-specific markdown files
 - **Keep it concise**: Consolidate related info; remove redundancy
 - **Link to GitHub instructions**: Reference `copilot-instructions.md` for repeated architectural details
-- **Example format for changes**: "Updated gravity constant from 2.0 to 10.0 in `nbody_gravity_system` (documented in ARCHITECTURE.md)"
+- **Example format for changes**: "Increased `GRAVITY_CONST` in `src/constants.rs` (documented in ARCHITECTURE.md)"
 
 ### PhysicsConstants Updates
 
 When tuning physics constants:
 
-1. Update the constant value in the source code (e.g., `src/simulation.rs`)
+1. Update the constant value in `src/constants.rs`
 2. Update the constant reference in ARCHITECTURE.md with both the value and justification
 3. Add a line to CHANGELOG.md explaining the change and its observable effect
 4. Run relevant tests to validate the change (see Build Verification below)
@@ -348,7 +327,7 @@ cargo clippy -- -D warnings
 
 ### Debug Tips for Failed Verification
 
-- **Build errors**: Check Rust edition (2021), Bevy version (0.13), dependencies in Cargo.toml
+- **Build errors**: Check Rust edition (2021), Bevy/bevy_rapier2d versions in `Cargo.toml`
 - **Clippy warnings**: Follow suggestions; most are idiomatic Rust improvements
 - **Test failures**: Check test output frame-by-frame; log positions/velocities for physics issues
 - **Unexpected physics**: Verify system execution order (see ECS Systems section); check constant values match source code
