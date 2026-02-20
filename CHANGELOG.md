@@ -1,6 +1,33 @@
 # GRAV-SIM Changelog
 
+## Post-Migration Gameplay Fixes — February 19, 2026
+
+### Thrust regression (`pixels_per_meter` rollback)
+
+The Bevy 0.17 migration set `RapierPhysicsPlugin::pixels_per_meter(50.0)`. The old
+`RapierConfiguration::default()` effective scale was **1.0**. With scale=50 the collider
+mass in physics-space shrinks quadratically (`mass ∝ radius² / ppm²`), so the player ball
+(`radius = 8`) dropped from ~201 kg to ~0.08 kg. The same `THRUST_FORCE = 60 N` then
+produced ~37 000 px/s² acceleration — the ship rocketed off-screen in under a second, appearing
+to the player as though thrust was broken. Fixed by changing to `pixels_per_meter(1.0)` to
+match the old default.
+
+### Projectile momentum transfer (`Sensor` added)
+
+In Rapier 0.22+ (bevy_rapier2d 0.32), `KinematicVelocityBased` bodies generate real contact
+forces against `Dynamic` bodies. Previously they did not. This caused projectiles to
+physically push asteroids like a heavy slug. Added `Sensor` to the projectile bundle so Rapier
+still fires `CollisionEvent` for game-logic hit detection but applies no contact impulse.
+`ActiveEvents::COLLISION_EVENTS` and `Ccd` continue to work on sensors. All 10 physics tests
+pass after both fixes.
+
+---
+
+
+
 ## Bevy 0.17 / bevy_rapier2d 0.32 Migration — February 19, 2026
+
+> **Note**: `pixels_per_meter` was initially set to 50.0 during this migration and later corrected to 1.0 (see Post-Migration Gameplay Fixes above).
 
 Upgraded the full dependency tree from Bevy 0.13 + bevy_rapier2d 0.18 to **Bevy 0.17** + **bevy_rapier2d 0.32**. All breaking API changes resolved; `cargo clippy -- -D warnings` passes with zero warnings.
 

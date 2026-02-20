@@ -1,14 +1,21 @@
 //! Player input and movement systems.
 //!
-//! Handles all input sources that move or orient the ship:
-//! - WASD keyboard thrust and rotation ([`player_control_system`])
-//! - Gamepad left-stick twin-stick movement ([`gamepad_movement_system`])
-//! - Gamepad connect / disconnect tracking ([`gamepad_connection_system`])
+//! ## Pipeline (runs in order every `Update` frame)
 //!
-//! Also contains [`player_oob_damping_system`] which enforces the soft
-//! out-of-bounds boundary.
+//! 1. [`player_intent_clear_system`] — resets `PlayerIntent` and `ExternalForce` to zero.
+//! 2. [`keyboard_to_intent_system`] — translates WASD/rotation keys into `PlayerIntent` fields.
+//! 3. [`gamepad_to_intent_system`] — translates gamepad left-stick + B-button into `PlayerIntent`.
+//! 4. [`apply_player_intent_system`] — converts `PlayerIntent` into `ExternalForce` / `Velocity`.
+//!
+//! The **input abstraction layer** (`PlayerIntent`) makes the movement logic fully
+//! testable: tests populate the resource directly and run only `apply_player_intent_system`.
+//!
+//! Also contains helper systems that are not part of the core thrust pipeline:
+//! - [`gamepad_connection_system`] — tracks which gamepad is preferred
+//! - [`aim_snap_system`] — snaps aim to ship forward after idle period
+//! - [`player_oob_damping_system`] — soft boundary enforcement
 
-use super::state::{AimDirection, AimIdleTimer, Player, PreferredGamepad};
+use super::state::{AimDirection, AimIdleTimer, Player, PlayerIntent, PreferredGamepad};
 use crate::constants::{
     AIM_IDLE_SNAP_SECS, GAMEPAD_BRAKE_DAMPING, GAMEPAD_HEADING_SNAP_THRESHOLD,
     GAMEPAD_LEFT_DEADZONE, OOB_DAMPING, OOB_RADIUS, OOB_RAMP_WIDTH, REVERSE_FORCE, ROTATION_SPEED,
@@ -18,54 +25,50 @@ use bevy::input::gamepad::{GamepadAxis, GamepadButton, GamepadConnection, Gamepa
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
-// ── Force reset ───────────────────────────────────────────────────────────────
+// ── Step 1: Clear ─────────────────────────────────────────────────────────────
 
-/// Clear `ExternalForce` to zero at the start of every frame.
+/// Clear `ExternalForce` and `PlayerIntent` to zero at the start of every frame.
 ///
-/// Must run before any input system accumulates forces.  If multiple input
-/// sources (keyboard + gamepad) are simultaneously active their contributions
-/// are safely added because this reset happens first.
-pub fn player_force_reset_system(mut q: Query<&mut ExternalForce, With<Player>>) {
+/// Must run before any system that writes to `PlayerIntent` or accumulates
+/// forces.  Running both resets here ensures a single ordered dependency.
+pub fn player_intent_clear_system(
+    mut q: Query<&mut ExternalForce, With<Player>>,
+    mut intent: ResMut<PlayerIntent>,
+) {
     if let Ok(mut force) = q.single_mut() {
         force.force = Vec2::ZERO;
         force.torque = 0.0;
     }
+    *intent = PlayerIntent::default();
 }
 
-// ── Keyboard control ──────────────────────────────────────────────────────────
+// ── Step 2a: Keyboard → Intent ────────────────────────────────────────────────
 
-/// Apply WASD keyboard thrust and A/D rotation to the player ship.
+/// Translate WASD / rotation keys into [`PlayerIntent`].
 ///
-/// - **W** — forward thrust along the ship's local +Y axis
-/// - **S** — reverse thrust (weaker than forward)
-/// - **A / D** — direct angular velocity override for snappy rotation;
-///   releasing both keys lets Rapier angular damping slow the spin naturally
-pub fn player_control_system(
-    mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
-    keys: Res<ButtonInput<KeyCode>>,
-) {
-    let Ok((transform, mut force, mut velocity)) = q.single_mut() else {
-        return;
-    };
-
-    let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
-
+/// - **W** → `thrust_forward = 1.0`
+/// - **S** → `thrust_reverse = 1.0`
+/// - **A** → `angvel = Some(+ROTATION_SPEED)` (CCW)
+/// - **D** → `angvel = Some(−ROTATION_SPEED)` (CW)
+///
+/// Additive: safe to run alongside gamepad intent system because each field is
+/// overwritten, not accumulated (both sources can't be active simultaneously in
+/// normal play).
+pub fn keyboard_to_intent_system(keys: Res<ButtonInput<KeyCode>>, mut intent: ResMut<PlayerIntent>) {
     if keys.pressed(KeyCode::KeyW) {
-        force.force += forward * THRUST_FORCE;
+        intent.thrust_forward = 1.0;
     }
     if keys.pressed(KeyCode::KeyS) {
-        force.force -= forward * REVERSE_FORCE;
+        intent.thrust_reverse = 1.0;
     }
-
     if keys.pressed(KeyCode::KeyA) {
-        velocity.angvel = ROTATION_SPEED;
+        intent.angvel = Some(ROTATION_SPEED);
     } else if keys.pressed(KeyCode::KeyD) {
-        velocity.angvel = -ROTATION_SPEED;
+        intent.angvel = Some(-ROTATION_SPEED);
     }
-    // If neither A nor D, angular damping handles slow-down
 }
 
-// ── Gamepad connection ─────────────────────────────────────────────────────────
+// ── Step 2b: Gamepad connection ────────────────────────────────────────────────
 
 /// Track gamepad connect / disconnect events and update [`PreferredGamepad`].
 ///
@@ -95,24 +98,25 @@ pub fn gamepad_connection_system(
     }
 }
 
-// ── Gamepad movement ───────────────────────────────────────────────────────────
+// ── Step 2c: Gamepad → Intent ─────────────────────────────────────────────────
 
-/// Twin-stick gamepad movement using the left stick and B button.
+/// Translate gamepad left-stick and B-button into [`PlayerIntent`].
 ///
-/// **Left stick behaviour**:
-/// 1. The ship rotates at `ROTATION_SPEED` rad/s toward the stick direction.
-/// 2. Once aligned within `GAMEPAD_HEADING_SNAP_THRESHOLD`, rotation stops.
-/// 3. Forward thrust is applied proportional to stick magnitude at all times.
+/// **Left stick**:
+/// 1. Sets `angvel` to steer toward the stick heading.
+/// 2. Sets `thrust_forward` proportional to stick magnitude.
 ///
-/// **B button (East)**: active brake — applies `GAMEPAD_BRAKE_DAMPING` to both
-/// linear and angular velocity every frame while held.
-pub fn gamepad_movement_system(
-    mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
+/// **B button (East)**: sets `intent.brake = true`.
+///
+/// Does nothing when no gamepad is connected ([`PreferredGamepad`] is `None`).
+pub fn gamepad_to_intent_system(
+    q_transform: Query<&Transform, With<Player>>,
     preferred: Res<PreferredGamepad>,
     gamepads: Query<&Gamepad>,
+    mut intent: ResMut<PlayerIntent>,
     mut idle: ResMut<AimIdleTimer>,
 ) {
-    let Ok((transform, mut force, mut velocity)) = q.single_mut() else {
+    let Ok(transform) = q_transform.single() else {
         return;
     };
 
@@ -124,10 +128,8 @@ pub fn gamepad_movement_system(
         return;
     };
 
-    // ── Brake (B / East button) ────────────────────────────────────────────────
     if gamepad.pressed(GamepadButton::East) {
-        velocity.linvel *= GAMEPAD_BRAKE_DAMPING;
-        velocity.angvel *= GAMEPAD_BRAKE_DAMPING;
+        intent.brake = true;
     }
 
     let lx = gamepad.get(GamepadAxis::LeftStickX).unwrap_or(0.0);
@@ -153,14 +155,53 @@ pub fn gamepad_movement_system(
         angle_diff += std::f32::consts::TAU;
     }
 
-    velocity.angvel = if angle_diff.abs() > GAMEPAD_HEADING_SNAP_THRESHOLD {
+    intent.angvel = Some(if angle_diff.abs() > GAMEPAD_HEADING_SNAP_THRESHOLD {
         ROTATION_SPEED * angle_diff.signum()
     } else {
         0.0
+    });
+
+    intent.thrust_forward = left_stick.length().min(1.0);
+}
+
+// ── Step 3: Apply intent → physics ───────────────────────────────────────────
+
+/// Convert [`PlayerIntent`] into `ExternalForce` and `Velocity` on the ship.
+///
+/// This is the **only** system that writes physics outputs; all input systems
+/// only write to `PlayerIntent`.  This separation is what makes thrust testable:
+/// tests populate `PlayerIntent` directly and call this system in isolation.
+///
+/// | Intent field        | Physics effect                                        |
+/// |---------------------|-------------------------------------------------------|
+/// | `thrust_forward`    | `force += local_forward * THRUST_FORCE * thrust_forward` |
+/// | `thrust_reverse`    | `force -= local_forward * REVERSE_FORCE * thrust_reverse` |
+/// | `angvel = Some(v)`  | `velocity.angvel = v`                                |
+/// | `angvel = None`     | angular velocity left to Rapier damping               |
+/// | `brake = true`      | `linvel *= GAMEPAD_BRAKE_DAMPING`; `angvel *= …`     |
+pub fn apply_player_intent_system(
+    mut q: Query<(&Transform, &mut ExternalForce, &mut Velocity), With<Player>>,
+    intent: Res<PlayerIntent>,
+) {
+    let Ok((transform, mut force, mut velocity)) = q.single_mut() else {
+        return;
     };
 
     let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
-    force.force += forward * THRUST_FORCE * left_stick.length();
+
+    if intent.thrust_forward > 0.0 {
+        force.force += forward * THRUST_FORCE * intent.thrust_forward;
+    }
+    if intent.thrust_reverse > 0.0 {
+        force.force -= forward * REVERSE_FORCE * intent.thrust_reverse;
+    }
+    if let Some(av) = intent.angvel {
+        velocity.angvel = av;
+    }
+    if intent.brake {
+        velocity.linvel *= GAMEPAD_BRAKE_DAMPING;
+        velocity.angvel *= GAMEPAD_BRAKE_DAMPING;
+    }
 }
 
 // ── Aim idle snap ─────────────────────────────────────────────────────────────
@@ -203,5 +244,246 @@ pub fn player_oob_damping_system(mut q: Query<(&Transform, &mut Velocity), With<
         let factor = 1.0 - exceed * (1.0 - OOB_DAMPING);
         velocity.linvel *= factor;
         velocity.angvel *= factor;
+    }
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+#[allow(deprecated)] // iter_entities deprecated in 0.17; accepted until query::<EntityRef> is stable in tests
+mod tests {
+    use super::*;
+    use crate::constants::{REVERSE_FORCE, ROTATION_SPEED, THRUST_FORCE};
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    /// Build a minimal Bevy `App` with just the resources and systems needed to
+    /// test the PlayerIntent → physics pipeline, without Rapier or rendering.
+    fn build_test_app() -> App {
+        let mut app = App::new();
+        // Minimal plugin set: time + transforms (no window, no renderer, no physics).
+        app.add_plugins(MinimalPlugins);
+        // Resources required by apply_player_intent_system.
+        app.insert_resource(PlayerIntent::default());
+        app
+    }
+
+    /// Spawn a player entity carrying the components queried by `apply_player_intent_system`.
+    fn spawn_test_player(app: &mut App) {
+        app.world_mut().spawn((
+            Player,
+            Transform::from_rotation(Quat::IDENTITY), // facing +Y
+            ExternalForce::default(),
+            Velocity::zero(),
+        ));
+    }
+
+    /// Run only the apply step with the given intent.
+    fn run_apply(app: &mut App, intent: PlayerIntent) {
+        app.insert_resource(intent);
+        app.add_systems(Update, apply_player_intent_system);
+        app.update();
+    }
+
+    // ── apply_player_intent_system ────────────────────────────────────────────
+
+    #[test]
+    fn thrust_forward_sets_nonzero_force() {
+        let mut app = build_test_app();
+        spawn_test_player(&mut app);
+
+        run_apply(
+            &mut app,
+            PlayerIntent {
+                thrust_forward: 1.0,
+                ..Default::default()
+            },
+        );
+
+        let force = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<ExternalForce>().unwrap().force;
+
+        assert!(
+            force.length() > 0.0,
+            "expected non-zero force when thrust_forward=1.0, got {force:?}"
+        );
+    }
+
+    #[test]
+    fn thrust_forward_magnitude_matches_constant() {
+        let mut app = build_test_app();
+        spawn_test_player(&mut app);
+
+        run_apply(
+            &mut app,
+            PlayerIntent {
+                thrust_forward: 1.0,
+                ..Default::default()
+            },
+        );
+
+        let force = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<ExternalForce>().unwrap().force;
+
+        // Ship faces +Y (identity rotation), so force should be (0, THRUST_FORCE).
+        assert!(
+            (force.length() - THRUST_FORCE).abs() < 1e-4,
+            "expected force magnitude {THRUST_FORCE}, got {}",
+            force.length()
+        );
+    }
+
+    #[test]
+    fn thrust_forward_is_along_local_y() {
+        let mut app = build_test_app();
+        // Rotate ship 90° CW (−FRAC_PI_2) so local +Y points toward world +X.
+        // In Bevy (right-hand Z): rotation_z(−π/2) maps (0,1,0) → (+1,0,0).
+        app.world_mut().spawn((
+            Player,
+            Transform::from_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_2)),
+            ExternalForce::default(),
+            Velocity::zero(),
+        ));
+
+        run_apply(
+            &mut app,
+            PlayerIntent {
+                thrust_forward: 1.0,
+                ..Default::default()
+            },
+        );
+
+        let force = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<ExternalForce>().unwrap().force;
+
+        // Local +Y in world space is world +X after 90° CCW rotation.
+        assert!(
+            force.x > 0.0 && force.y.abs() < 1e-4,
+            "expected force along world +X after 90° ship rotation, got {force:?}"
+        );
+    }
+
+    #[test]
+    fn no_thrust_leaves_force_zero() {
+        let mut app = build_test_app();
+        spawn_test_player(&mut app);
+
+        run_apply(&mut app, PlayerIntent::default());
+
+        let force = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<ExternalForce>().unwrap().force;
+
+        assert_eq!(
+            force,
+            Vec2::ZERO,
+            "expected zero force with no intent, got {force:?}"
+        );
+    }
+
+    #[test]
+    fn reverse_thrust_applies_negative_force() {
+        let mut app = build_test_app();
+        spawn_test_player(&mut app);
+
+        run_apply(
+            &mut app,
+            PlayerIntent {
+                thrust_reverse: 1.0,
+                ..Default::default()
+            },
+        );
+
+        let force = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<ExternalForce>().unwrap().force;
+
+        // Ship faces +Y; reverse force should be negative Y.
+        assert!(
+            force.y < 0.0,
+            "expected negative Y force from reverse thrust, got {force:?}"
+        );
+        assert!(
+            (force.length() - REVERSE_FORCE).abs() < 1e-4,
+            "expected reverse force magnitude {REVERSE_FORCE}, got {}",
+            force.length()
+        );
+    }
+
+    #[test]
+    fn angvel_override_sets_velocity() {
+        let mut app = build_test_app();
+        spawn_test_player(&mut app);
+
+        run_apply(
+            &mut app,
+            PlayerIntent {
+                angvel: Some(ROTATION_SPEED),
+                ..Default::default()
+            },
+        );
+
+        let angvel = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<Velocity>().unwrap().angvel;
+
+        assert!(
+            (angvel - ROTATION_SPEED).abs() < 1e-4,
+            "expected angvel {ROTATION_SPEED}, got {angvel}"
+        );
+    }
+
+    #[test]
+    fn no_angvel_intent_leaves_velocity_unchanged() {
+        let mut app = build_test_app();
+        // Start with non-zero angular velocity.
+        app.world_mut().spawn((
+            Player,
+            Transform::from_rotation(Quat::IDENTITY),
+            ExternalForce::default(),
+            Velocity {
+                linvel: Vec2::ZERO,
+                angvel: 2.5,
+            },
+        ));
+
+        run_apply(&mut app, PlayerIntent::default());
+
+        let angvel = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<Velocity>().unwrap().angvel;
+
+        assert!(
+            (angvel - 2.5).abs() < 1e-4,
+            "expected angvel unchanged (2.5), got {angvel}"
+        );
+    }
+
+    #[test]
+    fn partial_thrust_scales_force() {
+        let mut app = build_test_app();
+        spawn_test_player(&mut app);
+
+        run_apply(
+            &mut app,
+            PlayerIntent {
+                thrust_forward: 0.5,
+                ..Default::default()
+            },
+        );
+
+        let force = app.world().iter_entities()
+            .find(|e| e.contains::<Player>()).unwrap()
+            .get::<ExternalForce>().unwrap().force;
+
+        let expected = THRUST_FORCE * 0.5;
+        assert!(
+            (force.length() - expected).abs() < 1e-4,
+            "expected force magnitude {expected}, got {}",
+            force.length()
+        );
     }
 }

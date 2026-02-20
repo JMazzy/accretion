@@ -50,7 +50,11 @@ fn main() {
         ..Default::default()
     }))
     .insert_resource(ClearColor(Color::BLACK))
-    .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(50.0))
+    // pixels_per_meter(1.0) keeps world units identical to old physics behaviour
+    // (scale = 1.0 was the default in bevy_rapier2d 0.18).  Setting this to any
+    // larger value shrinks collider mass in physics-space quadratically and causes
+    // ExternalForce to produce runaway acceleration at the same numeric values.
+    .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
     .add_plugins(simulation::SimulationPlugin)
     .insert_resource(player::PlayerFireCooldown::default())
     .add_systems(

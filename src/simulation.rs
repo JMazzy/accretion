@@ -13,11 +13,11 @@ use crate::constants::{
     VELOCITY_THRESHOLD_LOCKING, ZOOM_SPEED,
 };
 use crate::player::{
-    aim_snap_system, camera_follow_system, despawn_old_projectiles_system,
-    gamepad_connection_system, gamepad_movement_system, player_collision_damage_system,
-    player_control_system, player_force_reset_system, player_gizmo_system,
-    player_oob_damping_system, projectile_asteroid_hit_system, projectile_fire_system,
-    AimDirection, AimIdleTimer, PreferredGamepad,
+    aim_snap_system, apply_player_intent_system, camera_follow_system,
+    despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
+    keyboard_to_intent_system, player_collision_damage_system, player_intent_clear_system,
+    player_gizmo_system, player_oob_damping_system, projectile_asteroid_hit_system,
+    projectile_fire_system, AimDirection, AimIdleTimer, PlayerIntent, PreferredGamepad,
 };
 use crate::rendering::{gizmo_rendering_system, stats_display_system};
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
@@ -49,31 +49,40 @@ impl Plugin for SimulationPlugin {
             .insert_resource(AimDirection::default())
             .insert_resource(AimIdleTimer::default())
             .insert_resource(PreferredGamepad::default())
+            .insert_resource(PlayerIntent::default())
             .insert_resource(SpatialGrid::default())
             .add_systems(
                 Update,
                 (
-                    stats_counting_system, // FIRST: Count asteroids for tracking
-                    culling_system,        // Remove far asteroids before physics
-                    neighbor_counting_system,
-                    particle_locking_system,
-                    gamepad_connection_system, // Update PreferredGamepad on connect/disconnect
-                    // Force must be reset BEFORE any input system adds to it; chain enforces order.
-                    player_force_reset_system,
-                    player_control_system,          // WASD ship thrust/rotation
-                    gamepad_movement_system,        // Gamepad left stick movement + B reverse
-                    mouse_aim_system,               // Mouse cursor updates AimDirection
-                    projectile_fire_system,         // Space/click/right-stick fires projectiles
-                    aim_snap_system,                // Snap aim to forward after idle timeout
-                    despawn_old_projectiles_system, // Expire old projectiles
-                    user_input_system,              // Mouse wheel zoom
-                    camera_follow_system,           // Camera tracks player
-                    camera_zoom_system,             // Apply zoom scale to camera
-                    gizmo_rendering_system,         // Render asteroids + boundary
-                    player_gizmo_system,            // Render ship + aim indicator + projectiles
-                    stats_display_system,           // Render stats text
-                    player_oob_damping_system,      // Slow player outside cull radius
-                    player_collision_damage_system, // Player takes damage from asteroids
+                    // ── Group 1: physics bookkeeping + input pipeline ─────────
+                    (
+                        stats_counting_system,      // Count asteroids for stats
+                        culling_system,             // Remove far asteroids
+                        neighbor_counting_system,
+                        particle_locking_system,
+                        gamepad_connection_system,  // Track preferred gamepad
+                        player_intent_clear_system, // Reset ExternalForce + PlayerIntent
+                        keyboard_to_intent_system,  // WASD/rotation keys → PlayerIntent
+                        gamepad_to_intent_system,   // Gamepad left-stick + B → PlayerIntent
+                        apply_player_intent_system, // PlayerIntent → ExternalForce / Velocity
+                        mouse_aim_system,           // Mouse cursor updates AimDirection
+                    )
+                        .chain(),
+                    // ── Group 2: game logic + rendering ──────────────────────
+                    (
+                        projectile_fire_system,         // Space/click/right-stick fires
+                        aim_snap_system,                // Snap aim after idle timeout
+                        despawn_old_projectiles_system, // Expire old projectiles
+                        user_input_system,              // Mouse wheel zoom
+                        camera_follow_system,           // Camera tracks player
+                        camera_zoom_system,             // Apply zoom scale
+                        gizmo_rendering_system,         // Render asteroids + boundary
+                        player_gizmo_system,            // Render ship + aim indicator
+                        stats_display_system,           // Render stats text
+                        player_oob_damping_system,      // Slow player outside boundary
+                        player_collision_damage_system, // Player takes damage from asteroids
+                    )
+                        .chain(),
                 )
                     .chain(),
             )

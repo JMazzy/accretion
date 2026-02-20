@@ -25,12 +25,14 @@ pub use combat::{
     projectile_fire_system,
 };
 pub use control::{
-    aim_snap_system, gamepad_connection_system, gamepad_movement_system, player_control_system,
-    player_force_reset_system, player_oob_damping_system,
+    aim_snap_system, apply_player_intent_system, gamepad_connection_system,
+    gamepad_to_intent_system, keyboard_to_intent_system, player_intent_clear_system,
+    player_oob_damping_system,
 };
 pub use rendering::{camera_follow_system, player_gizmo_system};
 pub use state::{
-    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PreferredGamepad,
+    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerIntent,
+    PreferredGamepad,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

@@ -111,6 +111,11 @@ pub fn projectile_fire_system(
             angvel: 0.0,
         },
         Collider::ball(PROJECTILE_COLLIDER_RADIUS),
+        // Sensor: detects collision events for game logic but generates no contact
+        // forces.  Without this, Rapier 0.22+ kinematic bodies push dynamic
+        // asteroids — transferring significant momentum like a physical projectile
+        // rather than the sci-fi "energy blaster" behaviour intended.
+        Sensor,
         Ccd { enabled: true },
         CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_3,

@@ -108,3 +108,26 @@ impl PlayerHealth {
         self.inv_timer > 0.0
     }
 }
+
+// ── Input Abstraction ──────────────────────────────────────────────────────────
+
+/// Aggregated player intent for the current frame, derived from all input sources.
+///
+/// Input systems (keyboard, gamepad) write to this resource each frame after it
+/// is cleared.  [`super::control::apply_player_intent_system`] reads it and
+/// applies the corresponding physics forces.  Tests can populate this directly
+/// to drive ship behaviour without a real input device.
+#[derive(Resource, Default, Debug, Clone, Copy, PartialEq)]
+pub struct PlayerIntent {
+    /// Forward thrust multiplier.  `1.0` applies full `THRUST_FORCE`; `0.0` means no thrust.
+    pub thrust_forward: f32,
+    /// Reverse thrust multiplier.  `1.0` applies full `REVERSE_FORCE`; `0.0` means no reverse.
+    pub thrust_reverse: f32,
+    /// Direct angular-velocity override in **rad/s**.
+    ///
+    /// `Some(value)` overwrites `Velocity::angvel`; `None` leaves the current
+    /// angular velocity untouched (Rapier damping will slow it naturally).
+    pub angvel: Option<f32>,
+    /// Active-brake flag: applies `GAMEPAD_BRAKE_DAMPING` to linvel/angvel while true.
+    pub brake: bool,
+}

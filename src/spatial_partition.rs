@@ -94,7 +94,7 @@ mod tests {
     use super::*;
 
     fn e(raw: u32) -> Entity {
-        Entity::from_raw(raw)
+        Entity::from_raw_u32(raw).expect("test entity index must not be u32::MAX")
     }
 
     // ── world_to_cell ─────────────────────────────────────────────────────────

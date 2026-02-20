@@ -121,13 +121,15 @@ pub const ZOOM_SPEED: f32 = 0.1;
 
 /// Forward thrust force (N) applied while W is held.
 ///
-/// Increase for snappier acceleration; decrease for a floatier feel.
-/// Tested range: 60.0–300.0.
-pub const THRUST_FORCE: f32 = 60.0;
+/// Player ball collider (radius=8, density=1) has mass ≈ 201 kg.
+/// At 25 000 N: acceleration ≈ 125 px/s²; terminal velocity ≈ 1 250 px/s
+/// (limited by linear_damping=0.1).  Old value of 60 N gave 0.3 px/s² —
+/// imperceptibly slow and indistinguishable from "not working".
+pub const THRUST_FORCE: f32 = 25_000.0;
 
 /// Reverse thrust force (N) applied while S / gamepad-B is held.
 /// Intentionally weaker than `THRUST_FORCE`.
-pub const REVERSE_FORCE: f32 = 30.0;
+pub const REVERSE_FORCE: f32 = 12_500.0;
 
 /// Fixed angular velocity (rad/s) applied while A / D are held.
 pub const ROTATION_SPEED: f32 = 3.0;
@@ -137,7 +139,7 @@ pub const ROTATION_SPEED: f32 = 3.0;
 pub const PLAYER_LINEAR_DAMPING: f32 = 0.1;
 
 /// Angular damping applied to the player ship.
-pub const PLAYER_ANGULAR_DAMPING: f32 = 0.5;
+pub const PLAYER_ANGULAR_DAMPING: f32 = 10.0;
 
 /// Radius (u) of the player ship's ball collider.
 pub const PLAYER_COLLIDER_RADIUS: f32 = 8.0;
