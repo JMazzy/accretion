@@ -14,7 +14,7 @@
 | **Mouse wheel**             | Zoom in / out                                                                  |
 
 - **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
-- An **orange aim indicator** (line + dot) extends from the ship in the current fire direction.
+- An **orange aim indicator** (line + dot) extends from the ship in the current fire direction. It is shown by default and can be hidden via the debug panel (*Aim Indicator* toggle).
 - **Aim idle snap**: if no mouse movement, gamepad left stick, or right stick input is received for 1 second, the aim direction automatically resets to the ship's forward (+Y).
 
 ### Gamepad (Twin-Stick)
@@ -56,6 +56,19 @@
 
 ## Visual Feedback
 
+### Score HUD
+
+A permanent top-left HUD (amber text, always visible) shows the player's running score:
+
+```
+Score: 42  (30 hits, 12 destroyed)
+```
+
+| Event                  | Points |
+| ---------------------- | ------ |
+| Projectile hits asteroid| +1    |
+| Asteroid fully destroyed (size 0–1) | +5 |
+
 ### On-Screen Statistics Display
 
 Located in top-left corner (follows camera pan):
@@ -78,10 +91,11 @@ Live: XX | Culled: YY | Merged: ZZ
 
 ### Asteroid Rendering
 
-- **Small asteroids**: White wireframe outline (triangle or polygon vertices)
-- **Rotation**: Vertices rotate with physics-based angular velocity
-- **Color distinction**: All asteroids rendered identically as wireframes
-- **Size scaling**: Composite asteroids appear larger due to wider vertex spread
+- **Filled polygon mesh** (`Mesh2d`): every asteroid is drawn as a GPU-retained filled polygon with a rocky grey-brown tint derived from its entity index — no per-frame CPU rebuild.
+- **Wireframe overlay** (optional, debug panel): translucent white edges can be drawn on top of the fill via the *Wireframe Outlines* toggle.
+- **Wireframe-only mode** (debug panel): hides all fills; asteroids (and ship + projectiles) render as white gizmo wireframes only.
+- **Rotation**: the `Mesh2d` is attached to the Rapier-managed `Transform`, so mesh rotation is automatic.
+- Composite asteroids appear larger due to wider vertex spread.
 
 ## Simulation Statistics
 
@@ -166,7 +180,7 @@ The player ship has a health pool that depletes when struck by asteroids at high
 
 **Damage formula**: `damage = (relative_speed − DAMAGE_SPEED_THRESHOLD) × 0.5` — slow grazes deal no damage; high-speed impacts deal proportionally more.
 
-**Visual feedback**: The ship's wireframe colour shifts from cyan (full health) to red as HP decreases. A pixel-wide health bar floats above the ship showing the current HP fraction (green → red as health drops).
+**Visual feedback**: The ship body is rendered as a dark-teal **filled polygon mesh** (`Mesh2d`) that rotates with physics transforms. The optional wireframe outline (toggled via the debug panel) shifts colour from cyan (full health) to red as HP decreases. A pixel-wide health bar floats above the ship showing the current HP fraction (green → red as health drops). The outline and health bar are always centred on the ship regardless of camera state.
 
 **Ship destruction**: When HP reaches 0 the player entity is despawned. There is currently no respawn mechanic.
 
@@ -203,6 +217,22 @@ The player ship is not culled like asteroids, but experiences increasing velocit
 - **OOB radius**: `OOB_RADIUS` from origin (matches asteroid cull boundary)
 - **Damping factor**: `OOB_DAMPING` (velocity scaled per frame), ramped smoothly over `OOB_RAMP_WIDTH` from 0% at the boundary to full effect beyond
 - **Effect**: Gentle drag that discourages escaping the simulation; the player can still re-enter under thrust
+
+## Debug Overlay Panel
+
+Press **ESC** to open or close the debug overlay panel (top-right corner).
+
+| Toggle                | Default | Description                                                      |
+| --------------------- | ------- | ---------------------------------------------------------------- |
+| Culling Boundary      | OFF     | Yellow circle showing the `CULL_DISTANCE` boundary              |
+| Wireframe Outlines    | OFF     | Translucent polygon edges over asteroid fills                    |
+| Force Vectors         | OFF     | Red force direction arrows per asteroid (hidden at high count)   |
+| Velocity Arrows       | OFF     | Cyan velocity arrows per asteroid                                |
+| Wireframe-Only Mode   | OFF     | Hide all `Mesh2d` fills; render everything as gizmo wireframes  |
+| Aim Indicator         | OFF     | Orange line + dot showing current fire direction                 |
+| Ship Outline          | OFF     | HP-tinted polygon edges + nose indicator over the ship fill     |
+| Projectile Outline    | OFF     | Yellow gizmo circles over projectile disc fills                  |
+| Stats Overlay         | OFF     | Live/Culled/Merged/Split/Destroyed simulation counters           |
 
 ## UI/UX Notes
 

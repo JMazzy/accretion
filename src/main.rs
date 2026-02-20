@@ -4,6 +4,7 @@ use bevy_rapier2d::prelude::*;
 use std::env;
 
 mod asteroid;
+mod asteroid_rendering;
 mod config;
 mod constants;
 mod error;
@@ -64,9 +65,13 @@ fn main() {
             // Load config first so every other startup system sees the final values.
             config::load_physics_config,
             graphics::setup_camera.after(config::load_physics_config),
+            rendering::setup_hud_score
+                .after(graphics::setup_camera)
+                .after(config::load_physics_config),
             rendering::setup_stats_text
                 .after(graphics::setup_camera)
                 .after(config::load_physics_config),
+            rendering::setup_debug_panel.after(config::load_physics_config),
             setup_physics_config,
         ),
     );

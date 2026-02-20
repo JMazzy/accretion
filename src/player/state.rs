@@ -91,6 +91,26 @@ pub struct AimIdleTimer {
     pub last_cursor: Option<Vec2>,
 }
 
+/// Tracks the player's gameplay score.
+///
+/// - `hits`: Each projectile–asteroid contact counts as one hit.
+/// - `destroyed`: Asteroids that were fully eliminated (size 0–1, no fragments).
+///
+/// Total score = `hits × 1 + destroyed × 5`.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct PlayerScore {
+    pub hits: u32,
+    pub destroyed: u32,
+}
+
+impl PlayerScore {
+    /// Compute the total score: 1 pt per hit + 5 pts per destroyed asteroid.
+    #[inline]
+    pub fn total(self) -> u32 {
+        self.hits + self.destroyed * 5
+    }
+}
+
 // ── Invincibility helper ───────────────────────────────────────────────────────
 
 // Helper methods are public API; suppress dead_code until they're wired into systems.

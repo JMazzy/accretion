@@ -1,5 +1,56 @@
 # GRAV-SIM Changelog
 
+## Score HUD, Stats Overlay & All-Off Defaults — February 20, 2026
+
+### Score HUD replaces permanent stats text; stats become a toggleable overlay
+
+**Score system** (`src/player/state.rs`, `src/player/combat.rs`):
+- New `PlayerScore` resource: `hits: u32` (every projectile contact) and `destroyed: u32` (size-0/1 asteroids fully eliminated).
+- `total()` helper: `hits × 1 + destroyed × 5`.
+- `projectile_asteroid_hit_system` now accepts `ResMut<PlayerScore>` and increments both counters at the appropriate points.
+
+**HUD** (`src/rendering.rs`):
+- `setup_hud_score` (Startup) — spawns a permanent amber score line at the top-left: `Score: X  (Y hits, Z destroyed)`.
+- `hud_score_display_system` (Update) — refreshes the score text whenever `PlayerScore` changes.
+
+**Stats overlay** (`src/rendering.rs`):
+- `setup_stats_text` now spawns the Live/Culled/Merged/Split/Destroyed text hidden with `Visibility::Hidden`.
+- New `show_stats` field in `OverlayState` (default OFF) controls visibility.
+- New `sync_stats_overlay_visibility_system` propagates the flag to the node's `Visibility`.
+- New `StatsOverlay` debug-panel toggle added to the ESC panel.
+
+**All overlays default OFF** — changed `show_boundary` (was ON) and `show_aim_indicator` (was ON) to OFF. `OverlayState` now derives `Default` automatically since all fields are `false`.
+
+**Build status:** `cargo clippy -- -D warnings` and `cargo build --release` pass with zero warnings.
+
+---
+
+
+
+### Player ship and projectiles now use retained `Mesh2d` GPU assets
+
+The player ship and all fired projectiles are rendered the same way as asteroids: as GPU-retained `Mesh2d` filled shapes uploaded at spawn time, replacing the previous always-on gizmo outlines.
+
+**New systems (all in `src/player/rendering.rs`):**
+
+- `attach_player_ship_mesh_system` — runs on `Added<Player>`, uploads a dark-teal filled dart polygon as `Mesh2d`.
+- `attach_projectile_mesh_system` — runs on `Added<Projectile>`, uploads a bright-yellow 12-sided disc as `Mesh2d`.
+- `sync_player_and_projectile_mesh_visibility_system` — propagates the `wireframe_only` flag to live ship and projectile mesh visibility on change.
+
+**Three new [`OverlayState`] / debug-panel toggles** (all in `src/rendering.rs`):
+
+| Toggle               | Default | Effect                                                             |
+| -------------------- | ------- | ------------------------------------------------------------------ |
+| `show_aim_indicator` | ON      | Orange line + dot in current fire direction (was always-on before) |
+| `show_ship_outline`  | OFF     | HP-tinted polygon edges + nose line over the ship fill             |
+| `show_projectile_outline` | OFF | Yellow gizmo circles over projectile disc fills                  |
+
+`wireframe_only` mode now also hides ship and projectile fills, consistent with asteroids.
+
+**Build status:** `cargo check`, `cargo clippy -- -D warnings`, `cargo build --release` all pass with zero warnings.
+
+---
+
 ## Gravitational Binding Energy Merging — February 19, 2026
 
 ### Replaced velocity-threshold merge criterion with gravitational binding energy

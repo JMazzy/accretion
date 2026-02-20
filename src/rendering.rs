@@ -1,35 +1,171 @@
-//! Rendering systems: asteroid wireframes, force vectors, and the stats overlay.
+//! Rendering systems: stats overlay, debug control panel, and gizmo overlays.
 //!
-//! This module owns all Bevy-gizmo and UI-text rendering that was previously
-//! scattered across `simulation.rs`.  Player-specific rendering (ship outline,
-//! health bar, aim indicator, projectile circles) remains in
-//! `player::rendering`.
+//! ## Layer Model
+//!
+//! | Layer              | Technology   | Default | Controlled by           |
+//! |--------------------|--------------|---------|-------------------------|
+//! | Asteroid fills     | `Mesh2d`     | ON      | `wireframe_only` flag   |
+//! | Wireframe outlines | Gizmos       | OFF     | `show_wireframes`       |
+//! | Force vectors      | Gizmos       | OFF     | `show_force_vectors`    |
+//! | Velocity arrows    | Gizmos       | OFF     | `show_velocity_arrows`  |
+//! | Culling boundary   | Gizmos       | ON      | `show_boundary`         |
+//! | Player ship fill   | `Mesh2d`     | ON      | `wireframe_only` flag   |
+//! | Ship outline       | Gizmos       | OFF     | `show_ship_outline`     |
+//! | Aim indicator      | Gizmos       | OFF     | `show_aim_indicator`    |
+//! | Projectile fills   | `Mesh2d`     | ON      | `wireframe_only` flag   |
+//! | Projectile outline | Gizmos       | OFF     | `show_projectile_outline`|
+//! | Stats overlay      | Bevy UI      | OFF     | `show_stats`            |
+//! | Score HUD          | Bevy UI      | always  | —                       |
+//! | Debug panel        | Bevy UI      | hidden  | ESC key                 |
 //!
 //! ## System Responsibilities
 //!
-//! | System | Schedule | Responsibility |
-//! |--------|----------|----------------|
-//! | `setup_stats_text` | Startup | Spawn the fixed-position UI text node |
-//! | `gizmo_rendering_system` | Update | Draw asteroid wireframes + force vectors |
-//! | `stats_display_system` | Update | Update the live/culled/merged text each frame |
+//! | System                        | Schedule | Purpose                             |
+//! |-------------------------------|----------|-------------------------------------|
+//! | `setup_stats_text`            | Startup  | Spawn fixed stats text node         |
+//! | `setup_debug_panel`           | Startup  | Spawn collapsible debug panel       |
+//! | `setup_hud_score`             | Startup  | Spawn permanent score HUD node      |
+//! | `setup_stats_overlay`         | Startup  | Spawn toggleable stats overlay node |
+//! | `stats_display_system`        | Update   | Refresh live/culled/merged text     |
+//! | `hud_score_display_system`    | Update   | Refresh score HUD text              |
+//! | `sync_stats_overlay_visibility_system` | Update | Show/hide stats overlay    |
+//! | `toggle_debug_panel_system`   | Update   | Open/close panel on ESC             |
+//! | `debug_panel_button_system`   | Update   | Process toggle button clicks        |
+//! | `gizmo_rendering_system`      | Update   | Draw gizmo overlays per OverlayState|
 
 use crate::asteroid::{Asteroid, Vertices};
 use crate::config::PhysicsConfig;
+use crate::player::PlayerScore;
 use crate::simulation::SimulationStats;
+use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::ExternalForce;
+use bevy_rapier2d::prelude::{ExternalForce, Velocity};
 
-// ── Stats overlay ─────────────────────────────────────────────────────────────
+// ── Overlay state resource ────────────────────────────────────────────────────
 
-/// Marker component for the root node of the on-screen statistics display.
+/// Controls which debug overlay layers are rendered at runtime.
+///
+/// Mutated by the debug panel UI; read by all gizmo rendering systems.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct OverlayState {
+    /// Draw translucent polygon outlines over the `Mesh2d` asteroid fills.
+    pub show_wireframes: bool,
+    /// Draw red force-vector lines per asteroid (capped at `force_vector_hide_threshold`).
+    pub show_force_vectors: bool,
+    /// Draw the yellow culling-boundary circle at the world origin.
+    pub show_boundary: bool,
+    /// Draw cyan velocity arrows on each asteroid.
+    pub show_velocity_arrows: bool,
+    /// Hide `Mesh2d` fills and render asteroids as white gizmo wireframes only.
+    pub wireframe_only: bool,
+    /// Whether the debug panel is currently visible.
+    pub menu_open: bool,
+    /// Draw a gizmo wireframe outline over the `Mesh2d` player ship.
+    pub show_ship_outline: bool,
+    /// Draw the orange aim-direction indicator from the player ship.
+    pub show_aim_indicator: bool,
+    /// Draw gizmo circle outlines over the `Mesh2d` projectile fills.
+    pub show_projectile_outline: bool,
+    /// Show the simulation statistics overlay (Live/Culled/Merged/Split/Destroyed).
+    pub show_stats: bool,
+}
+
+// ── Component markers ─────────────────────────────────────────────────────────
+
+/// Marker for the stats text root node.
 #[derive(Component)]
 pub struct StatsTextDisplay;
 
-/// Spawn the UI stats text node at startup.
-///
-/// Uses a `Node` + `Text` hierarchy so the text is fixed to the
-/// screen corner and unaffected by camera zoom or translation.
-pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+/// Marker for the permanent score HUD node.
+#[derive(Component)]
+pub struct HudScoreDisplay;
+
+/// Marker for the debug overlay panel root node.
+#[derive(Component)]
+pub struct DebugPanel;
+
+/// Tags a toggle button in the debug panel with the overlay field it controls.
+#[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OverlayToggle {
+    Wireframes,
+    ForceVectors,
+    Boundary,
+    VelocityArrows,
+    WireframeOnly,
+    ShipOutline,
+    AimIndicator,
+    ProjectileOutline,
+    StatsOverlay,
+}
+
+impl OverlayToggle {
+    /// Read the current value of this toggle from [`OverlayState`].
+    pub fn get(self, state: &OverlayState) -> bool {
+        match self {
+            Self::Wireframes => state.show_wireframes,
+            Self::ForceVectors => state.show_force_vectors,
+            Self::Boundary => state.show_boundary,
+            Self::VelocityArrows => state.show_velocity_arrows,
+            Self::WireframeOnly => state.wireframe_only,
+            Self::ShipOutline => state.show_ship_outline,
+            Self::AimIndicator => state.show_aim_indicator,
+            Self::ProjectileOutline => state.show_projectile_outline,
+            Self::StatsOverlay => state.show_stats,
+        }
+    }
+
+    /// Flip the corresponding field in [`OverlayState`].
+    pub fn toggle(self, state: &mut OverlayState) {
+        match self {
+            Self::Wireframes => state.show_wireframes = !state.show_wireframes,
+            Self::ForceVectors => state.show_force_vectors = !state.show_force_vectors,
+            Self::Boundary => state.show_boundary = !state.show_boundary,
+            Self::VelocityArrows => state.show_velocity_arrows = !state.show_velocity_arrows,
+            Self::WireframeOnly => state.wireframe_only = !state.wireframe_only,
+            Self::ShipOutline => state.show_ship_outline = !state.show_ship_outline,
+            Self::AimIndicator => state.show_aim_indicator = !state.show_aim_indicator,
+            Self::ProjectileOutline => {
+                state.show_projectile_outline = !state.show_projectile_outline;
+            }
+            Self::StatsOverlay => state.show_stats = !state.show_stats,
+        }
+    }
+
+    /// Human-readable label displayed next to the toggle button.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Wireframes => "Wireframe Outlines",
+            Self::ForceVectors => "Force Vectors",
+            Self::Boundary => "Culling Boundary",
+            Self::VelocityArrows => "Velocity Arrows",
+            Self::WireframeOnly => "Wireframe-Only Mode",
+            Self::ShipOutline => "Ship Outline",
+            Self::AimIndicator => "Aim Indicator",
+            Self::ProjectileOutline => "Projectile Outline",
+            Self::StatsOverlay => "Stats Overlay",
+        }
+    }
+}
+
+// ── Colour helpers ────────────────────────────────────────────────────────────
+
+fn on_bg() -> Color {
+    Color::srgb(0.08, 0.44, 0.12)
+}
+fn off_bg() -> Color {
+    Color::srgb(0.35, 0.07, 0.07)
+}
+fn on_text() -> Color {
+    Color::srgb(0.75, 1.0, 0.80)
+}
+fn off_text() -> Color {
+    Color::srgb(0.65, 0.65, 0.65)
+}
+
+// ── Startup: score HUD ────────────────────────────────────────────────────────
+
+/// Spawn the permanent top-left score HUD (always visible).
+pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>) {
     commands
         .spawn((
             Node {
@@ -38,11 +174,38 @@ pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
                 top: Val::Px(10.0),
                 ..default()
             },
-            StatsTextDisplay,
+            HudScoreDisplay,
         ))
         .with_children(|parent| {
             parent.spawn((
-                Text::new("Live: 0 | Culled: 0 | Merged: 0"),
+                Text::new("Score: 0"),
+                TextFont {
+                    font_size: config.stats_font_size,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.95, 0.88, 0.45)),
+            ));
+        });
+}
+
+// ── Startup: stats overlay text ───────────────────────────────────────────────
+
+/// Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
+pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                top: Val::Px(10.0 + config.stats_font_size + 6.0),
+                ..default()
+            },
+            StatsTextDisplay,
+            Visibility::Hidden,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Live: 0 | Culled: 0 | Merged: 0 | Split: 0 | Destroyed: 0"),
                 TextFont {
                     font_size: config.stats_font_size,
                     ..default()
@@ -52,7 +215,183 @@ pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
         });
 }
 
-/// Update the stats text content each frame.
+// ── Startup: debug panel ──────────────────────────────────────────────────────
+
+/// Spawn the debug overlay panel (hidden until the user presses ESC).
+///
+/// The panel appears in the top-right corner and provides per-layer toggle
+/// buttons for all gizmo overlays plus a wireframe-only fallback mode.
+pub fn setup_debug_panel(mut commands: Commands) {
+    // Each entry: (toggle variant, initial "active" state) — must match OverlayState::default().
+    let defaults: &[(OverlayToggle, bool)] = &[
+        (OverlayToggle::Boundary, false),
+        (OverlayToggle::Wireframes, false),
+        (OverlayToggle::ForceVectors, false),
+        (OverlayToggle::VelocityArrows, false),
+        (OverlayToggle::WireframeOnly, false),
+        (OverlayToggle::AimIndicator, false),
+        (OverlayToggle::ShipOutline, false),
+        (OverlayToggle::ProjectileOutline, false),
+        (OverlayToggle::StatsOverlay, false),
+    ];
+
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                right: Val::Px(12.0),
+                top: Val::Px(10.0),
+                width: Val::Px(235.0),
+                flex_direction: FlexDirection::Column,
+                padding: UiRect::all(Val::Px(10.0)),
+                row_gap: Val::Px(6.0),
+                border: UiRect::all(Val::Px(1.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.05, 0.05, 0.08, 0.93)),
+            BorderColor::all(Color::srgb(0.32, 0.32, 0.44)),
+            DebugPanel,
+            Visibility::Hidden,
+        ))
+        .with_children(|panel| {
+            panel.spawn((
+                Text::new("Debug Overlays  (ESC to close)"),
+                TextFont {
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.95, 0.88, 0.45)),
+            ));
+
+            panel.spawn((
+                Text::new("──────────────────────────────"),
+                TextFont {
+                    font_size: 9.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.28, 0.28, 0.38)),
+            ));
+
+            for &(toggle, initial) in defaults {
+                spawn_toggle_row(panel, toggle, initial);
+            }
+
+            panel.spawn((
+                Text::new("──────────────────────────────"),
+                TextFont {
+                    font_size: 9.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.28, 0.28, 0.38)),
+            ));
+
+            panel.spawn((
+                Text::new("Tip: press ESC to close"),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.42, 0.42, 0.52)),
+            ));
+        });
+}
+
+/// Spawn one toggle row: `[ON | OFF]  Label text`.
+fn spawn_toggle_row(parent: &mut ChildSpawnerCommands<'_>, toggle: OverlayToggle, initial: bool) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            column_gap: Val::Px(7.0),
+            align_items: AlignItems::Center,
+            ..default()
+        })
+        .with_children(|row| {
+            row.spawn((
+                Button,
+                Node {
+                    width: Val::Px(40.0),
+                    height: Val::Px(19.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(1.0)),
+                    ..default()
+                },
+                BackgroundColor(if initial { on_bg() } else { off_bg() }),
+                BorderColor::all(Color::srgb(0.5, 0.5, 0.5)),
+                toggle,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new(if initial { "ON" } else { "OFF" }),
+                    TextFont {
+                        font_size: 10.0,
+                        ..default()
+                    },
+                    TextColor(if initial { on_text() } else { off_text() }),
+                ));
+            });
+
+            row.spawn((
+                Text::new(toggle.label()),
+                TextFont {
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.85, 0.85, 0.88)),
+            ));
+        });
+}
+
+// ── Update: score HUD ─────────────────────────────────────────────────
+
+/// Refresh the permanent score HUD each frame.
+pub fn hud_score_display_system(
+    score: Res<PlayerScore>,
+    parent_query: Query<&Children, With<HudScoreDisplay>>,
+    mut text_query: Query<&mut Text>,
+) {
+    if !score.is_changed() {
+        return;
+    }
+    for children in parent_query.iter() {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                *text = Text::new(format!(
+                    "Score: {}  ({} hits, {} destroyed)",
+                    score.total(),
+                    score.hits,
+                    score.destroyed
+                ));
+            }
+        }
+    }
+}
+
+// ── Update: stats overlay visibility ────────────────────────────────
+
+/// Show or hide the simulation stats overlay based on [`OverlayState::show_stats`].
+///
+/// Only re-runs when `OverlayState` changes (negligible per-frame cost).
+pub fn sync_stats_overlay_visibility_system(
+    overlay: Res<OverlayState>,
+    mut query: Query<&mut Visibility, With<StatsTextDisplay>>,
+) {
+    if !overlay.is_changed() {
+        return;
+    }
+    let vis = if overlay.show_stats {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    for mut v in query.iter_mut() {
+        *v = vis;
+    }
+}
+
+// ── Update: stats text ────────────────────────────────────────────────────────
+
+/// Refresh the stats text content each frame.
 pub fn stats_display_system(
     stats: Res<SimulationStats>,
     parent_query: Query<&Children, With<StatsTextDisplay>>,
@@ -62,55 +401,139 @@ pub fn stats_display_system(
         for child in children.iter() {
             if let Ok(mut text) = text_query.get_mut(child) {
                 *text = Text::new(format!(
-                    "Live: {} | Culled: {} | Merged: {}",
-                    stats.live_count, stats.culled_total, stats.merged_total
+                    "Live: {} | Culled: {} | Merged: {} | Split: {} | Destroyed: {}",
+                    stats.live_count,
+                    stats.culled_total,
+                    stats.merged_total,
+                    stats.split_total,
+                    stats.destroyed_total
                 ));
             }
         }
     }
 }
 
-// ── Asteroid wireframe rendering ──────────────────────────────────────────────
+// ── Update: debug panel open/close ────────────────────────────────────────────
 
-/// Draw asteroid polygon outlines and, at low counts, force-vector overlays.
-///
-/// Force-vector lines are skipped when `live_count ≥ FORCE_VECTOR_HIDE_THRESHOLD`
-/// to reduce CPU gizmo overhead at high asteroid densities.
-pub fn gizmo_rendering_system(
-    mut gizmos: Gizmos,
-    query: Query<(&Transform, &Vertices, &ExternalForce), With<Asteroid>>,
-    stats: Res<SimulationStats>,
-    config: Res<PhysicsConfig>,
+/// Toggle the debug panel open or closed on ESC key press.
+pub fn toggle_debug_panel_system(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut overlay: ResMut<OverlayState>,
+    mut panel_query: Query<&mut Visibility, With<DebugPanel>>,
 ) {
-    let draw_force_vectors = stats.live_count < config.force_vector_hide_threshold;
+    if keys.just_pressed(KeyCode::Escape) {
+        overlay.menu_open = !overlay.menu_open;
+        let vis = if overlay.menu_open {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        for mut v in panel_query.iter_mut() {
+            *v = vis;
+        }
+    }
+}
 
-    for (transform, vertices, force) in query.iter() {
-        if vertices.0.len() < 2 {
+// ── Update: toggle button interaction ────────────────────────────────────────
+
+/// Handle clicks on debug panel toggle buttons.
+///
+/// On press: flip the overlay flag, update button background colour and text.
+#[allow(clippy::type_complexity)]
+pub fn debug_panel_button_system(
+    mut overlay: ResMut<OverlayState>,
+    mut btn_query: Query<
+        (
+            &Interaction,
+            &OverlayToggle,
+            &Children,
+            &mut BackgroundColor,
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut text_query: Query<(&mut Text, &mut TextColor)>,
+) {
+    for (interaction, &toggle, children, mut bg) in btn_query.iter_mut() {
+        if *interaction != Interaction::Pressed {
             continue;
         }
+        toggle.toggle(&mut overlay);
+        let active = toggle.get(&overlay);
 
-        let pos = transform.translation.truncate();
-        let rotation = transform.rotation;
-        let n = vertices.0.len();
+        *bg = BackgroundColor(if active { on_bg() } else { off_bg() });
 
-        // Draw polygon outline with rotation applied
-        for i in 0..n {
-            let v1 = vertices.0[i];
-            let v2 = vertices.0[(i + 1) % n];
-            let p1 = pos + rotation.mul_vec3(v1.extend(0.0)).truncate();
-            let p2 = pos + rotation.mul_vec3(v2.extend(0.0)).truncate();
-            gizmos.line_2d(p1, p2, Color::WHITE);
+        for child in children.iter() {
+            if let Ok((mut text, mut color)) = text_query.get_mut(child) {
+                *text = Text::new(if active { "ON" } else { "OFF" });
+                *color = TextColor(if active { on_text() } else { off_text() });
+            }
         }
+    }
+}
 
-        // Force-vector overlay (red line from centre, proportional to magnitude)
-        if draw_force_vectors {
-            let force_vec = force.force * config.force_vector_display_scale;
-            if force_vec.length() > config.force_vector_min_length {
-                gizmos.line_2d(pos, pos + force_vec, Color::srgb(1.0, 0.0, 0.0));
+// ── Update: gizmo overlay rendering ──────────────────────────────────────────
+
+/// Draw all enabled gizmo overlay layers based on [`OverlayState`].
+///
+/// In the default state only the culling boundary circle is drawn.
+/// Wireframes, force vectors, and velocity arrows are opt-in via the debug panel.
+pub fn gizmo_rendering_system(
+    mut gizmos: Gizmos,
+    query: Query<(&Transform, &Vertices, &ExternalForce, &Velocity), With<Asteroid>>,
+    stats: Res<SimulationStats>,
+    config: Res<PhysicsConfig>,
+    overlay: Res<OverlayState>,
+) {
+    // ── Wireframe outlines ────────────────────────────────────────────────────
+    if overlay.show_wireframes || overlay.wireframe_only {
+        let color = if overlay.wireframe_only {
+            Color::WHITE
+        } else {
+            Color::srgba(1.0, 1.0, 1.0, 0.4)
+        };
+        for (transform, vertices, _, _) in query.iter() {
+            if vertices.0.len() < 2 {
+                continue;
+            }
+            let pos = transform.translation.truncate();
+            let rot = transform.rotation;
+            let n = vertices.0.len();
+            for i in 0..n {
+                let v1 = vertices.0[i];
+                let v2 = vertices.0[(i + 1) % n];
+                let p1 = pos + rot.mul_vec3(v1.extend(0.0)).truncate();
+                let p2 = pos + rot.mul_vec3(v2.extend(0.0)).truncate();
+                gizmos.line_2d(p1, p2, color);
             }
         }
     }
 
-    // Culling boundary circle (yellow) rendered at world origin regardless of camera
-    gizmos.circle_2d(Vec2::ZERO, config.cull_distance, Color::srgb(1.0, 1.0, 0.0));
+    // ── Force vectors ─────────────────────────────────────────────────────────
+    if overlay.show_force_vectors && stats.live_count < config.force_vector_hide_threshold {
+        for (transform, _, force, _) in query.iter() {
+            let pos = transform.translation.truncate();
+            let force_vec = force.force * config.force_vector_display_scale;
+            if force_vec.length() > config.force_vector_min_length {
+                gizmos.line_2d(pos, pos + force_vec, Color::srgb(1.0, 0.15, 0.15));
+            }
+        }
+    }
+
+    // ── Velocity arrows ───────────────────────────────────────────────────────
+    if overlay.show_velocity_arrows {
+        for (transform, _, _, vel) in query.iter() {
+            let pos = transform.translation.truncate();
+            let v = vel.linvel;
+            if v.length_squared() > 0.5 {
+                let tip = pos + v * 0.15;
+                gizmos.line_2d(pos, tip, Color::srgb(0.2, 0.8, 1.0));
+                gizmos.circle_2d(tip, 1.5, Color::srgb(0.2, 0.8, 1.0));
+            }
+        }
+    }
+
+    // ── Culling boundary circle ───────────────────────────────────────────────
+    if overlay.show_boundary {
+        gizmos.circle_2d(Vec2::ZERO, config.cull_distance, Color::srgb(1.0, 1.0, 0.0));
+    }
 }

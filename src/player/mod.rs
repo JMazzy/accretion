@@ -29,10 +29,13 @@ pub use control::{
     gamepad_to_intent_system, keyboard_to_intent_system, player_intent_clear_system,
     player_oob_damping_system,
 };
-pub use rendering::{camera_follow_system, player_gizmo_system};
+pub use rendering::{
+    attach_player_ship_mesh_system, attach_projectile_mesh_system, camera_follow_system,
+    player_gizmo_system, sync_player_and_projectile_mesh_visibility_system,
+};
 pub use state::{
     AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerIntent,
-    PreferredGamepad,
+    PlayerScore, PreferredGamepad,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

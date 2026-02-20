@@ -26,8 +26,9 @@ src/
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
 ├── spatial_partition.rs  - Spatial grid for O(1) neighbor lookup (replaces O(N²) brute-force)
-├── rendering.rs          - Gizmo wireframe rendering and stats overlay systems
-├── player/               - Player ship entity, WASD controls, projectile firing, camera follow
+├── rendering.rs          - OverlayState resource, debug overlay panel UI, gizmo rendering (asteroids, boundary, force/velocity vectors)
+├── asteroid_rendering.rs - Mesh2d filled-polygon rendering for asteroids (attach-on-spawn, wireframe_only sync)
+├── player/               - Player ship entity, WASD controls, projectile firing, Mesh2d ship/projectile rendering, camera follow
 ├── graphics.rs           - Camera setup for 2D rendering
 ├── testing.rs            - Automated test scenarios for physics validation
 └── lib.rs                - Library exports
@@ -117,11 +118,16 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 6. **`player_control_system`** - Applies WASD thrust/rotation to player ship
 7. **`projectile_fire_system`** - Fires projectiles on spacebar (with cooldown)
 8. **`despawn_old_projectiles_system`** - Expires projectiles after lifetime/distance limit
-9. **`user_input_system`** - Left-click spawns asteroids; mouse wheel zooms (no more arrow-key pan)
+9. **`user_input_system`** - Left-click spawns asteroids; mouse wheel zooms
 10. **`camera_follow_system`** - Centres camera on player ship each frame
 11. **`camera_zoom_system`** - Applies zoom scale to camera transform
-12. **`gizmo_rendering_system`** - Renders asteroid wireframe outlines
-13. **`player_gizmo_system`** - Renders ship polygon and projectile circles
+12. **`attach_asteroid_mesh_system`** - Attaches `Mesh2d` filled polygon to newly spawned asteroids (`Added<Asteroid>`)
+13. **`sync_asteroid_mesh_visibility_system`** - Propagates `wireframe_only` toggle to asteroid mesh visibility
+14. **`attach_player_ship_mesh_system`** - Attaches `Mesh2d` filled polygon to the player ship on spawn (`Added<Player>`)
+15. **`attach_projectile_mesh_system`** - Attaches `Mesh2d` disc mesh to each new projectile (`Added<Projectile>`)
+16. **`sync_player_and_projectile_mesh_visibility_system`** - Propagates `wireframe_only` to ship and projectile mesh visibility
+17. **`gizmo_rendering_system`** - Renders asteroid gizmo overlays (wireframes, forces, velocity, boundary)
+18. **`player_gizmo_system`** - Renders optional ship outline, aim indicator, health bar, projectile outlines
 
 ### FixedUpdate Schedule (chained in order)
 
@@ -210,7 +216,7 @@ Key constant groups (see `src/constants.rs` for current values):
 - **2D only**: All physics operates on the XY plane; no Z-axis forces or rendering depth
 - **Hard world boundary**: `CULL_DISTANCE` radius is fixed in source; asteroids beyond this are permanently removed
 - **Spawn area**: Initial asteroids distributed within `SIM_WIDTH`×`SIM_HEIGHT` with a `PLAYER_BUFFER_RADIUS` exclusion zone at origin; values require recompilation to change
-- **Max simulation density**: Gizmo-based wireframe rendering starts showing overhead beyond ~200 simultaneous live asteroids (force-vector annotations auto-disabled at this threshold)
+- **Max simulation density**: Gizmo-based force-vector annotations auto-disabled at high count (> `force_vector_hide_threshold`); asteroid, ship, and projectile fills use retained `Mesh2d` GPU assets that scale efficiently with entity count
 
 #### Physics Simplifications
 - **Convex-only colliders**: All asteroid shapes are convex polygons; concavities from impacts are approximated by their convex hull, not modelled directly
@@ -239,7 +245,7 @@ Physics constants are defined in `src/constants.rs` as compile-time defaults and
 
 #### Visual & Rendering Enhancements
 - **Particle effects system**: Impact dust clouds on projectile hits; merge vortex animations; debris trail on asteroid destruction
-- **Level-of-Detail (LOD) rendering**: Large composites (>8 vertices) rendered as filled GPU mesh instead of CPU-drawn gizmo wireframe, removing the per-vertex CPU bottleneck at high count
+- **Level-of-Detail (LOD) rendering**: All asteroids, the player ship, and projectiles now use retained `Mesh2d` filled GPU assets — the per-vertex CPU bottleneck has been removed. ✅ Implemented.
 - **Velocity heat-map coloring**: Tint asteroid wireframes from blue (slow) to red (fast) to give instant visual feedback on kinetic energy distribution
 - **Crater / fracture overlays**: Draw cracks on asteroid surfaces proportional to accumulated damage (impacts that didn't yet destroy the asteroid)
 - **Dynamic camera FOV**: Camera zoom automatically increases when the player moves fast, giving a wider field of view at speed

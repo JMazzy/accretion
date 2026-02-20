@@ -23,8 +23,8 @@
 //! | ≥ 6           | hexagon    | 6            |
 
 use super::state::{
-    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PreferredGamepad,
-    Projectile,
+    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerScore,
+    PreferredGamepad, Projectile,
 };
 use crate::asteroid::{
     canonical_vertices_for_mass, compute_convex_hull_from_points, min_vertices_for_mass,
@@ -226,6 +226,8 @@ pub fn projectile_asteroid_hit_system(
     q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity, &Vertices), With<Asteroid>>,
     q_projectiles: Query<Entity, With<Projectile>>,
     q_proj_transforms: Query<&Transform, With<Projectile>>,
+    mut stats: ResMut<crate::simulation::SimulationStats>,
+    mut score: ResMut<PlayerScore>,
 ) {
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
     let mut processed_projectiles: std::collections::HashSet<Entity> = Default::default();
@@ -279,15 +281,21 @@ pub fn projectile_asteroid_hit_system(
             .map(|v| pos + rot.mul_vec3(v.extend(0.0)).truncate())
             .collect();
 
+        // Every projectile contact scores 1 point.
+        score.hits += 1;
+
         match n {
             // ── Destroy ───────────────────────────────────────────────────────
             0 | 1 => {
                 commands.entity(asteroid_entity).despawn();
+                stats.destroyed_total += 1;
+                score.destroyed += 1;
             }
 
             // ── Scatter into unit fragments ───────────────────────────────────
             2..=3 => {
                 commands.entity(asteroid_entity).despawn();
+                stats.split_total += 1;
                 let mut rng = rand::thread_rng();
                 for i in 0..n {
                     let angle = std::f32::consts::TAU * (i as f32 / n as f32);
@@ -305,6 +313,7 @@ pub fn projectile_asteroid_hit_system(
                 let (front_world, back_world) = split_convex_polygon(&world_verts, pos, split_axis);
 
                 commands.entity(asteroid_entity).despawn();
+                stats.split_total += 1;
 
                 let size_a = n / 2;
                 let size_b = n - size_a;

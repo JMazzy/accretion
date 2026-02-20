@@ -1,6 +1,7 @@
 //! Asteroid simulation engine library
 
 pub mod asteroid;
+pub mod asteroid_rendering;
 pub mod config;
 pub mod constants;
 pub mod error;

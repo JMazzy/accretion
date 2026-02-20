@@ -7,27 +7,38 @@
 use crate::asteroid::{
     compute_convex_hull_from_points, Asteroid, AsteroidSize, NeighborCount, Vertices,
 };
+use crate::asteroid_rendering::{
+    attach_asteroid_mesh_system, sync_asteroid_mesh_visibility_system,
+};
 use crate::config::PhysicsConfig;
 use crate::player::{
-    aim_snap_system, apply_player_intent_system, camera_follow_system,
-    despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
-    keyboard_to_intent_system, player_collision_damage_system, player_gizmo_system,
-    player_intent_clear_system, player_oob_damping_system, projectile_asteroid_hit_system,
-    projectile_fire_system, AimDirection, AimIdleTimer, PlayerIntent, PreferredGamepad,
+    aim_snap_system, apply_player_intent_system, attach_player_ship_mesh_system,
+    attach_projectile_mesh_system, camera_follow_system, despawn_old_projectiles_system,
+    gamepad_connection_system, gamepad_to_intent_system, keyboard_to_intent_system,
+    player_collision_damage_system, player_gizmo_system, player_intent_clear_system,
+    player_oob_damping_system, projectile_asteroid_hit_system, projectile_fire_system,
+    sync_player_and_projectile_mesh_visibility_system, AimDirection, AimIdleTimer, PlayerIntent,
+    PlayerScore, PreferredGamepad,
 };
-use crate::rendering::{gizmo_rendering_system, stats_display_system};
+use crate::rendering::{
+    debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
+    stats_display_system, sync_stats_overlay_visibility_system, toggle_debug_panel_system,
+    OverlayState,
+};
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use std::collections::HashMap;
 
-/// Tracks simulation statistics: active asteroids, culled count, merged count
+/// Tracks simulation statistics: active asteroids, culled count, merged count, split count, destroyed count
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct SimulationStats {
     pub live_count: u32,
     pub culled_total: u32,
     pub merged_total: u32,
+    pub split_total: u32,
+    pub destroyed_total: u32,
 }
 
 /// Camera state for zoom control (pan is replaced by player-follow camera)
@@ -41,11 +52,13 @@ pub struct SimulationPlugin;
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SimulationStats::default())
+            .insert_resource(OverlayState::default())
             .insert_resource(CameraState { zoom: 1.0 })
             .insert_resource(AimDirection::default())
             .insert_resource(AimIdleTimer::default())
             .insert_resource(PreferredGamepad::default())
             .insert_resource(PlayerIntent::default())
+            .insert_resource(PlayerScore::default())
             .insert_resource(SpatialGrid::default())
             .add_systems(
                 Update,
@@ -66,16 +79,25 @@ impl Plugin for SimulationPlugin {
                         .chain(),
                     // ── Group 2: game logic + rendering ──────────────────────
                     (
-                        projectile_fire_system,         // Space/click/right-stick fires
-                        aim_snap_system,                // Snap aim after idle timeout
-                        despawn_old_projectiles_system, // Expire old projectiles
-                        user_input_system,              // Mouse wheel zoom
-                        camera_follow_system,           // Camera tracks player
-                        camera_zoom_system,             // Apply zoom scale
-                        gizmo_rendering_system,         // Render asteroids + boundary
-                        player_gizmo_system,            // Render ship + aim indicator
-                        stats_display_system,           // Render stats text
-                        player_oob_damping_system,      // Slow player outside boundary
+                        projectile_fire_system,               // Space/click/right-stick fires
+                        aim_snap_system,                      // Snap aim after idle timeout
+                        despawn_old_projectiles_system,       // Expire old projectiles
+                        user_input_system,                    // Mouse wheel zoom
+                        camera_follow_system,                 // Camera tracks player
+                        camera_zoom_system,                   // Apply zoom scale
+                        attach_asteroid_mesh_system,          // Attach Mesh2d to new asteroids
+                        sync_asteroid_mesh_visibility_system, // Propagate wireframe_only toggle
+                        attach_player_ship_mesh_system,       // Attach Mesh2d to player ship
+                        attach_projectile_mesh_system,        // Attach Mesh2d to new projectiles
+                        sync_player_and_projectile_mesh_visibility_system, // Propagate wireframe_only
+                        gizmo_rendering_system,                            // Render gizmo overlays
+                        toggle_debug_panel_system, // ESC opens/closes debug panel
+                        debug_panel_button_system, // Click handling for toggles
+                        sync_stats_overlay_visibility_system, // Show/hide stats overlay
+                        player_gizmo_system,       // Render ship + aim indicator
+                        hud_score_display_system,  // Refresh score HUD
+                        stats_display_system,      // Render stats overlay text
+                        player_oob_damping_system, // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
                     )
                         .chain(),
