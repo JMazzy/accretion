@@ -25,7 +25,7 @@ src/
 ├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
-├── spatial_partition.rs  - Spatial grid for O(1) neighbor lookup (replaces O(N²) brute-force)
+├── spatial_partition.rs  - KD-tree spatial index for O(K + log N) neighbour lookup (replaces flat grid)
 ├── rendering.rs          - OverlayState resource, debug overlay panel UI, gizmo rendering (asteroids, boundary, force/velocity vectors)
 ├── asteroid_rendering.rs - Mesh2d filled-polygon rendering for asteroids (attach-on-spawn, wireframe_only sync)
 ├── player/               - Player ship entity, WASD controls, projectile firing, Mesh2d ship/projectile rendering, camera follow
@@ -64,7 +64,8 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 - **Minimum distance threshold**: `MIN_GRAVITY_DIST` — asteroids closer than this are excluded; Rapier handles contact physics below this range to prevent energy injection during close encounters
 - **Maximum gravity distance**: `MAX_GRAVITY_DIST` — matches `CULL_DISTANCE` so culled asteroids exert no phantom forces
 - **Force**: Applied between pairs as `F = GRAVITY_CONST / distance²`
-- **Optimization**: Uses `SpatialGrid` for O(N·K) grid-based candidate lookup instead of O(N²) brute-force iteration
+- **Tidal torque**: In addition to the centre-of-mass force, a differential (tidal) torque is applied to each body.  For each pair, the gravitational acceleration at each vertex of body i is compared to the acceleration at its COM; the resulting lever-arm cross-products are summed to give a net torque that spins asymmetric composites realistically.  Scaled by `TIDAL_TORQUE_SCALE` (set to 0 to disable).
+- **Optimization**: Uses `SpatialGrid` (KD-tree) for O(N·K + N log N) candidate lookup instead of O(N²) brute-force
 
 ### Collision Detection
 
@@ -102,17 +103,18 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 ### Culling & Boundary
 
-- **Culling distance**: `CULL_DISTANCE` (`src/constants.rs`) from origin
-- **Purpose**: Prevents asteroids from flying indefinitely; cleans up far objects
-- Artificial velocity damping ramps have been removed; the boundary is a hard cull.
+- **Soft boundary**: `SOFT_BOUNDARY_RADIUS` — asteroids beyond this distance feel a linear inward spring force (`soft_boundary_system`) that nudges them back toward the centre.  Force = `SOFT_BOUNDARY_STRENGTH × (dist − SOFT_BOUNDARY_RADIUS)` inward.
+- **Hard-cull distance**: `HARD_CULL_DISTANCE` — safety net; only asteroids that escape the soft spring entirely are removed outright.  In normal operation almost no asteroids reach this distance.
+- **Stats boundary**: `CULL_DISTANCE` — used as the reference for the live-count display; asteroids within this radius are shown as "live".
+- Artificial velocity damping ramps have been removed; energy loss occurs only through collisions and the outer soft spring.
 
 ## ECS Systems Execution Order
 
 ### Update Schedule
 
-1. **`stats_counting_system`** - Counts live/culled asteroids
-2. **`rebuild_spatial_grid_system`** - Rebuilds spatial grid from current positions (O(N))
-3. **`culling_system`** - Removes asteroids beyond `CULL_DISTANCE`
+1. **`stats_counting_system`** - Counts live (within `CULL_DISTANCE`) / hard-culled (beyond `HARD_CULL_DISTANCE`) asteroids
+2. **`soft_boundary_system`** - Applies inward spring force to asteroids beyond `SOFT_BOUNDARY_RADIUS`
+3. **`culling_system`** - Hard-removes asteroids beyond `HARD_CULL_DISTANCE`
 4. **`neighbor_counting_system`** - Counts nearby asteroids using grid (O(N·K))
 5. **`particle_locking_system`** - Synchronizes velocities of slow touching asteroids via Rapier contact_pairs iterator (O(C), C = active contacts)
 6. **`player_control_system`** - Applies WASD thrust/rotation to player ship
@@ -142,15 +144,15 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 **Critical**: System scheduling ensures proper data consistency. Asteroid formation must run *after* physics updates contacts.
 
-## Spatial Grid (`spatial_partition.rs`)
+## Spatial Index (`spatial_partition.rs`)
 
-The `SpatialGrid` resource partitions world space into fixed-size cells for efficient neighbor queries.
+The `SpatialGrid` resource is backed by a balanced 2-D KD-tree for efficient range queries.
 
-- **Cell size**: `GRID_CELL_SIZE` (`src/constants.rs`) — must be ≥ the largest query radius / 2 to avoid excessive cell-check overhead
-- **Lookup**: `get_neighbors_excluding(entity, pos, max_distance)` returns candidates from nearby cells
-- **Rebuild**: Called at the start of each Update and FixedUpdate frame
-- **Complexity**: O(N) rebuild, O(K) lookup where K = avg entities per cell neighborhood
-- **Impact**: Reduces N-body gravity and neighbor counting from O(N²) to O(N·K)
+- **Build**: `rebuild(points)` constructs a balanced KD-tree each frame — O(N log N) via median-split on alternating X/Y axes
+- **Lookup**: `get_neighbors_excluding(entity, pos, max_distance)` returns all entities within an exact Euclidean sphere — O(K + log N) where K is the result count
+- **Accuracy**: The KD-tree performs an exact spherical range query; the old grid returned square-cell over-approximations that callers had to re-filter
+- **Non-uniform efficiency**: Unlike a fixed grid, the KD-tree adapts to where asteroids actually are.  Dense clusters do not degrade into O(N_cell²) behaviour.
+- **Rebuild system**: `rebuild_spatial_grid_system` — called at the start of each FixedUpdate before the gravity system
 
 ## Physics Constants Reference
 
@@ -161,11 +163,10 @@ Key constant groups (see `src/constants.rs` for current values):
 | Group | Constants |
 |---|---|
 | World bounds | `SIM_WIDTH`, `SIM_HEIGHT`, `PLAYER_BUFFER_RADIUS` |
-| Gravity | `GRAVITY_CONST`, `MIN_GRAVITY_DIST`, `MAX_GRAVITY_DIST` |
+| Gravity | `GRAVITY_CONST`, `MIN_GRAVITY_DIST`, `MAX_GRAVITY_DIST`, `TIDAL_TORQUE_SCALE` |
 | Cluster formation | `VELOCITY_THRESHOLD_LOCKING` (velocity sync), `GRAVITY_CONST` (binding energy) |
 | Collision | `RESTITUTION_SMALL`, `FRICTION_ASTEROID` |
-| Culling | `CULL_DISTANCE` |
-| Spatial grid | `GRID_CELL_SIZE` |
+| Boundary | `SOFT_BOUNDARY_RADIUS`, `SOFT_BOUNDARY_STRENGTH`, `HARD_CULL_DISTANCE`, `CULL_DISTANCE` |
 | Camera | `MIN_ZOOM`, `MAX_ZOOM`, `ZOOM_SPEED` |
 | Player movement | `THRUST_FORCE`, `REVERSE_FORCE`, `ROTATION_SPEED` |
 | Player OOB | `OOB_RADIUS`, `OOB_DAMPING`, `OOB_RAMP_WIDTH` |
@@ -215,14 +216,14 @@ Key constant groups (see `src/constants.rs` for current values):
 
 #### Simulation Boundaries
 - **2D only**: All physics operates on the XY plane; no Z-axis forces or rendering depth
-- **Hard world boundary**: `CULL_DISTANCE` (2000 units) radius; asteroids beyond this are permanently removed each frame
+- ~~**Hard world boundary**: `CULL_DISTANCE` (2000 units) radius; asteroids beyond this are permanently removed each frame~~ ✅ Replaced by soft boundary spring + safety hard-cull at `HARD_CULL_DISTANCE` (2500 units)
 - **Spawn area**: Initial asteroids distributed within `SIM_WIDTH`×`SIM_HEIGHT` (6000×4000) with a `PLAYER_BUFFER_RADIUS` exclusion zone at origin; values tunable via `assets/physics.toml` at runtime
 - **Max simulation density**: Gizmo-based force-vector annotations auto-disabled at high count (> `force_vector_hide_threshold`); asteroid, ship, and projectile fills use retained `Mesh2d` GPU assets that scale efficiently with entity count
 
 #### Physics Simplifications
 - **Convex-only colliders**: All asteroid shapes are convex polygons; concavities from impacts are approximated by their convex hull, not modelled directly
 - **Gravity cutoff**: Gravity is disabled inside `MIN_GRAVITY_DIST` (Rapier handles close contacts) and beyond `MAX_GRAVITY_DIST`; there is no smooth transition
-- **No rotational gravity torque**: Gravity applies only linear force (no torque based on off-centre mass distribution)
+- ~~**No rotational gravity torque**: Gravity applies only linear force (no torque based on off-centre mass distribution)~~ ✅ Implemented — tidal differential torques now applied per pair
 - **Cluster formation is discrete**: Merging is all-or-nothing per frame; a cluster either fully merges in one PostUpdate step or waits until the next frame
 - **Single-pass hull computation**: Composite hull is computed once at merge time; subsequent impacts reduce vertex count but do not recompute the full hull from physics state
 
@@ -239,9 +240,9 @@ Physics constants are defined in `src/constants.rs` as compile-time defaults and
 #### Physics Improvements
 - **Concave asteroid deformation**: Track per-vertex damage state; move impact vertex inward and recompute hull to simulate craters and progressive destruction
 - ~~**Gravitational binding energy merge criterion**: Replace velocity-threshold merging with a binding-energy check; clusters only merge if their kinetic energy is below the gravitational potential energy of the cluster, producing more physically realistic aggregation~~ ✅ Completed
-- **Rotational-inertia-aware gravity torque**: Include mass distribution (second moment of area) in gravity force application so oddly-shaped composites develop realistic rotation
-- **Soft boundary with elastic reflection**: Replace hard cull-at-1000u removal with a potential-well boundary that gently reflects asteroids back toward the simulation centre
-- **KD-tree neighbor search**: Replace the static 500-unit spatial grid with a dynamic KD-tree to better handle highly non-uniform asteroid distributions (dense cluster + sparse outer field)
+- ~~**Rotational-inertia-aware gravity torque**: Include mass distribution (second moment of area) in gravity force application so oddly-shaped composites develop realistic rotation~~ ✅ Completed
+- ~~**Soft boundary with elastic reflection**: Replace hard cull-at-1000u removal with a potential-well boundary that gently reflects asteroids back toward the simulation centre~~ ✅ Completed
+- ~~**KD-tree neighbor search**: Replace the static 500-unit spatial grid with a dynamic KD-tree to better handle highly non-uniform asteroid distributions (dense cluster + sparse outer field)~~ ✅ Completed
 - **Orbital presets**: Optional initial conditions (Keplerian orbits, accretion disk configuration) as alternative to random spawning
 
 #### Visual & Rendering Enhancements

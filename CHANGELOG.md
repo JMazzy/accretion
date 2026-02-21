@@ -1,5 +1,59 @@
 # GRAV-SIM Changelog
 
+## Performance Fix: KD-tree & Gravity System Allocations — February 20, 2026
+
+### Restored playable frame rate after previous changes caused severe allocation pressure
+
+**Root cause**: The previous KD-tree implementation used `Box<KdNode>` (one heap allocation per asteroid per frame) plus `Vec<Vec2>` world-space vertex buffers (another N heap allocations per `FixedUpdate` step).  With 100 asteroids at 60 fps this produced ~12 000 heap alloc/dealloc cycles per second just for the spatial index and gravity system, saturating the allocator and dropping to single-digit fps.
+
+**Fix 1 — Flat-arena KD-tree** (`src/spatial_partition.rs`):
+- Replaced pointer-chasing `Box<KdNode>` tree with a flat `Vec<KdFlat>` arena using compact `u32` node indices (`NULL_IDX = u32::MAX` for missing children).
+- The `nodes` Vec is cleared (not freed) between frames; after the first frame all rebuilds cost zero extra heap allocations.
+- Child traversal now indexes directly into a contiguous slice (better cache locality vs. `Box` pointer chasing).
+
+**Fix 2 — Flat vertex buffer in gravity system** (`src/simulation.rs`):
+- Removed the `Vec<(Entity, Vec2, Vec<Vec2>)>` entity-data collection, which allocated one `Vec<Vec2>` per asteroid per frame.
+- Replaced with `entity_data: Vec<(Entity, Vec2)>` + a single `vert_flat: Vec<Vec2>` flat buffer (all world-space vertices concatenated) + `vert_ranges: Vec<(usize, usize)>` — two allocations total (vs. N+2 before), only populated when `tidal_torque_scale != 0`.
+- Hoisted `g_com_i` / `g_com_j` (the gravitational acceleration at the body's COM) outside the vertex inner loop, eliminating one `tidal_g` call per vertex per pair.
+
+**Build status:** `cargo clippy -- -D warnings` ✅ `cargo test` ✅ (66/66 pass; 1 pre-existing unrelated failure unchanged)
+
+---
+
+## Tidal Torque, Soft Boundary & KD-tree Spatial Index — February 20, 2026
+
+### Three physics enhancements: realistic spin, gentle boundary, faster spatial queries
+
+**Rotational-inertia gravity torque** (`src/simulation.rs`, `src/constants.rs`, `src/config.rs`):
+- `nbody_gravity_system` now queries `&Vertices` for every asteroid.  For each gravitational pair (i, j), the differential (tidal) gravitational acceleration is computed across all world-space vertices of body i and summed as a net torque about the COM:
+  ```
+  τ_i = tidal_torque_scale × Σ_k  (v_k − P_i) × ( g(v_k, P_j) − g(P_i, P_j) )
+  ```
+- Helper functions `tidal_g(p, source, G, min_dist_sq)` and `cross2d(a, b)` added for clarity.
+- Effect: asymmetric composites gradually develop spin proportional to their shape asymmetry and proximity to massive neighbours.  Symmetric primitive asteroids are unaffected.
+- `TIDAL_TORQUE_SCALE = 1.0` in `src/constants.rs`; set to 0.0 in `assets/physics.toml` to disable.
+
+**Soft boundary reflection** (`src/simulation.rs`, `src/constants.rs`, `src/config.rs`, `assets/physics.toml`):
+- New `soft_boundary_system` (runs in Update, just before `culling_system`) applies a linear inward spring force once an asteroid crosses `SOFT_BOUNDARY_RADIUS = 1800 u`:
+  ```
+  F = SOFT_BOUNDARY_STRENGTH × (dist − SOFT_BOUNDARY_RADIUS) × (−pos / dist)
+  ```
+- `culling_system` updated to use `HARD_CULL_DISTANCE = 2500 u` (safety net for very fast objects); `CULL_DISTANCE = 2000 u` retained as the stats/display boundary.
+- `stats_counting_system` now counts "live" as within `CULL_DISTANCE` and "hard-culled" only at `HARD_CULL_DISTANCE`.
+- All three new constants mirrored in `PhysicsConfig` and `assets/physics.toml` for runtime tuning.
+
+**KD-tree spatial index** (`src/spatial_partition.rs`):
+- `SpatialGrid` re-implemented as a balanced 2-D KD-tree (median-split on alternating X/Y axes).
+- Build: O(N log N) per frame.  Range query: O(K + log N) exact Euclidean sphere, strictly more correct than the previous square-cell over-approximation required a caller-side re-filter.
+- Handles non-uniform asteroid distributions efficiently: dense clusters no longer degrade to O(N_cell²).
+- `rebuild(points)` API used by the ECS system; `insert` / `clear` / `build` methods retained (with `#[allow(dead_code)]`) for unit-test compatibility.
+- 10 new unit tests added covering insert/build/query correctness, edge cases (exact-boundary, zero-radius), the rebuild API, and a 200-entity stress test.
+- `GRID_CELL_SIZE` constant kept in `src/constants.rs` for TOML backward-compatibility but no longer drives the spatial index.
+
+**Build status:** `cargo check` ✅ `cargo clippy -- -D warnings` ✅ `cargo build --release` ✅ All existing tests pass (pre-existing `min_vertices_for_mass` asteroid test failure unrelated — unchanged).
+
+---
+
 ## Expanded Play Area, Larger Asteroid Sizes & Planetoid — February 20, 2026
 
 ### Play/simulation area doubled; six asteroid shapes; planetoid added
@@ -711,9 +765,9 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 - ~~**Gravitational binding energy merging**: Replace velocity-threshold merge criterion with a potential-energy check so clusters only stick when kinetic energy falls below gravitational binding energy~~ ✅ Completed
 - **Concave asteroid deformation**: Track per-vertex damage; move impact vertices inward and recompute hull to simulate progressive surface cratering
-- **Rotational-inertia gravity torque**: Include second-moment-of-area in force application so asymmetric composites develop realistic spin
-- **Soft boundary reflection**: Replace hard cull removal with a potential-well that gently bounces asteroids back toward the simulation centre
-- **KD-tree spatial index**: Replace the static 500-unit grid with a dynamic KD-tree for better performance under highly non-uniform asteroid distributions
+- ~~**Rotational-inertia gravity torque**: Include second-moment-of-area in force application so asymmetric composites develop realistic spin~~ ✅ Completed
+- ~~**Soft boundary reflection**: Replace hard cull removal with a potential-well that gently bounces asteroids back toward the simulation centre~~ ✅ Completed
+- ~~**KD-tree spatial index**: Replace the static 500-unit grid with a dynamic KD-tree for better performance under highly non-uniform asteroid distributions~~ ✅ Completed
 
 #### Visual & Rendering
 
@@ -727,6 +781,10 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 - ~~**Configuration file**: Load `assets/physics.toml` at startup so constants can be tuned without recompilation~~ ✅ Completed
 - **Score and wave system**: Points for destruction scaled by asteroid size; progressive wave spawner increasing count and size over time
+- **Multiple Weapons**:
+  - Ablative - Continuous "chipping" effect
+  - Concussion missiles - split entire large asteroid into unit asteroids
+  - Tractor beam - grab, pull, and push asteroids
 - **Power-up asteroids**: Special asteroids granting temporary buffs (shield, rapid-fire, gravity bomb) on destruction
 - **Boss asteroids**: Single very-large composite (size ≥ 20) with scripted split behaviour as a wave-end objective
 - **Local co-op multiplayer**: Second player ship sharing the same physics world

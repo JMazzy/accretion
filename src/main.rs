@@ -17,10 +17,12 @@ mod testing;
 
 use config::PhysicsConfig;
 use testing::{
-    spawn_test_culling_verification, spawn_test_gentle_approach, spawn_test_gravity,
-    spawn_test_gravity_boundary, spawn_test_high_speed_collision, spawn_test_large_small_pair,
+    spawn_test_all_three, spawn_test_baseline_100, spawn_test_culling_verification,
+    spawn_test_gentle_approach, spawn_test_gravity, spawn_test_gravity_boundary,
+    spawn_test_high_speed_collision, spawn_test_kdtree_only, spawn_test_large_small_pair,
     spawn_test_mixed_size_asteroids, spawn_test_near_miss, spawn_test_passing_asteroid,
-    spawn_test_perf_benchmark, spawn_test_three_triangles, spawn_test_two_triangles, TestConfig,
+    spawn_test_perf_benchmark, spawn_test_soft_boundary_only, spawn_test_tidal_only,
+    spawn_test_three_triangles, spawn_test_two_triangles, TestConfig,
 };
 
 fn spawn_initial_world(mut commands: Commands, config: Res<PhysicsConfig>) {
@@ -136,6 +138,26 @@ fn main() {
             "perf_benchmark" => app.add_systems(
                 Startup,
                 spawn_test_perf_benchmark.after(config::load_physics_config),
+            ),
+            "baseline_100" => app.add_systems(
+                Startup,
+                spawn_test_baseline_100.after(config::load_physics_config),
+            ),
+            "tidal_only" => app.add_systems(
+                Startup,
+                spawn_test_tidal_only.after(config::load_physics_config),
+            ),
+            "soft_boundary_only" => app.add_systems(
+                Startup,
+                spawn_test_soft_boundary_only.after(config::load_physics_config),
+            ),
+            "kdtree_only" => app.add_systems(
+                Startup,
+                spawn_test_kdtree_only.after(config::load_physics_config),
+            ),
+            "all_three" => app.add_systems(
+                Startup,
+                spawn_test_all_three.after(config::load_physics_config),
             ),
             _ => app.add_systems(
                 Startup,

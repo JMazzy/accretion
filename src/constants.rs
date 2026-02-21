@@ -81,9 +81,33 @@ pub const FRICTION_ASTEROID: f32 = 1.0;
 
 // ── Physics: Culling ──────────────────────────────────────────────────────────
 
+/// Inner radius of the soft boundary zone (world units).
+///
+/// Asteroids that drift beyond this distance feel a gentle inward spring force
+/// nudging them back toward the simulation centre.  Set to 90 % of the gravity
+/// horizon so the spring activates well before `HARD_CULL_DISTANCE`.
+pub const SOFT_BOUNDARY_RADIUS: f32 = 1800.0;
+
+/// Spring constant for the soft boundary restoring force.
+///
+/// Force per world-unit displacement past `SOFT_BOUNDARY_RADIUS` in the inward
+/// direction.  At 2.0 an asteroid 200 u past the inner edge receives 400 u of
+/// restoring acceleration per unit mass — enough to turn it around in a few
+/// hundred frames without an abrupt bounce.
+pub const SOFT_BOUNDARY_STRENGTH: f32 = 2.0;
+
+/// Absolute hard-cull distance: asteroids beyond this are forcibly removed.
+///
+/// Acts as a safety net if the soft spring is insufficient (e.g., a very fast
+/// projectile).  Set comfortably outside `SOFT_BOUNDARY_RADIUS` so normal
+/// simulation objects almost never reach it.
+pub const HARD_CULL_DISTANCE: f32 = 2500.0;
+
 /// Distance from the world origin beyond which asteroids are permanently removed.
 ///
 /// Matches `MAX_GRAVITY_DIST` so that nothing exerts gravity after being culled.
+/// Now acts as the stats / stats-display reference boundary; hard removal happens
+/// at `HARD_CULL_DISTANCE`.
 pub const CULL_DISTANCE: f32 = 2000.0;
 
 // ── Physics: Neighbor Counting ────────────────────────────────────────────────

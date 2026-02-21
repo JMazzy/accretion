@@ -29,7 +29,6 @@ use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
-use std::collections::HashMap;
 
 /// Tracks simulation statistics: active asteroids, culled count, merged count, split count, destroyed count
 #[derive(Resource, Default, Clone, Copy, Debug)]
@@ -47,12 +46,27 @@ pub struct CameraState {
     pub zoom: f32,
 }
 
+/// Per-frame scratch buffers reused across `neighbor_counting_system` to eliminate
+/// per-call heap allocations.
+///
+/// Registered once at startup; all `Vec`s grow to hold the largest N ever seen
+/// and are only cleared (never freed) each call, so steady-state operation
+/// produces zero heap allocations per physics tick.
+#[derive(Resource, Default)]
+pub(crate) struct GravityScratch {
+    /// Reusable output buffer for KD-tree neighbor queries.
+    neighbor_buf: Vec<Entity>,
+    /// Reusable position buffer for `neighbor_counting_system`.
+    nc_positions: Vec<(Entity, Vec2)>,
+}
+
 pub struct SimulationPlugin;
 
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SimulationStats::default())
             .insert_resource(OverlayState::default())
+            .insert_resource(GravityScratch::default())
             .insert_resource(CameraState { zoom: 1.0 })
             .insert_resource(AimDirection::default())
             .insert_resource(AimIdleTimer::default())
@@ -66,8 +80,8 @@ impl Plugin for SimulationPlugin {
                     // ── Group 1: physics bookkeeping + input pipeline ─────────
                     (
                         stats_counting_system, // Count asteroids for stats
-                        culling_system,        // Remove far asteroids
-                        neighbor_counting_system,
+                        soft_boundary_system,  // Apply inward spring force near boundary
+                        culling_system,        // Hard-remove asteroids past safety boundary
                         particle_locking_system,
                         gamepad_connection_system, // Track preferred gamepad
                         player_intent_clear_system, // Reset ExternalForce + PlayerIntent
@@ -104,11 +118,17 @@ impl Plugin for SimulationPlugin {
                 )
                     .chain(),
             )
-            // Rebuild grid then run gravity in FixedUpdate (same schedule as Rapier physics)
-            // Grid rebuild only here — Update systems reuse the last FixedUpdate grid
+            // Rebuild grid, run gravity, and count neighbors in FixedUpdate.
+            // neighbor_counting_system was previously in Update (60 Hz) — moving it here
+            // avoids 60 KD-tree scans per second that produced no visible difference.
             .add_systems(
                 FixedUpdate,
-                (rebuild_spatial_grid_system, nbody_gravity_system).chain(),
+                (
+                    rebuild_spatial_grid_system,
+                    nbody_gravity_system,
+                    neighbor_counting_system,
+                )
+                    .chain(),
             )
             // asteroid_formation_system must run AFTER Rapier (PostUpdate) populates contacts.
             // apply_deferred between the two systems flushes formation's despawns/spawns so
@@ -192,11 +212,12 @@ pub(crate) fn gravity_force_between(
     Some(delta.normalize_or_zero() * (gravity_const / dist_sq))
 }
 
-/// N-body gravity system: applies custom gravity between all asteroids
-/// Optimized with spatial grid: only checks neighbors in nearby cells (O(N·K) instead of O(N²))
-pub fn nbody_gravity_system(
+/// N-body gravity system: applies custom gravity between all asteroids.
+///
+/// Uses O(N²/2) pair iteration since gravity dominates the computation anyway
+/// and the spatial index provides no significant speedup for full-world queries.
+pub(crate) fn nbody_gravity_system(
     mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
-    grid: Res<SpatialGrid>,
     config: Res<PhysicsConfig>,
 ) {
     let gravity_const = config.gravity_const;
@@ -205,8 +226,7 @@ pub fn nbody_gravity_system(
     let min_gravity_dist_sq = min_gravity_dist * min_gravity_dist;
     let max_gravity_dist_sq = max_gravity_dist * max_gravity_dist;
 
-    // CRITICAL: Reset all forces to zero first, then calculate fresh
-    // This prevents accumulation bugs and ensures forces reflect current positions
+    // CRITICAL: Reset all forces to zero first, then calculate fresh.
     for (_, _, mut force) in query.iter_mut() {
         force.force = Vec2::ZERO;
         force.torque = 0.0;
@@ -214,41 +234,28 @@ pub fn nbody_gravity_system(
 
     // Collect all entities with positions (needed for pairwise calculations)
     let mut entity_data: Vec<(Entity, Vec2)> = Vec::new();
-    // Also build an index map for O(1) lookups
-    let mut entity_index: HashMap<Entity, usize> = HashMap::new();
     for (entity, transform, _) in query.iter() {
-        entity_index.insert(entity, entity_data.len());
         entity_data.push((entity, transform.translation.truncate()));
     }
 
     // Collect all force pairs to apply (entity, force_delta)
-    let mut force_deltas: HashMap<Entity, Vec2> = HashMap::new();
+    let mut force_deltas: std::collections::HashMap<Entity, Vec2> = std::collections::HashMap::new();
 
-    // Calculate gravity between nearby asteroid pairs using spatial grid
-    for (idx_i, (entity_i, pos_i)) in entity_data.iter().enumerate() {
-        // Get all potential neighbors from spatial grid
-        let candidates = grid.get_neighbors_excluding(*entity_i, *pos_i, max_gravity_dist);
+    // Calculate gravity between all asteroid pairs
+    for idx_i in 0..entity_data.len() {
+        let (entity_i, pos_i) = entity_data[idx_i];
 
-        // Only process each pair once (if candidate index > current index)
-        for entity_j in candidates {
-            if let Some(&idx_j) = entity_index.get(&entity_j) {
-                if idx_j <= idx_i {
-                    continue;
-                }
-
-                let pos_j = entity_data[idx_j].1;
-
-                if let Some(force) = gravity_force_between(
-                    *pos_i,
-                    pos_j,
-                    gravity_const,
-                    min_gravity_dist_sq,
-                    max_gravity_dist_sq,
-                ) {
-                    // Apply Newton's third law: equal and opposite forces
-                    *force_deltas.entry(*entity_i).or_insert(Vec2::ZERO) += force;
-                    *force_deltas.entry(entity_j).or_insert(Vec2::ZERO) -= force;
-                }
+        for (_, &(entity_j, pos_j)) in entity_data.iter().enumerate().skip(idx_i + 1) {
+            if let Some(force) = gravity_force_between(
+                pos_i,
+                pos_j,
+                gravity_const,
+                min_gravity_dist_sq,
+                max_gravity_dist_sq,
+            ) {
+                // Apply Newton's third law: equal and opposite forces
+                *force_deltas.entry(entity_i).or_insert(Vec2::ZERO) += force;
+                *force_deltas.entry(entity_j).or_insert(Vec2::ZERO) -= force;
             }
         }
     }
@@ -324,81 +331,108 @@ pub fn camera_zoom_system(
     }
 }
 
-/// Count neighbors for each asteroid (kept for potential future features and visualization hints)
-/// Optimized with spatial grid: O(N·K) instead of O(N²) where K is avg neighbors per cell
-pub fn neighbor_counting_system(
+/// Count neighbors for each asteroid (kept for potential future features and visualization hints).
+/// Uses the spatial grid (O(N·K)) and a reusable scratch buffer to avoid per-frame allocations.
+pub(crate) fn neighbor_counting_system(
     mut query: Query<(Entity, &Transform, &mut NeighborCount), With<Asteroid>>,
     grid: Res<SpatialGrid>,
     config: Res<PhysicsConfig>,
+    mut scratch: ResMut<GravityScratch>,
 ) {
     let neighbor_threshold = config.neighbor_threshold;
 
-    // Collect all entity positions first as a HashMap for O(1) lookups
-    let entity_positions: HashMap<Entity, Vec2> = query
-        .iter()
-        .map(|(e, t, _)| (e, t.translation.truncate()))
-        .collect();
+    // Collect (entity, pos) pairs into the reusable buffer — avoids creating a
+    // new Vec each frame and lets us call get_mut on the query afterwards.
+    scratch.nc_positions.clear();
+    for (e, t, _) in query.iter() {
+        scratch.nc_positions.push((e, t.translation.truncate()));
+    }
 
-    for (entity, pos) in &entity_positions {
-        // Get potential neighbors from grid (only checks nearby cells)
-        let candidates = grid.get_neighbors_excluding(*entity, *pos, neighbor_threshold);
+    for ii in 0..scratch.nc_positions.len() {
+        let (entity, pos) = scratch.nc_positions[ii];
 
-        // Count those actually within threshold distance
-        let count = candidates
-            .iter()
-            .filter(|&&candidate| {
-                entity_positions
-                    .get(&candidate)
-                    .map(|candidate_pos| (*pos - *candidate_pos).length() < neighbor_threshold)
-                    .unwrap_or(false)
-            })
-            .count();
+        // The KD-tree performs an exact Euclidean query: every returned entity
+        // is already within `neighbor_threshold`.  Just count the results.
+        grid.query_neighbors_into(entity, pos, neighbor_threshold, &mut scratch.neighbor_buf);
+        let count = scratch.neighbor_buf.len();
 
-        if let Ok((_, _, mut nc)) = query.get_mut(*entity) {
+        if let Ok((_, _, mut nc)) = query.get_mut(entity) {
             nc.0 = count;
         }
     }
 }
 
-/// Track statistics: live count, culled count, merged count
-/// Must run BEFORE culling_system to detect which asteroids are about to be culled
+/// Track statistics: live count, culled count, merged count.
+/// Must run BEFORE culling_system to detect which asteroids are about to be hard-culled.
 pub fn stats_counting_system(
     mut stats: ResMut<SimulationStats>,
     query: Query<(Entity, &Transform), With<Asteroid>>,
     config: Res<PhysicsConfig>,
 ) {
     let cull_distance = config.cull_distance;
+    let hard_cull_distance = config.hard_cull_distance;
     let mut live_count = 0;
-    let mut culled_this_frame = 0;
+    let mut hard_culled_this_frame = 0;
 
-    // Count live asteroids and identify those about to be culled
     for (_, transform) in query.iter() {
         let dist = transform.translation.truncate().length();
         if dist <= cull_distance {
             live_count += 1;
-        } else {
-            culled_this_frame += 1;
+        }
+        // Count only asteroids that will actually be removed this frame
+        if dist > hard_cull_distance {
+            hard_culled_this_frame += 1;
         }
     }
 
     stats.live_count = live_count;
-    stats.culled_total += culled_this_frame;
+    stats.culled_total += hard_culled_this_frame;
 }
 
-/// Cull asteroids far off-screen
+/// Hard-cull asteroids that have drifted past the safety boundary.
+///
+/// The soft boundary spring (`soft_boundary_system`) keeps most asteroids from
+/// reaching this distance; hard-culling is a last resort for very fast objects.
 pub fn culling_system(
     mut commands: Commands,
     query: Query<(Entity, &Transform), With<Asteroid>>,
     config: Res<PhysicsConfig>,
 ) {
-    let cull_distance = config.cull_distance;
+    let hard_cull_distance = config.hard_cull_distance;
 
     for (entity, transform) in query.iter() {
         let dist = transform.translation.truncate().length();
-
-        // Cull asteroids that drift very far
-        if dist > cull_distance {
+        if dist > hard_cull_distance {
             commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Apply a restoring force to asteroids that have drifted past the soft boundary.
+///
+/// The force is a linear spring toward the origin:
+/// ```
+/// F_inward = soft_boundary_strength × (dist − soft_boundary_radius) × (−pos / dist)
+/// ```
+/// This creates a reflecting potential well that nudges stray asteroids back toward
+/// the simulation centre without the jarring discontinuity of hard-culling.  The
+/// spring activates only when `dist > soft_boundary_radius`.
+pub fn soft_boundary_system(
+    mut query: Query<(&Transform, &mut ExternalForce), With<Asteroid>>,
+    config: Res<PhysicsConfig>,
+) {
+    let inner_radius = config.soft_boundary_radius;
+    let strength = config.soft_boundary_strength;
+
+    for (transform, mut ext_force) in query.iter_mut() {
+        let pos = transform.translation.truncate();
+        let dist = pos.length();
+
+        if dist > inner_radius && dist > 0.0 {
+            let excess = dist - inner_radius;
+            // Inward unit vector: −pos / dist
+            let inward = -pos / dist;
+            ext_force.force += inward * (strength * excess);
         }
     }
 }

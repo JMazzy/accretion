@@ -517,6 +517,178 @@ pub fn spawn_test_perf_benchmark(mut commands: Commands, mut test_config: ResMut
     );
 }
 
+/// Performance benchmark: BASELINE configuration (original world size, no new features)
+/// Spawns 100 asteroids in a grid and runs for 300 frames.
+/// This is the reference point before tidal torque, soft boundary, and KD-tree were added.
+pub fn spawn_test_baseline_100(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+    test_config.test_name = "baseline_100".to_string();
+    test_config.frame_limit = 300;
+
+    let grey = Color::srgb(0.6, 0.6, 0.6);
+    let side = 6.0_f32;
+    let height = side * 3.0_f32.sqrt() / 2.0;
+    let vertices = vec![
+        Vec2::new(0.0, height / 2.0),
+        Vec2::new(-side / 2.0, -height / 2.0),
+        Vec2::new(side / 2.0, -height / 2.0),
+    ];
+
+    let cols = 10u32;
+    let rows = 10u32;
+    let spacing = 40.0_f32;
+    let offset_x = -((cols - 1) as f32) * spacing / 2.0;
+    let offset_y = -((rows - 1) as f32) * spacing / 2.0;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = offset_x + col as f32 * spacing;
+            let y = offset_y + row as f32 * spacing;
+            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey, 1);
+        }
+    }
+
+    println!(
+        "✓ Spawned test: baseline_100 — 100 asteroids, original world size, NO new features"
+    );
+}
+
+/// Performance benchmark: TIDAL TORQUE ONLY
+/// Baseline + tidal torque enabled. Isolates the cost of per-vertex gravity calculations.
+pub fn spawn_test_tidal_only(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+    test_config.test_name = "tidal_only".to_string();
+    test_config.frame_limit = 300;
+
+    let grey = Color::srgb(0.6, 0.6, 0.6);
+    let side = 6.0_f32;
+    let height = side * 3.0_f32.sqrt() / 2.0;
+    let vertices = vec![
+        Vec2::new(0.0, height / 2.0),
+        Vec2::new(-side / 2.0, -height / 2.0),
+        Vec2::new(side / 2.0, -height / 2.0),
+    ];
+
+    let cols = 10u32;
+    let rows = 10u32;
+    let spacing = 40.0_f32;
+    let offset_x = -((cols - 1) as f32) * spacing / 2.0;
+    let offset_y = -((rows - 1) as f32) * spacing / 2.0;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = offset_x + col as f32 * spacing;
+            let y = offset_y + row as f32 * spacing;
+            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey, 1);
+        }
+    }
+
+    println!("✓ Spawned test: tidal_only — baseline + TIDAL TORQUE ENABLED (check physics.toml)");
+}
+
+/// Performance benchmark: SOFT BOUNDARY ONLY
+/// Baseline + soft boundary enabled. Isolates the cost of the boundary spring force.
+pub fn spawn_test_soft_boundary_only(
+    mut commands: Commands,
+    mut test_config: ResMut<TestConfig>,
+) {
+    test_config.test_name = "soft_boundary_only".to_string();
+    test_config.frame_limit = 300;
+
+    let grey = Color::srgb(0.6, 0.6, 0.6);
+    let side = 6.0_f32;
+    let height = side * 3.0_f32.sqrt() / 2.0;
+    let vertices = vec![
+        Vec2::new(0.0, height / 2.0),
+        Vec2::new(-side / 2.0, -height / 2.0),
+        Vec2::new(side / 2.0, -height / 2.0),
+    ];
+
+    let cols = 10u32;
+    let rows = 10u32;
+    let spacing = 40.0_f32;
+    let offset_x = -((cols - 1) as f32) * spacing / 2.0;
+    let offset_y = -((rows - 1) as f32) * spacing / 2.0;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = offset_x + col as f32 * spacing;
+            let y = offset_y + row as f32 * spacing;
+            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey, 1);
+        }
+    }
+
+    println!(
+        "✓ Spawned test: soft_boundary_only — baseline + SOFT BOUNDARY ENABLED (check physics.toml)"
+    );
+}
+
+/// Performance benchmark: KD-TREE ONLY
+/// Baseline + KD-tree spatial index. Isolates the cost of the spatial index redesign.
+pub fn spawn_test_kdtree_only(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+    test_config.test_name = "kdtree_only".to_string();
+    test_config.frame_limit = 300;
+
+    let grey = Color::srgb(0.6, 0.6, 0.6);
+    let side = 6.0_f32;
+    let height = side * 3.0_f32.sqrt() / 2.0;
+    let vertices = vec![
+        Vec2::new(0.0, height / 2.0),
+        Vec2::new(-side / 2.0, -height / 2.0),
+        Vec2::new(side / 2.0, -height / 2.0),
+    ];
+
+    let cols = 10u32;
+    let rows = 10u32;
+    let spacing = 40.0_f32;
+    let offset_x = -((cols - 1) as f32) * spacing / 2.0;
+    let offset_y = -((rows - 1) as f32) * spacing / 2.0;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = offset_x + col as f32 * spacing;
+            let y = offset_y + row as f32 * spacing;
+            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey, 1);
+        }
+    }
+
+    println!(
+        "✓ Spawned test: kdtree_only — baseline + KD-TREE SPATIAL INDEX (already in use)"
+    );
+}
+
+/// Performance benchmark: ALL THREE FEATURES
+/// Full current implementation with tidal torque, soft boundary, and KD-tree.
+pub fn spawn_test_all_three(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
+    test_config.test_name = "all_three".to_string();
+    test_config.frame_limit = 300;
+
+    let grey = Color::srgb(0.6, 0.6, 0.6);
+    let side = 6.0_f32;
+    let height = side * 3.0_f32.sqrt() / 2.0;
+    let vertices = vec![
+        Vec2::new(0.0, height / 2.0),
+        Vec2::new(-side / 2.0, -height / 2.0),
+        Vec2::new(side / 2.0, -height / 2.0),
+    ];
+
+    let cols = 10u32;
+    let rows = 10u32;
+    let spacing = 40.0_f32;
+    let offset_x = -((cols - 1) as f32) * spacing / 2.0;
+    let offset_y = -((rows - 1) as f32) * spacing / 2.0;
+
+    for row in 0..rows {
+        for col in 0..cols {
+            let x = offset_x + col as f32 * spacing;
+            let y = offset_y + row as f32 * spacing;
+            spawn_asteroid_with_vertices(&mut commands, Vec2::new(x, y), &vertices, grey, 1);
+        }
+    }
+
+    println!(
+        "✓ Spawned test: all_three — 100 asteroids with ALL THREE features (see physics.toml)"
+    );
+}
+
 #[derive(Component)]
 #[allow(dead_code)]
 pub struct TestMarker(pub usize); // Initial index for tracking
@@ -533,16 +705,23 @@ pub fn test_logging_system(
     test_config.frame_count += 1;
     let asteroid_count = q.iter().count();
 
-    // For perf_benchmark: record every frame's delta time, print periodic summaries
-    if test_config.test_name == "perf_benchmark" {
+    // For perf benchmark and the feature isolation tests: record every frame's delta time
+    let is_perf_test = test_config.test_name == "perf_benchmark"
+        || test_config.test_name == "baseline_100"
+        || test_config.test_name == "tidal_only"
+        || test_config.test_name == "soft_boundary_only"
+        || test_config.test_name == "kdtree_only"
+        || test_config.test_name == "all_three";
+
+    if is_perf_test {
         let dt_ms = time.delta_secs() * 1000.0;
         test_config.perf_frame_times.push(dt_ms);
 
         if test_config.frame_count == 1 {
             test_config.initial_asteroid_count = asteroid_count;
             println!(
-                "[Frame 1] perf_benchmark started | asteroids: {}",
-                asteroid_count
+                "[Frame 1] {} started | asteroids: {}",
+                test_config.test_name, asteroid_count
             );
         } else if test_config.frame_count.is_multiple_of(50)
             || test_config.frame_count == test_config.frame_limit
@@ -651,8 +830,15 @@ pub fn test_verification_system(
     println!("Initial asteroids: {}", test_config.initial_asteroid_count);
     println!("Final asteroids:   {}", final_count);
 
-    // Print full timing report for perf_benchmark
-    if test_config.test_name == "perf_benchmark" && !test_config.perf_frame_times.is_empty() {
+    // Print full timing report for benchmark tests
+    if (test_config.test_name == "perf_benchmark"
+        || test_config.test_name == "baseline_100"
+        || test_config.test_name == "tidal_only"
+        || test_config.test_name == "soft_boundary_only"
+        || test_config.test_name == "kdtree_only"
+        || test_config.test_name == "all_three")
+        && !test_config.perf_frame_times.is_empty()
+    {
         let times = &test_config.perf_frame_times;
         // Skip first 10 frames (startup jitter)
         let steady = if times.len() > 10 {
@@ -676,10 +862,10 @@ pub fn test_verification_system(
             pct_60fps
         );
         if avg <= 16.7 {
-            println!("  ✓ PASS: average frame time within 60 FPS budget");
+            println!("  ✓ Average frame time within 60 FPS budget");
         } else {
             println!(
-                "  ✗ FAIL: average frame time {:.2}ms exceeds 16.7ms budget",
+                "  ✗ Average frame time {:.2}ms exceeds 16.7ms budget",
                 avg
             );
         }
@@ -831,6 +1017,36 @@ fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> St
             // Here we just report final asteroid count as a sanity check.
             format!(
                 "✓ PASS: perf_benchmark complete — {} asteroids remaining (see timing logs above)",
+                final_count
+            )
+        }
+        "baseline_100" => {
+            format!(
+                "✓ PASS: baseline_100 complete — {} asteroids | Compare timing to tidal_only, soft_boundary_only, kdtree_only, all_three",
+                final_count
+            )
+        }
+        "tidal_only" => {
+            format!(
+                "✓ PASS: tidal_only complete — {} asteroids | Cost = tidal_only minus baseline_100",
+                final_count
+            )
+        }
+        "soft_boundary_only" => {
+            format!(
+                "✓ PASS: soft_boundary_only complete — {} asteroids | Cost = soft_boundary_only minus baseline_100",
+                final_count
+            )
+        }
+        "kdtree_only" => {
+            format!(
+                "✓ PASS: kdtree_only complete — {} asteroids | Cost = kdtree_only minus baseline_100",
+                final_count
+            )
+        }
+        "all_three" => {
+            format!(
+                "✓ PASS: all_three complete — {} asteroids | Full cost = all_three minus baseline_100",
                 final_count
             )
         }

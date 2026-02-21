@@ -54,6 +54,9 @@ pub struct PhysicsConfig {
 
     // ── Physics: Culling ──────────────────────────────────────────────────────
     pub cull_distance: f32,
+    pub soft_boundary_radius: f32,
+    pub soft_boundary_strength: f32,
+    pub hard_cull_distance: f32,
 
     // ── Physics: Neighbor Counting ────────────────────────────────────────────
     pub neighbor_threshold: f32,
@@ -142,6 +145,9 @@ impl Default for PhysicsConfig {
             friction_asteroid: FRICTION_ASTEROID,
             // Culling
             cull_distance: CULL_DISTANCE,
+            soft_boundary_radius: SOFT_BOUNDARY_RADIUS,
+            soft_boundary_strength: SOFT_BOUNDARY_STRENGTH,
+            hard_cull_distance: HARD_CULL_DISTANCE,
             // Neighbor Counting
             neighbor_threshold: NEIGHBOR_THRESHOLD,
             // Spatial Grid
