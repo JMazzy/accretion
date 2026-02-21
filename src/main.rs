@@ -21,12 +21,12 @@ use testing::{
     spawn_test_gentle_approach, spawn_test_gravity, spawn_test_gravity_boundary,
     spawn_test_high_speed_collision, spawn_test_kdtree_only, spawn_test_large_small_pair,
     spawn_test_mixed_size_asteroids, spawn_test_near_miss, spawn_test_passing_asteroid,
-    spawn_test_perf_benchmark, spawn_test_soft_boundary_only, spawn_test_tidal_only,
-    spawn_test_three_triangles, spawn_test_two_triangles, TestConfig,
+    spawn_test_perf_benchmark, spawn_test_soft_boundary_only, spawn_test_three_triangles,
+    spawn_test_tidal_only, spawn_test_two_triangles, TestConfig,
 };
 
 fn spawn_initial_world(mut commands: Commands, config: Res<PhysicsConfig>) {
-    asteroid::spawn_initial_asteroids(&mut commands, 200, &config);
+    asteroid::spawn_initial_asteroids(&mut commands, 100, &config);
     // Spawn one large planetoid offset from the player origin.
     asteroid::spawn_planetoid(&mut commands, Vec2::new(700.0, 400.0), &config);
 }

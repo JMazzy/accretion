@@ -217,7 +217,7 @@ Key constant groups (see `src/constants.rs` for current values):
 #### Simulation Boundaries
 - **2D only**: All physics operates on the XY plane; no Z-axis forces or rendering depth
 - ~~**Hard world boundary**: `CULL_DISTANCE` (2000 units) radius; asteroids beyond this are permanently removed each frame~~ ✅ Replaced by soft boundary spring + safety hard-cull at `HARD_CULL_DISTANCE` (2500 units)
-- **Spawn area**: Initial asteroids distributed within `SIM_WIDTH`×`SIM_HEIGHT` (6000×4000) with a `PLAYER_BUFFER_RADIUS` exclusion zone at origin; values tunable via `assets/physics.toml` at runtime
+- **Spawn area**: Initial asteroids (100 default) distributed within `SIM_WIDTH`×`SIM_HEIGHT` (4000×4000) using noise-based clustering for natural asteroid field formations; distribution controlled by hash-based 2D noise with adjustable frequency; `PLAYER_BUFFER_RADIUS` exclusion zone at origin; values tunable via `assets/physics.toml` at runtime
 - **Max simulation density**: Gizmo-based force-vector annotations auto-disabled at high count (> `force_vector_hide_threshold`); asteroid, ship, and projectile fills use retained `Mesh2d` GPU assets that scale efficiently with entity count
 
 #### Physics Simplifications

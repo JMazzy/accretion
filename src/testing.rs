@@ -218,7 +218,9 @@ pub fn spawn_test_culling_verification(
     use bevy_rapier2d::prelude::Velocity;
 
     test_config.test_name = "culling_verification".to_string();
-    test_config.frame_limit = 350;
+    // Asteroid 2 starts at 2400u moving at 1000 u/s.
+    // At ~60 fps it crosses HARD_CULL_DISTANCE (2500u) in ~6 frames; 30 frames gives plenty of margin.
+    test_config.frame_limit = 30;
 
     // Create triangle vertices
     let side = 6.0;
@@ -231,17 +233,18 @@ pub fn spawn_test_culling_verification(
 
     let grey = Color::srgb(0.5, 0.5, 0.5);
 
-    // Spawn asteroid 1 at center (stationary)
+    // Spawn asteroid 1 at center (stationary) — should survive
     spawn_asteroid_with_vertices(&mut commands, Vec2::new(0.0, 0.0), &vertices, grey, 1);
 
-    // Spawn asteroid 2 far away moving outward (will be culled at 1000 units)
-    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(950.0, 0.0), &vertices, grey, 1);
+    // Spawn asteroid 2 inside but near the hard cull boundary (HARD_CULL_DISTANCE = 2500 u).
+    // High velocity drives it past 2500u within ~6 frames so it is hard-culled well within the limit.
+    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(2400.0, 0.0), &vertices, grey, 1);
     commands.entity(e2).insert(Velocity {
-        linvel: Vec2::new(10.0, 0.0), // Moving away from center
+        linvel: Vec2::new(1000.0, 0.0),
         angvel: 0.0,
     });
 
-    println!("✓ Spawned test: Culling verification (ast 1 at origin, ast 2 at 950u moving away)");
+    println!("✓ Spawned test: Culling verification (ast 1 at origin, ast 2 at 2400u vel=1000 u/s — will cross hard cull boundary within ~6 frames)");
 }
 
 /// Spawn test scenario: large asteroid with several small ones at varying distances
@@ -547,9 +550,7 @@ pub fn spawn_test_baseline_100(mut commands: Commands, mut test_config: ResMut<T
         }
     }
 
-    println!(
-        "✓ Spawned test: baseline_100 — 100 asteroids, original world size, NO new features"
-    );
+    println!("✓ Spawned test: baseline_100 — 100 asteroids, original world size, NO new features");
 }
 
 /// Performance benchmark: TIDAL TORQUE ONLY
@@ -586,10 +587,7 @@ pub fn spawn_test_tidal_only(mut commands: Commands, mut test_config: ResMut<Tes
 
 /// Performance benchmark: SOFT BOUNDARY ONLY
 /// Baseline + soft boundary enabled. Isolates the cost of the boundary spring force.
-pub fn spawn_test_soft_boundary_only(
-    mut commands: Commands,
-    mut test_config: ResMut<TestConfig>,
-) {
+pub fn spawn_test_soft_boundary_only(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
     test_config.test_name = "soft_boundary_only".to_string();
     test_config.frame_limit = 300;
 
@@ -650,9 +648,7 @@ pub fn spawn_test_kdtree_only(mut commands: Commands, mut test_config: ResMut<Te
         }
     }
 
-    println!(
-        "✓ Spawned test: kdtree_only — baseline + KD-TREE SPATIAL INDEX (already in use)"
-    );
+    println!("✓ Spawned test: kdtree_only — baseline + KD-TREE SPATIAL INDEX (already in use)");
 }
 
 /// Performance benchmark: ALL THREE FEATURES
@@ -864,10 +860,7 @@ pub fn test_verification_system(
         if avg <= 16.7 {
             println!("  ✓ Average frame time within 60 FPS budget");
         } else {
-            println!(
-                "  ✗ Average frame time {:.2}ms exceeds 16.7ms budget",
-                avg
-            );
+            println!("  ✗ Average frame time {:.2}ms exceeds 16.7ms budget", avg);
         }
     }
 

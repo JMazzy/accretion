@@ -1,5 +1,33 @@
 # GRAV-SIM Changelog
 
+## Asteroid Field Clustering & Vertex Jitter — February 21, 2026
+
+### More interesting initial field distribution and natural-looking asteroid shapes
+
+**Noise-based clustering** (`src/asteroid.rs`, `src/constants.rs`):
+- Replaced grid-based distribution with hash-based Perlin-like 2D noise function for procedural clustering.
+- Asteroids spawn probabilistically based on noise values, creating natural formations rather than uniform spread.
+- Noise frequency (0.008) controls cluster size; adjustable for varied field layouts without recompilation.
+- Result: fewer but more concentrated asteroid groups lead to emergent cluster behavior and more dynamic early gameplay.
+
+**Asteroid spawn count reduction** (`src/main.rs`):
+- Reduced default spawn count from 200 to 100 asteroids to balance visual complexity with clustering benefits.
+- Clustered 100 asteroids produce more interesting boundary interactions than evenly-spread 200.
+
+**Simulation dimensions adjustment** (`src/constants.rs`):
+- Changed `SIM_WIDTH` from 6000 to 4000 (making spawn region 4000×4000 instead of 6000×4000).
+- Justification: Cull boundary is circular at 2000u radius; rectangular sim beyond that wasted space and culled asteroids instantly.
+- 4000×4000 provides uniform spawn margin relative to cull boundary, maximizing usable asteroid population.
+
+**Vertex jitter** (`src/asteroid.rs`):
+- Added `apply_vertex_jitter()` helper that applies random Gaussian-like offsets to polygon vertices during spawn.
+- Jitter amplitude scales with asteroid size (8% of size_scale), preserving natural proportions across scales.
+- Result: asteroids appear naturally worn and irregular rather than perfectly geometric.
+
+**Test Status**: `baseline_100` ✅, `gravity_attraction` ✅, `all_three` ✅ — all tests pass with new spawning and physics intact.
+
+---
+
 ## Performance Fix: KD-tree & Gravity System Allocations — February 20, 2026
 
 ### Restored playable frame rate after previous changes caused severe allocation pressure

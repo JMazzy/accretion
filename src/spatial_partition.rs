@@ -109,11 +109,7 @@ impl SpatialGrid {
     }
 
     /// Recursive median-split builder.  Returns the index of the created node.
-    fn build_recursive(
-        nodes: &mut Vec<KdFlat>,
-        pts: &mut [(Entity, Vec2)],
-        depth: usize,
-    ) -> u32 {
+    fn build_recursive(nodes: &mut Vec<KdFlat>, pts: &mut [(Entity, Vec2)], depth: usize) -> u32 {
         if pts.is_empty() {
             return NULL_IDX;
         }
@@ -258,7 +254,8 @@ pub fn rebuild_spatial_grid_system(
 ) {
     grid.pts_scratch.clear();
     for (entity, transform) in query.iter() {
-        grid.pts_scratch.push((entity, transform.translation.truncate()));
+        grid.pts_scratch
+            .push((entity, transform.translation.truncate()));
     }
     grid.rebuild_in_place();
 }

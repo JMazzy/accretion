@@ -239,7 +239,8 @@ pub(crate) fn nbody_gravity_system(
     }
 
     // Collect all force pairs to apply (entity, force_delta)
-    let mut force_deltas: std::collections::HashMap<Entity, Vec2> = std::collections::HashMap::new();
+    let mut force_deltas: std::collections::HashMap<Entity, Vec2> =
+        std::collections::HashMap::new();
 
     // Calculate gravity between all asteroid pairs
     for idx_i in 0..entity_data.len() {

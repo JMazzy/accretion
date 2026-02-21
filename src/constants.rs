@@ -15,7 +15,7 @@
 ///
 /// Asteroids are distributed within ±SIM_WIDTH/2 of the origin.
 /// Increasing this spreads the initial field; decreasing creates denser opening clusters.
-pub const SIM_WIDTH: f32 = 6000.0;
+pub const SIM_WIDTH: f32 = 4000.0;
 
 /// Height of the initial asteroid spawn region (world units).
 pub const SIM_HEIGHT: f32 = 4000.0;
@@ -36,7 +36,7 @@ pub const PLAYER_BUFFER_RADIUS: f32 = 100.0;
 /// Higher values → stronger mutual attraction → faster cluster formation.
 /// Tested range: 5.0–15.0.  At 10.0 two asteroids 100 u apart collide in ~350 frames.
 /// Values above ~20.0 cause runaway acceleration at close range.
-pub const GRAVITY_CONST: f32 = 10.0;
+pub const GRAVITY_CONST: f32 = 20.0;
 
 /// Asteroids closer than this distance are excluded from gravity calculations.
 ///
@@ -47,10 +47,8 @@ pub const GRAVITY_CONST: f32 = 10.0;
 pub const MIN_GRAVITY_DIST: f32 = 5.0;
 
 /// Maximum distance at which gravity is applied between two asteroids.
-///
-/// Set equal to `CULL_DISTANCE` so that culled asteroids exert no phantom forces.
 /// Decreasing this value can improve performance at large asteroid counts.
-pub const MAX_GRAVITY_DIST: f32 = 2000.0;
+pub const MAX_GRAVITY_DIST: f32 = 1000.0;
 
 // ── Physics: Cluster Formation ────────────────────────────────────────────────
 
@@ -104,8 +102,6 @@ pub const SOFT_BOUNDARY_STRENGTH: f32 = 2.0;
 pub const HARD_CULL_DISTANCE: f32 = 2500.0;
 
 /// Distance from the world origin beyond which asteroids are permanently removed.
-///
-/// Matches `MAX_GRAVITY_DIST` so that nothing exerts gravity after being culled.
 /// Now acts as the stats / stats-display reference boundary; hard removal happens
 /// at `HARD_CULL_DISTANCE`.
 pub const CULL_DISTANCE: f32 = 2000.0;
@@ -127,11 +123,11 @@ pub const GRID_CELL_SIZE: f32 = 500.0;
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 
-/// Minimum camera zoom scale (zoom *out*).  At 0.25 the full 2000-unit cull circle fits comfortably.
-pub const MIN_ZOOM: f32 = 0.25;
+/// Minimum camera zoom scale (zoom *out*).  At 0.5 the full 2000-unit cull circle fits comfortably.
+pub const MIN_ZOOM: f32 = 0.5;
 
-/// Maximum camera zoom scale (zoom *in*).  At 8.0 only ~150×100 world units are visible.
-pub const MAX_ZOOM: f32 = 8.0;
+/// Maximum camera zoom scale (zoom *in*).  At 4.0 only ~150×100 world units are visible.
+pub const MAX_ZOOM: f32 = 4.0;
 
 /// Zoom scale change per one scroll-wheel event.
 pub const ZOOM_SPEED: f32 = 0.1;

@@ -11,7 +11,7 @@
 
 # Width / height of the initial asteroid spawn region (world units).
 # Asteroids are placed within ±sim_width/2 of the origin.
-sim_width = 6000.0
+sim_width = 4000.0
 sim_height = 4000.0
 
 # Gap between the spawn grid edge and the outer simulation boundary.
@@ -26,7 +26,7 @@ player_buffer_radius = 100.0
 # Inverse-square gravity strength.
 # Higher → stronger attraction → faster cluster formation.
 # Tested range: 5.0–15.0.  Above ~20.0 causes runaway acceleration at close range.
-gravity_const = 18.0
+gravity_const = 20.0
 
 # Asteroids closer than this (world units) are excluded from gravity calculations.
 # Rapier handles contact physics below this threshold to prevent energy injection.
@@ -34,8 +34,7 @@ gravity_const = 18.0
 min_gravity_dist = 5.0
 
 # Maximum distance at which gravity is applied.
-# Set equal to cull_distance so culled asteroids exert no phantom forces.
-max_gravity_dist = 2000.0
+max_gravity_dist = 1000.0
 
 # ── Physics: Cluster Formation ────────────────────────────────────────────────
 
@@ -78,8 +77,8 @@ grid_cell_size = 500.0
 # ── Camera ────────────────────────────────────────────────────────────────────
 
 # Zoom scale limits (camera.scale = zoom → larger = zoomed out).
-min_zoom = 0.25
-max_zoom = 8.0
+min_zoom = 0.5
+max_zoom = 4.0
 
 # Zoom scale change per scroll-wheel event.
 zoom_speed = 0.1
