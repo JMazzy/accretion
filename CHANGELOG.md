@@ -1,5 +1,25 @@
 # GRAV-SIM Changelog
 
+## Main Menu / Splash Screen — February 21, 2026
+
+### GameState machine and splash screen added; all simulation systems gated on `Playing`
+
+**Changes**:
+
+- **`src/menu.rs`** (new): `GameState` enum (`MainMenu` / `Playing`, derives `States`), `MainMenuPlugin`.  `setup_main_menu` spawns a full-screen Bevy UI overlay at `OnEnter(MainMenu)` with title, subtitle, **START GAME** and **QUIT** buttons, and a version footnote.  `cleanup_main_menu` despawns it on `OnExit(MainMenu)`.  `menu_button_system` routes button presses: Start → `NextState(Playing)`, Quit → `AppExit::Success`.  Hover state tints button text white for visual feedback.
+
+- **`src/simulation.rs`**: All three system sets (Update, FixedUpdate, PostUpdate) now have `.run_if(in_state(GameState::Playing))` so physics, rendering overlays, input handling, and formation logic are fully inactive while the menu is visible.
+
+- **`src/main.rs`**: Camera setup and physics config remain in `Startup` (shared by both states). HUD, stats text, debug panel, and boundary ring moved to `OnEnter(GameState::Playing)`. World and player spawning also moved to `OnEnter(Playing)`.  Test mode uses `insert_state(GameState::Playing)` to bypass the menu without any extra start-up cost.
+
+- **`tests/menu_tests.rs`** (new): 5 headless unit tests covering initial state, `MainMenu → Playing` transition, state persistence, `insert_state` force-start, and redundant transition stability.
+
+**Result**: On launch the player sees a dark splash screen and must click **START GAME** before the simulation and player ship spawn.  The existing ESC debug panel, all physics, and automated test mode work identically to before.
+
+**Build status:** `cargo fmt` ✅  `cargo clippy -- -D warnings` ✅  `cargo build --release` ✅  `cargo test --test menu_tests` 5/5 ✅ PASS
+
+---
+
 ## Gizmo → Mesh2d Rendering Optimizations — February 22, 2026
 
 ### Boundary ring, asteroid wireframe-only mode, health bar, and aim indicator converted to retained-mode GPU meshes

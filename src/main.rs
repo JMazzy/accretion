@@ -9,6 +9,7 @@ mod config;
 mod constants;
 mod error;
 mod graphics;
+mod menu;
 mod player;
 mod rendering;
 mod simulation;
@@ -16,6 +17,7 @@ mod spatial_partition;
 mod testing;
 
 use config::PhysicsConfig;
+use menu::GameState;
 use testing::{
     spawn_test_all_three, spawn_test_baseline_100, spawn_test_culling_verification,
     spawn_test_gentle_approach, spawn_test_gravity, spawn_test_gravity_boundary,
@@ -25,6 +27,10 @@ use testing::{
     spawn_test_tidal_only, spawn_test_two_triangles, TestConfig,
 };
 
+/// Spawn the initial asteroid field and planetoid.
+///
+/// Registered via `OnEnter(GameState::Playing)` so it runs only after the
+/// player starts the game from the main menu (not during the splash screen).
 fn spawn_initial_world(mut commands: Commands, config: Res<PhysicsConfig>) {
     asteroid::spawn_initial_asteroids(&mut commands, 100, &config);
     // Spawn one large planetoid offset from the player origin.
@@ -39,14 +45,14 @@ fn setup_physics_config(mut config: Query<&mut RapierConfiguration>) {
 }
 
 fn main() {
-    // Check for test mode
+    // Check for test mode — bypasses the menu and starts directly in Playing.
     let test_mode = env::var("GRAV_SIM_TEST").ok();
 
     let mut app = App::new();
 
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "Particle Simulation".into(),
+            title: "Asteroid Simulator".into(),
             resolution: WindowResolution::new(1200, 680),
             ..Default::default()
         }),
@@ -61,35 +67,54 @@ fn main() {
     // larger value shrinks collider mass in physics-space quadratically and causes
     // ExternalForce to produce runaway acceleration at the same numeric values.
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
-    .add_plugins(simulation::SimulationPlugin)
     .insert_resource(player::PlayerFireCooldown::default())
+    // Global startup: config + camera + physics settings (needed by both menu and gameplay).
     .add_systems(
         Startup,
         (
-            // Load config first so every other startup system sees the final values.
             config::load_physics_config,
             graphics::setup_camera.after(config::load_physics_config),
-            rendering::setup_boundary_ring
-                .after(config::load_physics_config)
-                .after(graphics::setup_camera),
-            rendering::setup_hud_score
-                .after(graphics::setup_camera)
-                .after(config::load_physics_config),
-            rendering::setup_stats_text
-                .after(graphics::setup_camera)
-                .after(config::load_physics_config),
-            rendering::setup_debug_panel.after(config::load_physics_config),
             setup_physics_config,
+        ),
+    )
+    // Game-world setup: runs once when entering Playing state (after Start is clicked).
+    .add_systems(
+        OnEnter(GameState::Playing),
+        (
+            rendering::setup_boundary_ring,
+            rendering::setup_hud_score,
+            rendering::setup_stats_text,
+            rendering::setup_debug_panel,
         ),
     );
 
-    // Add testing systems if in test mode
+    // ── State and simulation ──────────────────────────────────────────────────
+
+    if test_mode.is_some() {
+        // Test mode: bypass the menu — start directly in Playing so that all
+        // simulation systems (gated on `in_state(GameState::Playing)`) run
+        // from the very first frame.
+        app.insert_state(GameState::Playing)
+            .add_plugins(simulation::SimulationPlugin);
+    } else {
+        // Normal mode: show the main menu first; transition to Playing on Start.
+        app.add_plugins(menu::MainMenuPlugin)
+            .add_plugins(simulation::SimulationPlugin)
+            // World and player spawned once when we enter Playing via the menu.
+            .add_systems(
+                OnEnter(GameState::Playing),
+                (spawn_initial_world, player::spawn_player),
+            )
+            .insert_resource(TestConfig::default());
+    }
+
+    // ── Test-mode wiring ──────────────────────────────────────────────────────
+
     if let Some(test_name) = test_mode {
         let test_config = TestConfig {
             enabled: true,
             ..Default::default()
         };
-
         app.insert_resource(test_config);
 
         // Add startup system based on test name
@@ -180,18 +205,6 @@ fn main() {
         );
 
         println!("Running test: {}", test_name);
-    } else {
-        app.insert_resource(TestConfig::default()).add_systems(
-            Startup,
-            (
-                spawn_initial_world
-                    .after(config::load_physics_config)
-                    .after(graphics::setup_camera),
-                player::spawn_player
-                    .after(config::load_physics_config)
-                    .after(graphics::setup_camera),
-            ),
-        );
     }
 
     app.run();

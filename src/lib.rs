@@ -6,6 +6,7 @@ pub mod config;
 pub mod constants;
 pub mod error;
 pub mod graphics;
+pub mod menu;
 pub mod player;
 pub mod rendering;
 pub mod simulation;

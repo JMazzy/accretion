@@ -4,7 +4,7 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 
 ## Gameplay
 
-- [ ] **Main menu / splash screen** — Settings, start game
+- [x] **Main menu / splash screen** — Settings, start game
 - [ ] **Pause + in-game menu** — ESC pauses and shows menu (replaces debug options menu)
 - [ ] **Player respawn** — lives system, respawn mechanic, healing damage system
 - [ ] **Save/load system** — Save games, load, snapshots, custom scenarios

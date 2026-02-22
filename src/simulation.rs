@@ -9,6 +9,7 @@ use crate::asteroid::{
 };
 use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_render_mode_system};
 use crate::config::PhysicsConfig;
+use crate::menu::GameState;
 use crate::player::{
     aim_snap_system, apply_player_intent_system, attach_player_ship_mesh_system,
     attach_player_ui_system, attach_projectile_mesh_system, camera_follow_system,
@@ -125,7 +126,8 @@ impl Plugin for SimulationPlugin {
                     )
                         .chain(),
                 )
-                    .chain(),
+                    .chain()
+                    .run_if(in_state(GameState::Playing)),
             )
             // Rebuild grid, run gravity, and count neighbors in FixedUpdate.
             // neighbor_counting_system was previously in Update (60 Hz) — moving it here
@@ -137,7 +139,8 @@ impl Plugin for SimulationPlugin {
                     nbody_gravity_system,
                     neighbor_counting_system,
                 )
-                    .chain(),
+                    .chain()
+                    .run_if(in_state(GameState::Playing)),
             )
             // asteroid_formation_system must run AFTER Rapier (PostUpdate) populates contacts.
             // apply_deferred between the two systems flushes formation's despawns/spawns so
@@ -145,7 +148,9 @@ impl Plugin for SimulationPlugin {
             // merged and despawned by the formation system in the same frame.
             .add_systems(
                 PostUpdate,
-                (asteroid_formation_system, projectile_asteroid_hit_system).chain(),
+                (asteroid_formation_system, projectile_asteroid_hit_system)
+                    .chain()
+                    .run_if(in_state(GameState::Playing)),
             );
     }
 }
