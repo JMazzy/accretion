@@ -3,20 +3,96 @@
 //!
 //! ## Layer model (player / projectile)
 //!
-//! | Layer                 | Technology | Default | Toggle                   |
-//! |-----------------------|------------|---------|--------------------------|
-//! | Ship filled polygon   | `Mesh2d`   | ON      | hidden in `wireframe_only`|
-//! | Ship wireframe outline| Gizmos     | OFF     | `show_ship_outline`      |
-//! | Aim direction indicator| Gizmos    | ON      | `show_aim_indicator`     |
-//! | Health bar            | Gizmos     | always  | —                        |
-//! | Projectile filled disc| `Mesh2d`   | ON      | hidden in `wireframe_only`|
-//! | Projectile outline    | Gizmos     | OFF     | `show_projectile_outline`|
+//! | Layer                  | Technology | Default | Toggle                     |
+//! |------------------------|------------|---------|----------------------------|
+//! | Ship filled polygon    | `Mesh2d`   | ON      | hidden in `wireframe_only` |
+//! | Ship wireframe outline | Gizmos     | OFF     | `show_ship_outline`        |
+//! | Aim direction indicator| `Mesh2d`   | OFF     | `show_aim_indicator`       |
+//! | Health bar             | `Mesh2d`   | always  | —                          |
+//! | Projectile filled disc | `Mesh2d`   | ON      | hidden in `wireframe_only` |
+//! | Projectile outline     | Gizmos     | OFF     | `show_projectile_outline`  |
 
 use super::state::{AimDirection, Player, PlayerHealth, Projectile};
 use crate::asteroid_rendering::filled_polygon_mesh;
 use crate::rendering::OverlayState;
 use bevy::prelude::*;
+use bevy_asset::RenderAssetUsages;
+use bevy_mesh::{Indices, PrimitiveTopology};
 
+// ── Player UI entity registry ─────────────────────────────────────────────────
+
+/// Tracks the world-space `Mesh2d` entities that float above the player ship.
+///
+/// Stored as a `Resource` (not as child entities) so that world-space
+/// positioning is trivial without needing to invert the parent's rotation.
+/// When the player is despawned, [`cleanup_player_ui_system`] reads
+/// this resource, despawns all stored entities, and resets the fields.
+#[derive(Resource, Default)]
+pub struct PlayerUiEntities {
+    /// Dark-red background track of the health bar.
+    pub health_bar_bg: Option<Entity>,
+    /// Coloured HP fill of the health bar.
+    pub health_bar_fill: Option<Entity>,
+    /// Orange aim-direction arrow.
+    pub aim_indicator: Option<Entity>,
+}
+
+// ── ECS component markers ─────────────────────────────────────────────────────
+
+/// Marker for the health-bar background rectangle entity.
+#[derive(Component)]
+pub struct HealthBarBg;
+
+/// Marker + material handle for the health-bar fill rectangle entity.
+/// The material handle is stored here so the fill colour can be updated
+/// in-place without round-tripping through a resource.
+#[derive(Component)]
+pub struct HealthBarFill(pub Handle<ColorMaterial>);
+
+/// Marker for the aim-direction arrow entity.
+#[derive(Component)]
+pub struct AimIndicatorMesh;
+
+// ── Mesh geometry helpers ─────────────────────────────────────────────────────
+
+/// A unit square centred at the origin (−0.5 to +0.5 on both axes).
+/// Scale and translate via [`Transform`] to get desired position and size.
+fn unit_rect_mesh() -> Mesh {
+    let positions: Vec<[f32; 3]> = vec![
+        [-0.5, -0.5, 0.0],
+        [0.5, -0.5, 0.0],
+        [0.5, 0.5, 0.0],
+        [-0.5, 0.5, 0.0],
+    ];
+    let normals: Vec<[f32; 3]> = vec![[0.0, 0.0, 1.0]; 4];
+    let uvs: Vec<[f32; 2]> = vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]];
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(vec![0, 1, 2, 0, 2, 3]));
+    mesh
+}
+
+/// A triangular arrow pointing in local +Y (tip at Y=35, base width 5 units).
+/// Rotate via [`Transform`] to point in any world-space direction.
+fn aim_arrow_mesh() -> Mesh {
+    let positions: Vec<[f32; 3]> = vec![[0.0, 35.0, 0.0], [-2.5, 0.0, 0.0], [2.5, 0.0, 0.0]];
+    let normals: Vec<[f32; 3]> = vec![[0.0, 0.0, 1.0]; 3];
+    let uvs: Vec<[f32; 2]> = vec![[0.5, 1.0], [0.0, 0.0], [1.0, 0.0]];
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
+    mesh
+}
 // ── Ship geometry ─────────────────────────────────────────────────────────────
 
 /// Local-space vertices of the player ship polygon (dart / arrowhead shape).
@@ -103,6 +179,173 @@ pub fn attach_projectile_mesh_system(
     }
 }
 
+/// Spawn the health bar and aim indicator `Mesh2d` entities the first time
+/// a [`Player`] entity appears, and register them in [`PlayerUiEntities`].
+///
+/// All three entities live in **world space** (not as children of the player)
+/// so their positions are unaffected by the ship’s rotation.  A sync system
+/// updates their transforms every frame.
+///
+/// Runs on [`Added<Player>`] — zero per-frame overhead for existing players.
+pub fn attach_player_ui_system(
+    mut commands: Commands,
+    query: Query<Entity, Added<Player>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut ui: ResMut<PlayerUiEntities>,
+) {
+    for _ in query.iter() {
+        // ── Health bar background (dark-red track) ───────────────────────────
+        let bg_mesh = meshes.add(unit_rect_mesh());
+        let bg_mat = materials.add(ColorMaterial::from_color(Color::srgba(0.4, 0.0, 0.0, 0.85)));
+        let bg_entity = commands
+            .spawn((
+                Mesh2d(bg_mesh),
+                MeshMaterial2d(bg_mat),
+                Transform::default(),
+                HealthBarBg,
+            ))
+            .id();
+
+        // ── Health bar fill (green→red) ────────────────────────────────────
+        let fill_mesh = meshes.add(unit_rect_mesh());
+        let fill_mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(0.0, 1.0, 0.0)));
+        let fill_entity = commands
+            .spawn((
+                Mesh2d(fill_mesh),
+                MeshMaterial2d(fill_mat_handle.clone()),
+                Transform::default(),
+                HealthBarFill(fill_mat_handle),
+            ))
+            .id();
+
+        // ── Aim direction arrow ──────────────────────────────────────────────
+        let aim_mesh = meshes.add(aim_arrow_mesh());
+        let aim_mat = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.5, 0.0)));
+        let aim_entity = commands
+            .spawn((
+                Mesh2d(aim_mesh),
+                MeshMaterial2d(aim_mat),
+                Transform::default(),
+                Visibility::Hidden, // starts hidden; shown only when aim is active
+                AimIndicatorMesh,
+            ))
+            .id();
+
+        *ui = PlayerUiEntities {
+            health_bar_bg: Some(bg_entity),
+            health_bar_fill: Some(fill_entity),
+            aim_indicator: Some(aim_entity),
+        };
+    }
+}
+
+/// Update the health bar position, scale, and colour every frame.
+///
+/// The bar hovers at a fixed world-space offset (0, +18) above the player
+/// regardless of the ship’s rotation.  The fill width and colour are
+/// proportional to the remaining HP fraction.
+#[allow(clippy::type_complexity)]
+pub fn sync_player_health_bar_system(
+    q_player: Query<(&Transform, &PlayerHealth), With<Player>>,
+    ui: Res<PlayerUiEntities>,
+    mut q_bg: Query<&mut Transform, (With<HealthBarBg>, Without<Player>, Without<HealthBarFill>)>,
+    mut q_fill: Query<(&HealthBarFill, &mut Transform), (Without<Player>, Without<HealthBarBg>)>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let Ok((ptrans, health)) = q_player.single() else {
+        return;
+    };
+    let hp_frac = (health.hp / health.max_hp).clamp(0.0, 1.0);
+    let pos = ptrans.translation.truncate();
+    const BAR_HALF: f32 = 20.0;
+    const BAR_HEIGHT: f32 = 2.0;
+    const BAR_Y: f32 = 18.0;
+
+    // Background track: full width, centred above player.
+    if let Some(bg_ent) = ui.health_bar_bg {
+        if let Ok(mut t) = q_bg.get_mut(bg_ent) {
+            t.translation = Vec3::new(pos.x, pos.y + BAR_Y, 0.8);
+            t.scale = Vec3::new(BAR_HALF * 2.0, BAR_HEIGHT, 1.0);
+            t.rotation = Quat::IDENTITY;
+        }
+    }
+
+    // Fill: width proportional to HP, anchored at the left edge.
+    if let Some(fill_ent) = ui.health_bar_fill {
+        if let Ok((fill_comp, mut t)) = q_fill.get_mut(fill_ent) {
+            let fill_w = (BAR_HALF * 2.0 * hp_frac).max(0.01);
+            let fill_x = pos.x - BAR_HALF + fill_w * 0.5;
+            t.translation = Vec3::new(fill_x, pos.y + BAR_Y, 1.0);
+            t.scale = Vec3::new(fill_w, BAR_HEIGHT, 1.0);
+            t.rotation = Quat::IDENTITY;
+            // Colour: green at full HP → red at empty.
+            if let Some(mat) = materials.get_mut(&fill_comp.0) {
+                mat.color = Color::srgb(1.0 - hp_frac, hp_frac, 0.0);
+            }
+        }
+    }
+}
+
+/// Update the aim indicator arrow position, orientation, and visibility.
+///
+/// The arrow is a world-space entity centred at the player’s position and
+/// rotated to point toward [`AimDirection`].  It is hidden when the aim
+/// overlay is disabled or the aim vector is near-zero.
+#[allow(clippy::type_complexity)]
+pub fn sync_aim_indicator_system(
+    q_player: Query<&Transform, With<Player>>,
+    ui: Res<PlayerUiEntities>,
+    mut q_aim: Query<(&mut Transform, &mut Visibility), (With<AimIndicatorMesh>, Without<Player>)>,
+    aim: Res<AimDirection>,
+    overlay: Res<OverlayState>,
+) {
+    let Ok(ptrans) = q_player.single() else {
+        return;
+    };
+    let Some(aim_ent) = ui.aim_indicator else {
+        return;
+    };
+    let Ok((mut t, mut vis)) = q_aim.get_mut(aim_ent) else {
+        return;
+    };
+
+    if overlay.show_aim_indicator && aim.0.length_squared() > 0.01 {
+        // The arrow mesh points in local +Y; rotate so +Y faces aim.0 in world space.
+        // atan2(y,x) gives angle from +X; subtract PI/2 to align +Y instead of +X.
+        let aim_angle = aim.0.y.atan2(aim.0.x);
+        t.rotation = Quat::from_rotation_z(aim_angle - std::f32::consts::FRAC_PI_2);
+        t.translation = ptrans.translation.with_z(2.0);
+        t.scale = Vec3::ONE;
+        *vis = Visibility::Visible;
+    } else {
+        *vis = Visibility::Hidden;
+    }
+}
+
+/// Despawn the floating health bar and aim indicator entities when the player
+/// is removed (i.e., when they are destroyed).
+///
+/// Uses [`RemovedComponents<Player>`] which fires in the frame after the
+/// player entity is despawned, by which point the entity IDs in
+/// [`PlayerUiEntities`] are safe to despawn via `Commands`.
+pub fn cleanup_player_ui_system(
+    mut removed: RemovedComponents<Player>,
+    mut ui: ResMut<PlayerUiEntities>,
+    mut commands: Commands,
+) {
+    for _ in removed.read() {
+        if let Some(e) = ui.health_bar_bg.take() {
+            commands.entity(e).despawn();
+        }
+        if let Some(e) = ui.health_bar_fill.take() {
+            commands.entity(e).despawn();
+        }
+        if let Some(e) = ui.aim_indicator.take() {
+            commands.entity(e).despawn();
+        }
+    }
+}
 /// Propagate the `wireframe_only` flag to all live ship and projectile meshes.
 ///
 /// Only runs when [`OverlayState`] changes, so the per-frame cost is negligible.
@@ -130,18 +373,19 @@ pub fn sync_player_and_projectile_mesh_visibility_system(
 
 // ── Gizmo rendering ───────────────────────────────────────────────────────────
 
-/// Draw optional gizmo overlays for the player ship, aim indicator, and projectiles.
+/// Draw optional gizmo overlays for the player ship and projectiles.
 ///
 /// Which layers are drawn is controlled by [`OverlayState`]:
 /// - **Ship outline**: `show_ship_outline` OR `wireframe_only` → coloured polygon loop + nose line
-/// - **Aim indicator**: `show_aim_indicator` → orange line + dot
-/// - **Health bar**: always shown (UI-like feedback, not a geometric overlay)
 /// - **Projectile outlines**: `show_projectile_outline` OR `wireframe_only` → yellow circle
+///
+/// The health bar and aim indicator are now GPU-retained `Mesh2d` entities
+/// managed by `attach_player_ui_system`, `sync_player_health_bar_system`, and
+/// `sync_aim_indicator_system`.
 pub fn player_gizmo_system(
     mut gizmos: Gizmos,
     q_player: Query<(&Transform, &PlayerHealth), With<Player>>,
     q_projectiles: Query<&Transform, With<Projectile>>,
-    aim: Res<AimDirection>,
     overlay: Res<OverlayState>,
 ) {
     // ── Ship ──────────────────────────────────────────────────────────────────
@@ -170,26 +414,8 @@ pub fn player_gizmo_system(
             gizmos.line_2d(pos, nose_world, Color::WHITE);
         }
 
-        // ── Aim indicator (optional) ──────────────────────────────────────────
-        if overlay.show_aim_indicator && aim.0.length_squared() > 0.01 {
-            let aim_tip = pos + aim.0.normalize_or_zero() * 35.0;
-            gizmos.line_2d(pos, aim_tip, Color::srgb(1.0, 0.5, 0.0));
-            gizmos.circle_2d(aim_tip, 3.0, Color::srgb(1.0, 0.5, 0.0));
-        }
-
-        // ── Health bar (always shown) ─────────────────────────────────────────
-        let bar_half = 20.0;
-        let bar_y_offset = 18.0;
-        let bar_start = pos + Vec2::new(-bar_half, bar_y_offset);
-        let bar_end_full = pos + Vec2::new(bar_half, bar_y_offset);
-        let bar_end_hp = bar_start + Vec2::new(bar_half * 2.0 * hp_frac, 0.0);
-        // Background (dark red track)
-        gizmos.line_2d(bar_start, bar_end_full, Color::srgba(0.4, 0.0, 0.0, 0.8));
-        // Fill (green at full HP → red at zero)
-        if hp_frac > 0.0 {
-            let fill_color = Color::srgb(1.0 - hp_frac, hp_frac, 0.0);
-            gizmos.line_2d(bar_start, bar_end_hp, fill_color);
-        }
+        // NOTE: Aim indicator and health bar are now GPU-retained Mesh2d entities.
+        // See attach_player_ui_system / sync_aim_indicator_system / sync_player_health_bar_system.
     }
 
     // ── Projectile outlines (optional) ────────────────────────────────────────

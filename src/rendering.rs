@@ -5,15 +5,17 @@
 //! | Layer              | Technology   | Default | Controlled by           |
 //! |--------------------|--------------|---------|-------------------------|
 //! | Asteroid fills     | `Mesh2d`     | ON      | `wireframe_only` flag   |
-//! | Wireframe outlines | Gizmos       | OFF     | `show_wireframes`       |
+//! | Wireframe outlines | `Mesh2d`     | OFF     | `wireframe_only` (swap) |
+//! | Gizmo wf overlay   | Gizmos       | OFF     | `show_wireframes`       |
 //! | Force vectors      | Gizmos       | OFF     | `show_force_vectors`    |
 //! | Velocity arrows    | Gizmos       | OFF     | `show_velocity_arrows`  |
-//! | Culling boundary   | Gizmos       | ON      | `show_boundary`         |
+//! | Culling boundary   | `Mesh2d`     | OFF     | `show_boundary`         |
 //! | Player ship fill   | `Mesh2d`     | ON      | `wireframe_only` flag   |
 //! | Ship outline       | Gizmos       | OFF     | `show_ship_outline`     |
-//! | Aim indicator      | Gizmos       | OFF     | `show_aim_indicator`    |
+//! | Aim indicator      | `Mesh2d`     | OFF     | `show_aim_indicator`    |
 //! | Projectile fills   | `Mesh2d`     | ON      | `wireframe_only` flag   |
 //! | Projectile outline | Gizmos       | OFF     | `show_projectile_outline`|
+//! | Health bar         | `Mesh2d`     | always  | —                       |
 //! | Stats overlay      | Bevy UI      | OFF     | `show_stats`            |
 //! | Score HUD          | Bevy UI      | always  | —                       |
 //! | Debug panel        | Bevy UI      | hidden  | ESC key                 |
@@ -22,18 +24,21 @@
 //!
 //! | System                        | Schedule | Purpose                             |
 //! |-------------------------------|----------|-------------------------------------|
+//! | `setup_boundary_ring`         | Startup  | Spawn retained GPU boundary ring    |
 //! | `setup_stats_text`            | Startup  | Spawn fixed stats text node         |
 //! | `setup_debug_panel`           | Startup  | Spawn collapsible debug panel       |
 //! | `setup_hud_score`             | Startup  | Spawn permanent score HUD node      |
 //! | `setup_stats_overlay`         | Startup  | Spawn toggleable stats overlay node |
 //! | `stats_display_system`        | Update   | Refresh live/culled/merged text     |
 //! | `hud_score_display_system`    | Update   | Refresh score HUD text              |
-//! | `sync_stats_overlay_visibility_system` | Update | Show/hide stats overlay    |
+//! | `sync_boundary_ring_visibility_system` | Update | Show/hide boundary ring   |
+//! | `sync_stats_overlay_visibility_system` | Update | Show/hide stats overlay   |
 //! | `toggle_debug_panel_system`   | Update   | Open/close panel on ESC             |
 //! | `debug_panel_button_system`   | Update   | Process toggle button clicks        |
 //! | `gizmo_rendering_system`      | Update   | Draw gizmo overlays per OverlayState|
 
 use crate::asteroid::{Asteroid, Vertices};
+use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
 use crate::player::PlayerScore;
 use crate::simulation::SimulationStats;
@@ -79,6 +84,10 @@ pub struct StatsTextDisplay;
 /// Marker for the permanent score HUD node.
 #[derive(Component)]
 pub struct HudScoreDisplay;
+
+/// Marker for the retrained GPU boundary-ring entity.
+#[derive(Component)]
+pub struct BoundaryRing;
 
 /// Marker for the debug overlay panel root node.
 #[derive(Component)]
@@ -160,6 +169,54 @@ fn on_text() -> Color {
 }
 fn off_text() -> Color {
     Color::srgb(0.65, 0.65, 0.65)
+}
+
+// ── Startup: boundary ring ───────────────────────────────────────────────────
+
+/// Spawn the cull-boundary indicator as a retained GPU ring mesh.
+///
+/// This replaces the previous per-frame `gizmos.circle_2d()` call with a
+/// static `Mesh2d` entity that has **zero per-frame CPU cost** — its
+/// visibility is toggled once when `show_boundary` changes.
+///
+/// Must be ordered after [`crate::config::load_physics_config`] so the
+/// correct `cull_distance` is used.
+pub fn setup_boundary_ring(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    config: Res<PhysicsConfig>,
+) {
+    // 3-unit thick ring at the cull boundary; yellow to match previous gizmo.
+    let mesh = meshes.add(ring_mesh(config.cull_distance, 3.0, 128));
+    let mat = materials.add(ColorMaterial::from_color(Color::srgba(1.0, 1.0, 0.0, 0.85)));
+    commands.spawn((
+        Mesh2d(mesh),
+        MeshMaterial2d(mat),
+        Transform::from_translation(Vec3::new(0.0, 0.0, -0.5)), // behind asteroids
+        Visibility::Hidden, // off by default, toggled by show_boundary flag
+        BoundaryRing,
+    ));
+}
+
+/// Show or hide the boundary ring when `show_boundary` changes.
+///
+/// Only re-runs when [`OverlayState`] is mutated — zero overhead every other frame.
+pub fn sync_boundary_ring_visibility_system(
+    overlay: Res<OverlayState>,
+    mut query: Query<&mut Visibility, With<BoundaryRing>>,
+) {
+    if !overlay.is_changed() {
+        return;
+    }
+    let vis = if overlay.show_boundary {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    for mut v in query.iter_mut() {
+        *v = vis;
+    }
 }
 
 // ── Startup: score HUD ────────────────────────────────────────────────────────
@@ -475,8 +532,10 @@ pub fn debug_panel_button_system(
 
 /// Draw all enabled gizmo overlay layers based on [`OverlayState`].
 ///
-/// In the default state only the culling boundary circle is drawn.
-/// Wireframes, force vectors, and velocity arrows are opt-in via the debug panel.
+/// The culling boundary circle and asteroid wireframes in `wireframe_only` mode
+/// are now handled by retained `Mesh2d` entities — this system only handles the
+/// semi-transparent additive overlay (`show_wireframes`), force vectors, and
+/// velocity arrows.
 pub fn gizmo_rendering_system(
     mut gizmos: Gizmos,
     query: Query<(&Transform, &Vertices, &ExternalForce, &Velocity), With<Asteroid>>,
@@ -484,13 +543,11 @@ pub fn gizmo_rendering_system(
     config: Res<PhysicsConfig>,
     overlay: Res<OverlayState>,
 ) {
-    // ── Wireframe outlines ────────────────────────────────────────────────────
-    if overlay.show_wireframes || overlay.wireframe_only {
-        let color = if overlay.wireframe_only {
-            Color::WHITE
-        } else {
-            Color::srgba(1.0, 1.0, 1.0, 0.4)
-        };
+    // ── Wireframe outlines (semi-transparent additive overlay) ─────────────────
+    // NOTE: wireframe_only mode now uses retained Mesh2d polygon-outline meshes
+    // (see sync_asteroid_render_mode_system). This branch only handles the
+    // show_wireframes semi-transparent overlay on top of fills.
+    if overlay.show_wireframes {
         for (transform, vertices, _, _) in query.iter() {
             if vertices.0.len() < 2 {
                 continue;
@@ -503,7 +560,7 @@ pub fn gizmo_rendering_system(
                 let v2 = vertices.0[(i + 1) % n];
                 let p1 = pos + rot.mul_vec3(v1.extend(0.0)).truncate();
                 let p2 = pos + rot.mul_vec3(v2.extend(0.0)).truncate();
-                gizmos.line_2d(p1, p2, color);
+                gizmos.line_2d(p1, p2, Color::srgba(1.0, 1.0, 1.0, 0.4));
             }
         }
     }
@@ -532,8 +589,7 @@ pub fn gizmo_rendering_system(
         }
     }
 
-    // ── Culling boundary circle ───────────────────────────────────────────────
-    if overlay.show_boundary {
-        gizmos.circle_2d(Vec2::ZERO, config.cull_distance, Color::srgb(1.0, 1.0, 0.0));
-    }
+    // NOTE: The culling boundary circle is now a retained Mesh2d ring entity
+    // managed by `setup_boundary_ring` + `sync_boundary_ring_visibility_system`.
+    // No per-frame gizmo call needed here.
 }

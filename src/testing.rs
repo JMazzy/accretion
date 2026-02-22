@@ -238,7 +238,8 @@ pub fn spawn_test_culling_verification(
 
     // Spawn asteroid 2 inside but near the hard cull boundary (HARD_CULL_DISTANCE = 2500 u).
     // High velocity drives it past 2500u within ~6 frames so it is hard-culled well within the limit.
-    let e2 = spawn_asteroid_with_vertices(&mut commands, Vec2::new(2400.0, 0.0), &vertices, grey, 1);
+    let e2 =
+        spawn_asteroid_with_vertices(&mut commands, Vec2::new(2400.0, 0.0), &vertices, grey, 1);
     commands.entity(e2).insert(Velocity {
         linvel: Vec2::new(1000.0, 0.0),
         angvel: 0.0,

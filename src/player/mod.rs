@@ -30,8 +30,10 @@ pub use control::{
     player_oob_damping_system,
 };
 pub use rendering::{
-    attach_player_ship_mesh_system, attach_projectile_mesh_system, camera_follow_system,
-    player_gizmo_system, sync_player_and_projectile_mesh_visibility_system,
+    attach_player_ship_mesh_system, attach_player_ui_system, attach_projectile_mesh_system,
+    camera_follow_system, cleanup_player_ui_system, player_gizmo_system, sync_aim_indicator_system,
+    sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system,
+    PlayerUiEntities,
 };
 pub use state::{
     AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerIntent,

@@ -16,8 +16,15 @@
 //! batches compatible `Mesh2d` + `ColorMaterial` draw calls into a single GPU
 //! dispatch, scaling to thousands of entities with minimal CPU overhead.
 //!
-//! Gizmo wireframes are preserved as an optional debug overlay, toggled via
-//! [`OverlayState`](crate::rendering::OverlayState).
+//! ## Wireframe-Only Mode
+//!
+//! Each asteroid carries an [`AsteroidRenderHandles`] component with both a
+//! filled-polygon mesh handle and a polygon-outline mesh handle.  Toggling
+//! `OverlayState::wireframe_only` swaps the active `Mesh2d` handle between
+//! the two — no gizmo calls and no per-frame CPU work once the toggle fires.
+//!
+//! The semi-transparent gizmo overlay (`show_wireframes`) is preserved as an
+//! additive debug option and continues to use immediate-mode gizmos.
 
 use crate::asteroid::{Asteroid, Vertices};
 use crate::rendering::OverlayState;
@@ -25,9 +32,22 @@ use bevy::prelude::*;
 use bevy_asset::RenderAssetUsages;
 use bevy_mesh::{Indices, PrimitiveTopology};
 
+// ── Retained render handles ───────────────────────────────────────────────────
+
+/// Both mesh/material variants stored per asteroid so `wireframe_only` can
+/// swap between them with a single handle swap — no geometry rebuilds needed.
+#[derive(Component)]
+pub struct AsteroidRenderHandles {
+    pub fill_mesh: Handle<Mesh>,
+    pub fill_material: Handle<ColorMaterial>,
+    pub outline_mesh: Handle<Mesh>,
+    pub outline_material: Handle<ColorMaterial>,
+}
+
 // ── Spawn-time mesh attachment ────────────────────────────────────────────────
 
-/// Attach a filled `Mesh2d` polygon to every newly spawned asteroid.
+/// Attach both a filled `Mesh2d` polygon and a polygon-outline `Mesh2d` to
+/// every newly spawned asteroid.
 ///
 /// Uses [`Added<Asteroid>`] so this only executes for entities that appeared
 /// since the previous frame — there is no per-frame overhead for existing
@@ -37,6 +57,10 @@ use bevy_mesh::{Indices, PrimitiveTopology};
 /// Rapier.  Because `Mesh2d` renders in the entity's local space and the
 /// asteroid vertices are already stored in local space, the rotation is
 /// applied automatically and correctly without any extra math here.
+///
+/// Both mesh/material handles are stored in [`AsteroidRenderHandles`] so
+/// `sync_asteroid_render_mode_system` can swap between them instantly on
+/// `wireframe_only` toggle with no per-frame CPU cost.
 pub fn attach_asteroid_mesh_system(
     mut commands: Commands,
     query: Query<(Entity, &Vertices), Added<Asteroid>>,
@@ -49,41 +73,63 @@ pub fn attach_asteroid_mesh_system(
             continue;
         }
 
-        let mesh_handle = meshes.add(filled_polygon_mesh(&vertices.0));
-        let material_handle = materials.add(ColorMaterial::from_color(rock_color(entity.index())));
+        // ── Filled polygon mesh ───────────────────────────────────────────────
+        let fill_mesh = meshes.add(filled_polygon_mesh(&vertices.0));
+        let fill_material = materials.add(ColorMaterial::from_color(rock_color(entity.index())));
 
-        // Respect wireframe-only mode: hide fills if the flag is already set.
-        let visibility = if overlay.wireframe_only {
-            Visibility::Hidden
+        // ── Polygon outline mesh (used in wireframe_only mode) ────────────────
+        // 0.4-unit half-width gives a crisp but thin outline at typical zoom levels.
+        let outline_mesh = meshes.add(polygon_outline_mesh(&vertices.0, 0.4));
+        let outline_material = materials.add(ColorMaterial::from_color(Color::WHITE));
+
+        // Start in whichever mode is current (fill vs wireframe).
+        let (active_mesh, active_material) = if overlay.wireframe_only {
+            (outline_mesh.clone(), outline_material.clone())
         } else {
-            Visibility::Visible
+            (fill_mesh.clone(), fill_material.clone())
         };
 
         commands.entity(entity).insert((
-            Mesh2d(mesh_handle),
-            MeshMaterial2d(material_handle),
-            visibility,
+            Mesh2d(active_mesh),
+            MeshMaterial2d(active_material),
+            AsteroidRenderHandles {
+                fill_mesh,
+                fill_material,
+                outline_mesh,
+                outline_material,
+            },
         ));
     }
 }
 
-/// Propagate a `wireframe_only` toggle to all currently-alive asteroid meshes.
+/// Swap every asteroid's active `Mesh2d` between the fill and outline variants
+/// whenever `OverlayState::wireframe_only` changes.
 ///
-/// Only runs when `OverlayState` changes, so the per-frame cost is negligible.
-pub fn sync_asteroid_mesh_visibility_system(
+/// Because both variants are pre-generated at spawn time this is a pure
+/// handle-swap with zero mesh rebuilds — it runs only when the flag changes,
+/// not every frame.
+pub fn sync_asteroid_render_mode_system(
     overlay: Res<OverlayState>,
-    mut query: Query<&mut Visibility, (With<Asteroid>, With<Mesh2d>)>,
+    mut query: Query<
+        (
+            &mut Mesh2d,
+            &mut MeshMaterial2d<ColorMaterial>,
+            &AsteroidRenderHandles,
+        ),
+        With<Asteroid>,
+    >,
 ) {
     if !overlay.is_changed() {
         return;
     }
-    let vis = if overlay.wireframe_only {
-        Visibility::Hidden
-    } else {
-        Visibility::Visible
-    };
-    for mut visibility in query.iter_mut() {
-        *visibility = vis;
+    for (mut mesh, mut material, handles) in query.iter_mut() {
+        if overlay.wireframe_only {
+            *mesh = Mesh2d(handles.outline_mesh.clone());
+            *material = MeshMaterial2d(handles.outline_material.clone());
+        } else {
+            *mesh = Mesh2d(handles.fill_mesh.clone());
+            *material = MeshMaterial2d(handles.fill_material.clone());
+        }
     }
 }
 
@@ -140,4 +186,102 @@ fn rock_color(seed: u32) -> Color {
     let g = (lum + t * 0.02).min(1.0);
     let b = (lum.max(0.14) - t * 0.03).max(0.0);
     Color::srgb(r, g, b)
+}
+
+/// Build a retained polygon-outline mesh from a convex polygon.
+///
+/// Each edge `(vᵢ, vᵢ₊₁)` is extruded into a skinny quad of half-width
+/// `half_width` (world units).  The resulting mesh is a `TriangleList` and
+/// is compatible with the standard `Mesh2d` + `ColorMaterial` pipeline.
+///
+/// Used to render asteroid wireframe outlines as GPU-retained geometry
+/// instead of per-frame gizmo calls.
+pub fn polygon_outline_mesh(vertices: &[Vec2], half_width: f32) -> Mesh {
+    let n = vertices.len();
+    debug_assert!(n >= 2, "outline needs ≥ 2 vertices");
+
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(n * 4);
+    let mut indices: Vec<u32> = Vec::with_capacity(n * 6);
+
+    for i in 0..n {
+        let v1 = vertices[i];
+        let v2 = vertices[(i + 1) % n];
+        let dir = (v2 - v1).normalize_or_zero();
+        let perp = Vec2::new(-dir.y, dir.x); // perpendicular, outward
+
+        // Four corners of the edge quad
+        let a = v1 + perp * half_width;
+        let b = v2 + perp * half_width;
+        let c = v2 - perp * half_width;
+        let d = v1 - perp * half_width;
+
+        let base = (i * 4) as u32;
+        positions.push([a.x, a.y, 0.0]);
+        positions.push([b.x, b.y, 0.0]);
+        positions.push([c.x, c.y, 0.0]);
+        positions.push([d.x, d.y, 0.0]);
+
+        // Two triangles: (a,b,c) and (a,c,d)
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    let vcount = positions.len();
+    let normals: Vec<[f32; 3]> = vec![[0.0, 0.0, 1.0]; vcount];
+    let uvs: Vec<[f32; 2]> = vec![[0.0, 0.0]; vcount];
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+/// Build a ring (annulus) mesh centred at the origin.
+///
+/// Used for the cull-boundary indicator and any circular outline.
+/// The ring is `thickness` world-units wide; the outer edge lies at
+/// `radius + thickness/2` and the inner edge at `radius − thickness/2`.
+///
+/// `segments` controls smoothness; 128 is sufficient for a 2000-unit radius
+/// at the maximum zoom-out level.
+pub fn ring_mesh(radius: f32, thickness: f32, segments: usize) -> Mesh {
+    let r_outer = radius + thickness * 0.5;
+    let r_inner = (radius - thickness * 0.5).max(0.0);
+
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(segments * 4);
+    let mut indices: Vec<u32> = Vec::with_capacity(segments * 6);
+
+    for i in 0..segments {
+        let theta_a = (i as f32 / segments as f32) * std::f32::consts::TAU;
+        let theta_b = ((i + 1) as f32 / segments as f32) * std::f32::consts::TAU;
+        let (sa, ca) = theta_a.sin_cos();
+        let (sb, cb) = theta_b.sin_cos();
+
+        let base = (i * 4) as u32;
+        positions.push([ca * r_outer, sa * r_outer, 0.0]); // outer-a
+        positions.push([cb * r_outer, sb * r_outer, 0.0]); // outer-b
+        positions.push([cb * r_inner, sb * r_inner, 0.0]); // inner-b
+        positions.push([ca * r_inner, sa * r_inner, 0.0]); // inner-a
+
+        // Two triangles forming one ring quad
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    let vcount = positions.len();
+    let normals: Vec<[f32; 3]> = vec![[0.0, 0.0, 1.0]; vcount];
+    let uvs: Vec<[f32; 2]> = vec![[0.0, 0.0]; vcount];
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
 }

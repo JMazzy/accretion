@@ -69,6 +69,9 @@ fn main() {
             // Load config first so every other startup system sees the final values.
             config::load_physics_config,
             graphics::setup_camera.after(config::load_physics_config),
+            rendering::setup_boundary_ring
+                .after(config::load_physics_config)
+                .after(graphics::setup_camera),
             rendering::setup_hud_score
                 .after(graphics::setup_camera)
                 .after(config::load_physics_config),

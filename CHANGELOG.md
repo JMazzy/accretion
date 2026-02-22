@@ -1,5 +1,25 @@
 # GRAV-SIM Changelog
 
+## Gizmo → Mesh2d Rendering Optimizations — February 22, 2026
+
+### Boundary ring, asteroid wireframe-only mode, health bar, and aim indicator converted to retained-mode GPU meshes
+
+**Problem**: Several overlays used Bevy immediate-mode gizmos which rebuild CPU geometry and issue new draw calls every frame.  Under load (>500 asteroids) these caused measurable frame-time spikes.  In addition, enabling the asteroid `wireframe_only` mode was handled by switching Gizmo rendering on/off rather than swapping GPU mesh handles, causing a full set of CPU line draws per frame regardless.
+
+**Changes**:
+
+- **`src/asteroid_rendering.rs`**: `attach_asteroid_mesh_system` now generates both a filled mesh and a `polygon_outline_mesh` (quad-strip edges) at spawn, storing both handles in a new `AsteroidRenderHandles` component.  New `sync_asteroid_render_mode_system` swaps the active `Mesh2d` / `MeshMaterial2d` handles when `wireframe_only` changes — zero geometry rebuild, zero per-frame CPU cost in either mode.
+
+- **`src/rendering.rs`**: Added `BoundaryRing` component and `setup_boundary_ring` startup system that spawns a static yellow annulus `Mesh2d` at `cull_distance`.  New `sync_boundary_ring_visibility_system` shows/hides it when `show_boundary` changes.  Removed `gizmos.circle_2d()` boundary draw from `gizmo_rendering_system`.
+
+- **`src/player/rendering.rs`**: Health bar (background + fill) and aim indicator arrow converted to persistent world-space `Mesh2d` entities.  `attach_player_ui_system` spawns them on `Added<Player>`, `sync_player_health_bar_system` updates bar width/colour from HP each frame, `sync_aim_indicator_system` rotates the arrow to match `AimDirection`.  `cleanup_player_ui_system` despawns them on player removal.  New `PlayerUiEntities` resource stores entity handles.
+
+**Result**: All overlay geometry is GPU-resident; per-frame CPU cost for active overlays drops to zero (only ECS transform/visibility writes, no geometry reconstruction).  `show_boundary`, `wireframe_only`, health bar, and aim indicator are now draw-call-free at steady state.
+
+**Build status:** `cargo fmt` ✅  `cargo clippy -- -D warnings` ✅  `cargo build --release` ✅  `./test_all.sh` 10/10 ✅ PASS
+
+---
+
 ## Test Fix: `culling_verification` — February 21, 2026
 
 ### Culling test updated to work with the current hard-cull boundary
@@ -795,22 +815,23 @@ GRAV_SIM_TEST=near_miss cargo run --release
 - **2D simulation only**: All physics operates on the XY plane; no 3D depth or out-of-plane forces
 - **Convex-only colliders**: Asteroid shapes are always convex polygons; concave craters are not modelled, only approximated by their convex hull
 - **Hard world boundary**: 1000-unit cull radius is fixed in source; requires recompilation to change
-- ~~**No configuration file**: All physics constants (gravity, player thrust, damage thresholds, grid cell size) are hard-coded in source; tuning requires `cargo build`~~ ✅ Fixed — `assets/physics.toml` loaded at startup via `PhysicsConfig` resource
 - **No respawn mechanic**: Player destruction is permanent in the current session; no death/restart loop
-- **Gizmo rendering overhead**: Wireframe rendering via Bevy gizmos incurs CPU cost per vertex per frame; force-vector annotations are disabled above 200 live asteroids, but performance may visibly degrade above ~500 simultaneous entities
+  - auto respawn in the center
+  - have a number of "lives" that once depleted exits to a menu
 - **Cluster formation is one-pass**: Asteroid merging happens in a single PostUpdate pass; very large simultaneous contact events may need multiple frames to fully resolve
 - **No save/load**: Simulation state cannot be serialised or resumed between runs
+    - Potential features for save/load:
+        - ability to pause the game and create a "saved game" on demand
+        - ability to load the saved game at a later date
+        - ability to pre-run expensive starting states, let them evolve, and save them at a certain point as scenarios to be used at a later date
+        - ability to create specialty scenarios (or "levels") that can be played (e.g. a system with many small asteroids orbiting around an extremely large planetary gravity well, or a challenging dense meteor shower situation)
 - **Bevy upgrade path**: Currently on Bevy 0.17 + bevy_rapier2d 0.32. A bevy_rapier2d release targeting Bevy 0.18+ will require another migration pass.
 
 ### Potential Enhancements
 
 #### Physics
 
-- ~~**Gravitational binding energy merging**: Replace velocity-threshold merge criterion with a potential-energy check so clusters only stick when kinetic energy falls below gravitational binding energy~~ ✅ Completed
 - **Concave asteroid deformation**: Track per-vertex damage; move impact vertices inward and recompute hull to simulate progressive surface cratering
-- ~~**Rotational-inertia gravity torque**: Include second-moment-of-area in force application so asymmetric composites develop realistic spin~~ ✅ Completed
-- ~~**Soft boundary reflection**: Replace hard cull removal with a potential-well that gently bounces asteroids back toward the simulation centre~~ ✅ Completed
-- ~~**KD-tree spatial index**: Replace the static 500-unit grid with a dynamic KD-tree for better performance under highly non-uniform asteroid distributions~~ ✅ Completed
 
 #### Visual & Rendering
 
@@ -822,15 +843,23 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 #### Gameplay & Extensibility
 
-- ~~**Configuration file**: Load `assets/physics.toml` at startup so constants can be tuned without recompilation~~ ✅ Completed
+- Splash screen upon launching the game with menu items for settings and starting a round.
+- Pause and show in-game menu after pressing ESC (replacing debug menu without pause)
 - **Score and wave system**: Points for destruction scaled by asteroid size; progressive wave spawner increasing count and size over time
 - **Multiple Weapons**:
-  - Ablative - Continuous "chipping" effect
-  - Concussion missiles - split entire large asteroid into unit asteroids
-  - Tractor beam - grab, pull, and push asteroids
-- **Power-up asteroids**: Special asteroids granting temporary buffs (shield, rapid-fire, gravity bomb) on destruction
-- **Boss asteroids**: Single very-large composite (size ≥ 20) with scripted split behaviour as a wave-end objective
-- **Local co-op multiplayer**: Second player ship sharing the same physics world
+  - The base weapon would be a "plasma cannon" with the current behavior
+  - Laser cutter - slices asteroids in half, small damage to enemy ships
+  - Ablative - Continuous "chipping" effect on asteroids, small damage to enemy ships
+  - Missiles - split entire large asteroid into unit asteroids and huge amount of damage to enemies
+  - Tractor beam - grab, pull, and push asteroids (adds new strategies)
+  - Ion cannon - disable enemy ships (no effect on asteroids)
+- **Enemy ships**
+  - computer-controlled enemy ships that fire at the player and need to be destroyed
+  - boss enemies that provide more challenge
+- **Asteroid Mining**: When asteroids are destroyed, they drop "ore" which can be collected and exchanged like money for upgrades to the player ship (restore health, increased maximum health, add shields, add new weapons, etc.).
+- **Local multiplayer**: Additional player ships sharing the same physics world
+  - co-op mode
+  - PvP mode
 
 #### Developer Tooling
 
