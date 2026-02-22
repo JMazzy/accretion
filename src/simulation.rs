@@ -5,7 +5,8 @@
 //! [`crate::rendering`]; player systems live in [`crate::player`].
 
 use crate::asteroid::{
-    compute_convex_hull_from_points, Asteroid, AsteroidSize, NeighborCount, Vertices,
+    compute_convex_hull_from_points, Asteroid, AsteroidSize, GravityForce, NeighborCount,
+    Vertices,
 };
 use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_render_mode_system};
 use crate::config::PhysicsConfig;
@@ -231,7 +232,7 @@ pub(crate) fn gravity_force_between(
 /// Uses O(N²/2) pair iteration since gravity dominates the computation anyway
 /// and the spatial index provides no significant speedup for full-world queries.
 pub(crate) fn nbody_gravity_system(
-    mut query: Query<(Entity, &Transform, &mut ExternalForce), With<Asteroid>>,
+    mut query: Query<(Entity, &Transform, &mut ExternalForce, &mut GravityForce), With<Asteroid>>,
     config: Res<PhysicsConfig>,
 ) {
     let gravity_const = config.gravity_const;
@@ -241,14 +242,15 @@ pub(crate) fn nbody_gravity_system(
     let max_gravity_dist_sq = max_gravity_dist * max_gravity_dist;
 
     // CRITICAL: Reset all forces to zero first, then calculate fresh.
-    for (_, _, mut force) in query.iter_mut() {
+    for (_, _, mut force, mut grav) in query.iter_mut() {
         force.force = Vec2::ZERO;
         force.torque = 0.0;
+        grav.0 = Vec2::ZERO;
     }
 
     // Collect all entities with positions (needed for pairwise calculations)
     let mut entity_data: Vec<(Entity, Vec2)> = Vec::new();
-    for (entity, transform, _) in query.iter() {
+    for (entity, transform, _, _) in query.iter() {
         entity_data.push((entity, transform.translation.truncate()));
     }
 
@@ -277,8 +279,9 @@ pub(crate) fn nbody_gravity_system(
 
     // Apply all collected forces
     for (entity, force_delta) in force_deltas {
-        if let Ok((_, _, mut force)) = query.get_mut(entity) {
+        if let Ok((_, _, mut force, mut grav)) = query.get_mut(entity) {
             force.force += force_delta;
+            grav.0 += force_delta;
         }
     }
 }

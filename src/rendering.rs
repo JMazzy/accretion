@@ -37,14 +37,14 @@
 //! | `debug_panel_button_system`   | Update   | Process toggle button clicks        |
 //! | `gizmo_rendering_system`      | Update   | Draw gizmo overlays per OverlayState|
 
-use crate::asteroid::{Asteroid, Vertices};
+use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
 use crate::player::PlayerScore;
 use crate::simulation::SimulationStats;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::{ExternalForce, Velocity};
+use bevy_rapier2d::prelude::Velocity;
 
 // ── Overlay state resource ────────────────────────────────────────────────────
 
@@ -538,7 +538,7 @@ pub fn debug_panel_button_system(
 /// velocity arrows.
 pub fn gizmo_rendering_system(
     mut gizmos: Gizmos,
-    query: Query<(&Transform, &Vertices, &ExternalForce, &Velocity), With<Asteroid>>,
+    query: Query<(&Transform, &Vertices, &GravityForce, &Velocity), With<Asteroid>>,
     stats: Res<SimulationStats>,
     config: Res<PhysicsConfig>,
     overlay: Res<OverlayState>,
@@ -567,9 +567,9 @@ pub fn gizmo_rendering_system(
 
     // ── Force vectors ─────────────────────────────────────────────────────────
     if overlay.show_force_vectors && stats.live_count < config.force_vector_hide_threshold {
-        for (transform, _, force, _) in query.iter() {
+        for (transform, _, grav, _) in query.iter() {
             let pos = transform.translation.truncate();
-            let force_vec = force.force * config.force_vector_display_scale;
+            let force_vec = grav.0 * config.force_vector_display_scale;
             if force_vec.length() > config.force_vector_min_length {
                 gizmos.line_2d(pos, pos + force_vec, Color::srgb(1.0, 0.15, 0.15));
             }

@@ -30,6 +30,15 @@ pub struct NeighborCount(pub usize);
 #[derive(Component, Debug, Clone)]
 pub struct Vertices(pub Vec<Vec2>);
 
+/// Net gravitational force on this asteroid this physics tick.
+///
+/// Written exclusively by `nbody_gravity_system` in `FixedUpdate`.
+/// Unlike `ExternalForce` (which also accumulates soft-boundary corrections),
+/// this component stores the pure N-body gravity vector and is used by the
+/// force-vector debug overlay so boundary forces don't contaminate the display.
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct GravityForce(pub Vec2);
+
 /// Simple hash-based noise generator for clustering asteroids.
 /// Returns a float in [0, 1) that varies smoothly across space.
 fn noise_2d(x: f32, y: f32, frequency: f32) -> f32 {
@@ -198,6 +207,7 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
                         force: Vec2::ZERO,
                         torque: 0.0,
                     },
+                    GravityForce::default(),
                     CollisionGroups::new(
                         bevy_rapier2d::geometry::Group::GROUP_1,
                         bevy_rapier2d::geometry::Group::GROUP_1
@@ -254,6 +264,7 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
                 force: Vec2::ZERO,
                 torque: 0.0,
             },
+            GravityForce::default(),
             CollisionGroups::new(
                 bevy_rapier2d::geometry::Group::GROUP_1,
                 bevy_rapier2d::geometry::Group::GROUP_1
@@ -443,6 +454,7 @@ pub fn spawn_asteroid_with_vertices(
                     force: Vec2::ZERO,
                     torque: 0.0,
                 },
+                GravityForce::default(),
                 CollisionGroups::new(
                     bevy_rapier2d::geometry::Group::GROUP_1,
                     bevy_rapier2d::geometry::Group::GROUP_1
