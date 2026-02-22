@@ -1,5 +1,19 @@
 # GRAV-SIM Changelog
 
+## Bug Fix: Collision-Spawned Asteroids Placed at Origin — February 21, 2026
+
+**Root cause**: `spawn_asteroid_with_vertices` was inserting `GlobalTransform::default()` (identity = world origin) rather than deriving it from the actual `Transform`.
+
+Rapier's `init_rigid_bodies` (in `PhysicsSet::SyncBackend`) runs **before** `TransformSystems::Propagate` inside `PostUpdate`, and reads `GlobalTransform` — not `Transform` — to set the initial physics-body position.  In the old code, `asteroid_formation_system` and `projectile_asteroid_hit_system` ran without explicit ordering relative to `TransformPropagate`, so they happened to execute before it; `TransformPropagate` would then sync `GlobalTransform` from `Transform` in the same frame, and `init_rigid_bodies` would see the correct value on the *next* frame (since spawning happened one frame before initialization).
+
+After the main-menu commit added `.run_if(in_state(GameState::Playing))` to the PostUpdate chain, Bevy placed the conditioned set **after** `TransformPropagate`.  Now `TransformPropagate` already ran by the time hit/formation systems spawned new asteroids, so `GlobalTransform` was never corrected in that frame, and `init_rigid_bodies` consumed the identity transform — placing every collision-spawned asteroid at the world origin permanently.
+
+**Fix**: `spawn_asteroid_with_vertices` now initialises `GlobalTransform::from(transform)` instead of `GlobalTransform::default()`, making the spawn position correct regardless of system execution order.
+
+**Build status:** `cargo clippy -- -D warnings` ✅  `cargo test --test menu_tests` 5/5 ✅ PASS
+
+---
+
 ## Main Menu / Splash Screen — February 21, 2026
 
 ### GameState machine and splash screen added; all simulation systems gated on `Playing`

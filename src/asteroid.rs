@@ -411,11 +411,19 @@ pub fn spawn_asteroid_with_vertices(
     };
 
     // Spawn asteroid with just transform and physics - wireframe rendering via gizmos
+    //
+    // IMPORTANT: GlobalTransform must be derived from Transform at spawn time.
+    // Rapier's `init_rigid_bodies` (in PhysicsSet::SyncBackend, which runs BEFORE
+    // TransformSystems::Propagate in PostUpdate) reads GlobalTransform to set the
+    // initial physics body position.  If we leave GlobalTransform as identity/default,
+    // the body is placed at the world origin and Writeback will then move Transform
+    // to origin as well — permanently displacing the asteroid regardless of center.
+    let transform = Transform::from_translation(center.extend(0.05));
     let entity = commands
         .spawn((
             (
-                Transform::from_translation(center.extend(0.05)),
-                GlobalTransform::default(),
+                transform,
+                GlobalTransform::from(transform),
                 Asteroid,
                 AsteroidSize(size),
                 NeighborCount(0),
