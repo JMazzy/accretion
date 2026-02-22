@@ -808,67 +808,6 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 ---
 
-## Known Limitations & Future Considerations
-
-### Current Technical Limitations
-
-- **2D simulation only**: All physics operates on the XY plane; no 3D depth or out-of-plane forces
-- **Convex-only colliders**: Asteroid shapes are always convex polygons; concave craters are not modelled, only approximated by their convex hull
-- **Hard world boundary**: 1000-unit cull radius is fixed in source; requires recompilation to change
-- **No respawn mechanic**: Player destruction is permanent in the current session; no death/restart loop
-  - auto respawn in the center
-  - have a number of "lives" that once depleted exits to a menu
-- **Cluster formation is one-pass**: Asteroid merging happens in a single PostUpdate pass; very large simultaneous contact events may need multiple frames to fully resolve
-- **No save/load**: Simulation state cannot be serialised or resumed between runs
-    - Potential features for save/load:
-        - ability to pause the game and create a "saved game" on demand
-        - ability to load the saved game at a later date
-        - ability to pre-run expensive starting states, let them evolve, and save them at a certain point as scenarios to be used at a later date
-        - ability to create specialty scenarios (or "levels") that can be played (e.g. a system with many small asteroids orbiting around an extremely large planetary gravity well, or a challenging dense meteor shower situation)
-- **Bevy upgrade path**: Currently on Bevy 0.17 + bevy_rapier2d 0.32. A bevy_rapier2d release targeting Bevy 0.18+ will require another migration pass.
-
-### Potential Enhancements
-
-#### Physics
-
-- **Concave asteroid deformation**: Track per-vertex damage; move impact vertices inward and recompute hull to simulate progressive surface cratering
-
-#### Visual & Rendering
-
-- **Particle effects**: Impact dust clouds, merge vortex animations, debris trails on destruction
-- **LOD mesh rendering**: Render large composites (>8 vertices) as GPU-filled meshes instead of per-vertex CPU gizmo lines, removing the rendering bottleneck at high count
-- **Velocity heat-map colouring**: Tint wireframes blue→red based on speed for instant visual KE feedback
-- **Fracture overlays**: Draw surface cracks proportional to accumulated damage on surviving asteroids
-- **Post-processing**: Bloom on high-energy collisions; chromatic aberration during player invincibility frames
-
-#### Gameplay & Extensibility
-
-- Splash screen upon launching the game with menu items for settings and starting a round.
-- Pause and show in-game menu after pressing ESC (replacing debug menu without pause)
-- **Score and wave system**: Points for destruction scaled by asteroid size; progressive wave spawner increasing count and size over time
-- **Multiple Weapons**:
-  - The base weapon would be a "plasma cannon" with the current behavior
-  - Laser cutter - slices asteroids in half, small damage to enemy ships
-  - Ablative - Continuous "chipping" effect on asteroids, small damage to enemy ships
-  - Missiles - split entire large asteroid into unit asteroids and huge amount of damage to enemies
-  - Tractor beam - grab, pull, and push asteroids (adds new strategies)
-  - Ion cannon - disable enemy ships (no effect on asteroids)
-- **Enemy ships**
-  - computer-controlled enemy ships that fire at the player and need to be destroyed
-  - boss enemies that provide more challenge
-- **Asteroid Mining**: When asteroids are destroyed, they drop "ore" which can be collected and exchanged like money for upgrades to the player ship (restore health, increased maximum health, add shields, add new weapons, etc.).
-- **Local multiplayer**: Additional player ships sharing the same physics world
-  - co-op mode
-  - PvP mode
-
-#### Developer Tooling
-
-- **Golden test baselines**: Store expected frame-log snapshots in `tests/golden/` and diff on each run to catch unintentional physics constant drift automatically
-- **In-game physics inspector overlay**: Toggle to show entity IDs, velocities, and contact counts without restarting in test mode
-- **Hot-reload constants**: Watch `assets/physics.toml` at runtime and apply changes immediately for rapid tuning iteration
-
----
-
 ## Final Summary
 
 GRAV-SIM successfully demonstrates:
@@ -881,3 +820,5 @@ GRAV-SIM successfully demonstrates:
 - ✅ Full physics documentation and rationale
 
 The system exhibits realistic, predictable physics behavior across all tested scenarios and is ready for extended development or deployment.
+
+For planned features, improvements, and known limitations, see [BACKLOG.md](BACKLOG.md).
