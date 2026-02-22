@@ -32,10 +32,11 @@
 
 ### Initial World
 
-- Asteroids spawn at startup, distributed across a `SIM_WIDTH`×`SIM_HEIGHT` unit simulation area (see `src/constants.rs`)
+- **100 asteroids** spawn at startup, distributed across a `SIM_WIDTH`×`SIM_HEIGHT` (4000×4000) unit simulation area (see `src/constants.rs`)
 - A **`PLAYER_BUFFER_RADIUS`** exclusion zone around the player start (origin) keeps the starting area clear
-- Grid-based seeding prevents random clumping while maintaining variety
+- **Noise-based clustering**: positions are sampled from a hash-based 2D noise function so asteroids naturally form groups; cluster density and size are controlled by `noise_frequency` in `src/asteroid.rs`
 - Random shapes (triangles, squares, pentagons, hexagons, **heptagons, octagons**) and sizes (`ASTEROID_SIZE_SCALE_MIN`–`ASTEROID_SIZE_SCALE_MAX`×), random initial velocities
+- **Vertex jitter**: each spawned polygon has per-vertex random offsets applied (amplitude proportional to `size_scale × 0.8`) so asteroids appear worn and irregular rather than perfectly geometric
 - One **planetoid** (16-sided near-circle, unit size `PLANETOID_UNIT_SIZE`) spawns at a fixed offset from the origin and participates in full N-body gravity and merging like any other asteroid
 
 ### Camera Controls
@@ -240,18 +241,18 @@ Press **ESC** to open or close the debug overlay panel (top-right corner).
 ### Viewport Design
 
 - **Simulation origin**: (0,0) at center of screen initially
-- **Safe spawning area**: Within ±1000 units (inside yellow boundary)
-- **Culling zone**: Beyond ±1000 units (asteroids removed automatically)
-- **Pan limit**: Can't move camera >600 units from origin
-  - Ensures you can always see both the center and part of the boundary
+- **Live zone**: Within `CULL_DISTANCE` radius of origin — asteroids inside count as "live"
+- **Soft boundary**: Beyond `SOFT_BOUNDARY_RADIUS` a gentle inward spring force nudges asteroids back toward centre
+- **Hard-cull zone**: Beyond `HARD_CULL_DISTANCE` asteroids are permanently removed as a safety net
+- **Camera follows the player** — no manual pan; zoom in/out with mouse wheel
 
 ### Zoom Levels Explained
 
-- **0.5x (min)**: Full simulation circle visible (~2000 units across)
+- **0.5x (min)**: Full simulation circle visible
   - Use for high-level overview, cluster observation
 - **1.0x (default)**: 1200×680 simulation window in world units
   - Use for standard gameplay
-- **4.0x-8.0x (max)**: 250-300 unit detail zone
+- **4.0x (max)**: ~300 unit detail zone
   - Use for examining asteroid structures, collision dynamics
 
 ### Statistics as Feedback

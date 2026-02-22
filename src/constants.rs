@@ -123,7 +123,7 @@ pub const GRID_CELL_SIZE: f32 = 500.0;
 
 // ── Camera ───────────────────────────────────────────────────────────────────
 
-/// Minimum camera zoom scale (zoom *out*).  At 0.5 the full 2000-unit cull circle fits comfortably.
+/// Minimum camera zoom scale (zoom *out*).  Allows the full `CULL_DISTANCE` circle to fit comfortably.
 pub const MIN_ZOOM: f32 = 0.5;
 
 /// Maximum camera zoom scale (zoom *in*).  At 4.0 only ~150×100 world units are visible.

@@ -105,7 +105,7 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 - **Soft boundary**: `SOFT_BOUNDARY_RADIUS` — asteroids beyond this distance feel a linear inward spring force (`soft_boundary_system`) that nudges them back toward the centre.  Force = `SOFT_BOUNDARY_STRENGTH × (dist − SOFT_BOUNDARY_RADIUS)` inward.
 - **Hard-cull distance**: `HARD_CULL_DISTANCE` — safety net; only asteroids that escape the soft spring entirely are removed outright.  In normal operation almost no asteroids reach this distance.
-- **Stats boundary**: `CULL_DISTANCE` — used as the reference for the live-count display; asteroids within this radius are shown as "live".
+- **Stats boundary**: `CULL_DISTANCE` — reference for the live-count display; asteroids within this radius are shown as "live".
 - Artificial velocity damping ramps have been removed; energy loss occurs only through collisions and the outer soft spring.
 
 ## ECS Systems Execution Order

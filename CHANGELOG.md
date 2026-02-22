@@ -1,5 +1,20 @@
 # GRAV-SIM Changelog
 
+## Test Fix: `culling_verification` — February 21, 2026
+
+### Culling test updated to work with the current hard-cull boundary
+
+**Root cause** (`src/testing.rs`): The test was written for an older hard-culling setup.  Asteroid 2 was spawned at 2400 u with only 5 u/s outward velocity — at 60 fps over the 350-frame limit it would travel ≈ 29 u total, never reaching `HARD_CULL_DISTANCE` (2500 u).  Result: the test always measured 2 → 2 and reported FAIL.
+
+**Fix**:
+- Asteroid 2 now spawns at 2400 u with **1000 u/s** outward velocity — crosses 2500 u in ≈ 6 frames.
+- `frame_limit` reduced from 350 → 30 (plenty of margin; test completes in < 1 s).
+- Test now reliably produces 2 → 1 and reports **✓ PASS**.
+
+**Build status:** `cargo clippy -- -D warnings` ✅  `GRAV_SIM_TEST=culling_verification cargo run --release` ✅ PASS
+
+---
+
 ## Asteroid Field Clustering & Vertex Jitter — February 21, 2026
 
 ### More interesting initial field distribution and natural-looking asteroid shapes
