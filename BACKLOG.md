@@ -13,7 +13,7 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 - [ ] **Enemy ships** — Computer-controlled enemies
 - [ ] **Boss ships** — Computer-controlled boss encounters
 - [ ] **Special Weapons** — tractor (grab/pull/push asteroids), ion cannon (disable enemy ships)
-- [ ] **Score system enhancements** — Point multipliers (e.g. by hit streak without misses)
+- [x] **Score system enhancements** — Point multipliers (e.g. by hit streak without misses)
 - [ ] **Local multiplayer** — Co-op and PvP modes
 - [ ] **New Name** - Both "particle" and "grav-sim" were placeholder names from early in development. The game needs a proper name. Actual name TBD.
 

@@ -503,12 +503,24 @@ pub fn hud_score_display_system(
     for children in parent_query.iter() {
         for child in children.iter() {
             if let Ok(mut text) = text_query.get_mut(child) {
-                *text = Text::new(format!(
-                    "Score: {}  ({} hits, {} destroyed)",
-                    score.total(),
-                    score.hits,
-                    score.destroyed
-                ));
+                let multiplier = score.multiplier();
+                if multiplier > 1 {
+                    *text = Text::new(format!(
+                        "Score: {}  ({} hits, {} destroyed)  ×{} COMBO! [{}]",
+                        score.total(),
+                        score.hits,
+                        score.destroyed,
+                        multiplier,
+                        score.streak,
+                    ));
+                } else {
+                    *text = Text::new(format!(
+                        "Score: {}  ({} hits, {} destroyed)",
+                        score.total(),
+                        score.hits,
+                        score.destroyed
+                    ));
+                }
             }
         }
     }

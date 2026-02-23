@@ -1,5 +1,36 @@
 # GRAV-SIM Changelog
 
+## Score Multiplier (Hit-Streak Combo System) — February 22, 2026
+
+### Consecutive hits now build a streak; a tiered multiplier increases all point awards until the player misses or dies
+
+**Multiplier tiers**:
+
+| Streak | Multiplier |
+|--------|------------|
+| 0–4    | ×1         |
+| 5–9    | ×2         |
+| 10–19  | ×3         |
+| 20–39  | ×4         |
+| 40+    | ×5         |
+
+**Changes**:
+
+- **`src/player/state.rs`**: Added `was_hit: bool` to `Projectile`. Added `streak: u32` and `points: u32` to `PlayerScore`; added `multiplier()` method and `streak_to_multiplier()` helper. `total()` now returns `points` (multiplied) instead of the old flat formula.
+- **`src/player/combat.rs`**: `projectile_asteroid_hit_system` — replaced `q_projectiles` + `q_proj_transforms` with a single `mut q_proj: Query<(&Transform, &mut Projectile)>`; marks `proj.was_hit = true` instead of despawning immediately. On each hit: increments `streak`, computes multiplier, awards `multiplier` points for the hit plus `5 × multiplier` bonus for a full destroy. `despawn_old_projectiles_system` — now takes `ResMut<PlayerScore>` and resets `score.streak = 0` when a projectile expires without `was_hit`. `player_collision_damage_system` — resets `score.streak = 0` on player death.
+- **`src/rendering.rs`**: `hud_score_display_system` — when multiplier > 1, HUD appends `×N COMBO! [streak]` to the score line.
+
+**Behaviour summary**:
+- Land 5 consecutive hits without missing: score multiplier jumps to ×2
+- Reach 40 consecutive hits: maximum ×5 multiplier
+- Any projectile that expires or leaves the play area without hitting anything resets the streak to 0
+- Dying resets the streak to 0
+- Multiplier is immediately visible in the HUD top-left when active
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo build --release` ✅
+
+---
+
 ## Player Respawn — Lives System, Healing & Game Over — February 22, 2026
 
 ### Players now have 3 lives; the ship respawns automatically after destruction, heals passively over time, and a Game Over overlay appears when all lives are spent

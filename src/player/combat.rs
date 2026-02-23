@@ -100,7 +100,10 @@ pub fn projectile_fire_system(
     let spawn_pos = transform.translation.truncate() + fire_dir * 14.0;
 
     commands.spawn((
-        Projectile { age: 0.0 },
+        Projectile {
+            age: 0.0,
+            was_hit: false,
+        },
         Transform::from_translation(spawn_pos.extend(0.0)),
         Visibility::default(),
         RigidBody::KinematicVelocityBased,
@@ -127,17 +130,26 @@ pub fn projectile_fire_system(
 // ── Projectile lifetime ───────────────────────────────────────────────────────
 
 /// Age projectiles each frame and despawn them when they expire or leave bounds.
+///
+/// A projectile that expires without [`Projectile::was_hit`] being set is
+/// considered a **miss** and resets the hit streak to zero.
 pub fn despawn_old_projectiles_system(
     mut commands: Commands,
     mut q: Query<(Entity, &mut Projectile, &Transform)>,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
+    mut score: ResMut<PlayerScore>,
 ) {
     let dt = time.delta_secs();
     for (entity, mut proj, transform) in q.iter_mut() {
         proj.age += dt;
         let dist = transform.translation.truncate().length();
-        if proj.age >= config.projectile_lifetime || dist > config.projectile_max_dist {
+        let expired = proj.age >= config.projectile_lifetime || dist > config.projectile_max_dist;
+        if expired || proj.was_hit {
+            if expired && !proj.was_hit {
+                // Projectile ran out of range without hitting anything — break streak.
+                score.streak = 0;
+            }
             commands.entity(entity).despawn();
         }
     }
@@ -161,6 +173,7 @@ pub fn player_collision_damage_system(
     time: Res<Time>,
     config: Res<PhysicsConfig>,
     mut lives: ResMut<PlayerLives>,
+    mut score: ResMut<PlayerScore>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     let Ok((player_entity, mut health, player_vel)) = q_player.single_mut() else {
@@ -216,6 +229,7 @@ pub fn player_collision_damage_system(
             // Ship destroyed — consume one life.
             commands.entity(player_entity).despawn();
             lives.remaining -= 1;
+            score.streak = 0; // death breaks the hit streak
             if lives.remaining <= 0 {
                 // No lives left → game over.
                 lives.remaining = 0;
@@ -321,8 +335,7 @@ pub fn projectile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
     q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity, &Vertices), With<Asteroid>>,
-    q_projectiles: Query<Entity, With<Projectile>>,
-    q_proj_transforms: Query<&Transform, With<Projectile>>,
+    mut q_proj: Query<(&Transform, &mut Projectile)>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
 ) {
@@ -336,14 +349,13 @@ pub fn projectile_asteroid_hit_system(
         };
 
         // Identify which entity is the projectile and which the asteroid
-        let (proj_entity, asteroid_entity) =
-            if q_projectiles.get(e1).is_ok() && q_asteroids.get(e2).is_ok() {
-                (e1, e2)
-            } else if q_projectiles.get(e2).is_ok() && q_asteroids.get(e1).is_ok() {
-                (e2, e1)
-            } else {
-                continue;
-            };
+        let (proj_entity, asteroid_entity) = if q_proj.contains(e1) && q_asteroids.contains(e2) {
+            (e1, e2)
+        } else if q_proj.contains(e2) && q_asteroids.contains(e1) {
+            (e2, e1)
+        } else {
+            continue;
+        };
 
         if processed_projectiles.contains(&proj_entity)
             || processed_asteroids.contains(&asteroid_entity)
@@ -358,18 +370,22 @@ pub fn projectile_asteroid_hit_system(
         processed_projectiles.insert(proj_entity);
         processed_asteroids.insert(asteroid_entity);
 
-        commands.entity(proj_entity).despawn();
+        // Mark the projectile as hit so the lifetime system knows to despawn it
+        // without counting it as a missed shot.  We do NOT despawn immediately so
+        // that split/chip paths can still read its world-space position this frame.
+        let proj_pos = q_proj
+            .get(proj_entity)
+            .map(|(t, _)| t.translation.truncate())
+            .unwrap_or_else(|_| transform.translation.truncate());
+        if let Ok((_, mut proj)) = q_proj.get_mut(proj_entity) {
+            proj.was_hit = true;
+        }
 
         let pos = transform.translation.truncate();
         let rot = transform.rotation;
         let vel = velocity.linvel;
         let ang_vel = velocity.angvel;
         let n = size.0;
-
-        let proj_pos = q_proj_transforms
-            .get(proj_entity)
-            .map(|t| t.translation.truncate())
-            .unwrap_or(pos);
 
         // World-space hull vertices (used by split and chip paths)
         let world_verts: Vec<Vec2> = vertices
@@ -378,8 +394,12 @@ pub fn projectile_asteroid_hit_system(
             .map(|v| pos + rot.mul_vec3(v.extend(0.0)).truncate())
             .collect();
 
-        // Every projectile contact scores 1 point.
+        // Increment streak and compute multiplier BEFORE accumulating points so
+        // the threshold hit itself immediately benefits from the new tier.
         score.hits += 1;
+        score.streak += 1;
+        let multiplier = score.multiplier();
+        score.points += multiplier; // 1 × multiplier for the hit itself
 
         match n {
             // ── Destroy ───────────────────────────────────────────────────────
@@ -387,6 +407,7 @@ pub fn projectile_asteroid_hit_system(
                 commands.entity(asteroid_entity).despawn();
                 stats.destroyed_total += 1;
                 score.destroyed += 1;
+                score.points += 5 * multiplier; // bonus for full destroy
             }
 
             // ── Scatter into unit fragments ───────────────────────────────────

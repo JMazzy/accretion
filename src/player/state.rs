@@ -42,10 +42,13 @@ impl Default for PlayerHealth {
 }
 
 /// Per-projectile state attached to each fired round.
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct Projectile {
     /// Seconds since this projectile was spawned.
     pub age: f32,
+    /// Set to `true` when the projectile has already hit an asteroid so the
+    /// lifetime system knows not to count its expiry as a missed shot.
+    pub was_hit: bool,
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────
@@ -94,23 +97,50 @@ pub struct AimIdleTimer {
     pub last_cursor: Option<Vec2>,
 }
 
+/// Multiplier tier thresholds (streak → multiplier).
+///
+/// | Streak | Multiplier |
+/// |--------|------------|
+/// | 0–4    | ×1         |
+/// | 5–9    | ×2         |
+/// | 10–19  | ×3         |
+/// | 20–39  | ×4         |
+/// | 40+    | ×5         |
+pub fn streak_to_multiplier(streak: u32) -> u32 {
+    match streak {
+        0..=4 => 1,
+        5..=9 => 2,
+        10..=19 => 3,
+        20..=39 => 4,
+        _ => 5,
+    }
+}
+
 /// Tracks the player's gameplay score.
 ///
-/// - `hits`: Each projectile–asteroid contact counts as one hit.
-/// - `destroyed`: Asteroids that were fully eliminated (size 0–1, no fragments).
-///
-/// Total score = `hits × 1 + destroyed × 5`.
+/// - `hits`: Raw hit count (each projectile–asteroid contact = 1).
+/// - `destroyed`: Asteroids fully eliminated (size 0–1, no fragments).
+/// - `streak`: Consecutive hits without a miss; resets on miss or death.
+/// - `points`: Accumulated score (multiplier-weighted hits and destroys).
 #[derive(Resource, Default, Debug, Clone, Copy)]
 pub struct PlayerScore {
     pub hits: u32,
     pub destroyed: u32,
+    pub streak: u32,
+    pub points: u32,
 }
 
 impl PlayerScore {
-    /// Compute the total score: 1 pt per hit + 5 pts per destroyed asteroid.
+    /// Total score (points accumulated with multipliers applied).
     #[inline]
     pub fn total(self) -> u32 {
-        self.hits + self.destroyed * 5
+        self.points
+    }
+
+    /// Active scoring multiplier derived from the current streak.
+    #[inline]
+    pub fn multiplier(self) -> u32 {
+        streak_to_multiplier(self.streak)
     }
 }
 
