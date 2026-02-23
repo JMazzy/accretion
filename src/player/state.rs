@@ -6,7 +6,7 @@
 //! - [`super::combat`] — projectile firing + damage
 //! - [`super::rendering`] — gizmo drawing + camera
 
-use crate::constants::{INVINCIBILITY_DURATION, PLAYER_MAX_HP};
+use crate::constants::{INVINCIBILITY_DURATION, PLAYER_LIVES, PLAYER_MAX_HP};
 use bevy::prelude::*;
 
 // ── Components ─────────────────────────────────────────────────────────────────
@@ -26,6 +26,8 @@ pub struct PlayerHealth {
     pub max_hp: f32,
     /// Seconds of invincibility remaining; decremented each frame.
     pub inv_timer: f32,
+    /// Seconds since the last damage event; used to gate passive HP regeneration.
+    pub time_since_damage: f32,
 }
 
 impl Default for PlayerHealth {
@@ -34,6 +36,7 @@ impl Default for PlayerHealth {
             hp: PLAYER_MAX_HP,
             max_hp: PLAYER_MAX_HP,
             inv_timer: 0.0,
+            time_since_damage: 0.0,
         }
     }
 }
@@ -111,7 +114,36 @@ impl PlayerScore {
     }
 }
 
-// ── Invincibility helper ───────────────────────────────────────────────────────
+/// Tracks the player's current lives and pending respawn state.
+///
+/// - `remaining`: lives left, including the current one. Starts at `PLAYER_LIVES`.
+///   Decremented on each death; reaching 0 triggers a game-over.
+/// - `respawn_timer`: when `Some(t)`, counts down `t` seconds before
+///   re-spawning the player ship.  `None` means the player is alive.
+#[derive(Resource, Debug, Clone)]
+pub struct PlayerLives {
+    /// Lives remaining (including the current life).
+    pub remaining: i32,
+    /// Active respawn countdown (seconds); `None` while the ship is alive.
+    pub respawn_timer: Option<f32>,
+}
+
+impl Default for PlayerLives {
+    fn default() -> Self {
+        Self {
+            remaining: PLAYER_LIVES,
+            respawn_timer: None,
+        }
+    }
+}
+
+impl PlayerLives {
+    /// Reset to full lives with no pending respawn (used on game-over restart).
+    pub fn reset(&mut self) {
+        self.remaining = PLAYER_LIVES;
+        self.respawn_timer = None;
+    }
+}
 
 // Helper methods are public API; suppress dead_code until they're wired into systems.
 #[allow(dead_code)]

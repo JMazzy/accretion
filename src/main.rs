@@ -87,6 +87,7 @@ fn main() {
         (
             rendering::setup_boundary_ring,
             rendering::setup_hud_score,
+            rendering::setup_lives_hud,
             rendering::setup_stats_text,
             rendering::setup_debug_panel,
         ),
@@ -111,6 +112,15 @@ fn main() {
                     entered: GameState::Playing,
                 },
                 (spawn_initial_world, player::spawn_player),
+            )
+            // GameOver → Playing: re-spawn the player ship with fresh lives.  Lives are reset
+            // by game_over_button_system before this transition fires.
+            .add_systems(
+                OnTransition {
+                    exited: GameState::GameOver,
+                    entered: GameState::Playing,
+                },
+                player::spawn_player,
             )
             .insert_resource(TestConfig::default());
     }

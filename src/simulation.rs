@@ -15,14 +15,15 @@ use crate::player::{
     attach_player_ui_system, attach_projectile_mesh_system, camera_follow_system,
     cleanup_player_ui_system, despawn_old_projectiles_system, gamepad_connection_system,
     gamepad_to_intent_system, keyboard_to_intent_system, player_collision_damage_system,
-    player_gizmo_system, player_intent_clear_system, player_oob_damping_system,
-    projectile_asteroid_hit_system, projectile_fire_system, sync_aim_indicator_system,
-    sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system, AimDirection,
-    AimIdleTimer, PlayerIntent, PlayerScore, PlayerUiEntities, PreferredGamepad,
+    player_gizmo_system, player_heal_system, player_intent_clear_system, player_oob_damping_system,
+    player_respawn_system, projectile_asteroid_hit_system, projectile_fire_system,
+    sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
+    sync_player_health_bar_system, AimDirection, AimIdleTimer, PlayerIntent, PlayerLives,
+    PlayerScore, PlayerUiEntities, PreferredGamepad,
 };
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
-    stats_display_system, sync_boundary_ring_visibility_system,
+    lives_hud_display_system, stats_display_system, sync_boundary_ring_visibility_system,
     sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
@@ -73,6 +74,7 @@ impl Plugin for SimulationPlugin {
             .insert_resource(PreferredGamepad::default())
             .insert_resource(PlayerIntent::default())
             .insert_resource(PlayerScore::default())
+            .insert_resource(PlayerLives::default())
             .insert_resource(PlayerUiEntities::default())
             .insert_resource(SpatialGrid::default())
             .add_systems(
@@ -117,9 +119,12 @@ impl Plugin for SimulationPlugin {
                         sync_player_health_bar_system, // Update health bar position + colour
                         sync_aim_indicator_system, // Update aim arrow orientation + visibility
                         hud_score_display_system, // Refresh score HUD
+                        lives_hud_display_system, // Refresh lives + respawn-countdown HUD
                         stats_display_system, // Render stats overlay text
                         player_oob_damping_system, // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
+                        player_heal_system,  // Passive HP regeneration after combat gap
+                        player_respawn_system, // Re-spawn ship after countdown
                         cleanup_player_ui_system, // Despawn UI on player death
                     )
                         .chain(),
@@ -314,7 +319,7 @@ pub fn mouse_aim_system(
         // Detect cursor movement: compare to the stored last cursor position.
         let moved = idle
             .last_cursor
-            .is_none_or(|prev| prev.distance_squared(cursor) > 1.0);
+            .is_none_or(|prev: Vec2| prev.distance_squared(cursor) > 1.0);
         if moved {
             idle.last_cursor = Some(cursor);
             idle.secs = 0.0;

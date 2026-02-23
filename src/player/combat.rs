@@ -23,7 +23,7 @@
 //! | ≥ 6           | hexagon    | 6            |
 
 use super::state::{
-    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerScore,
+    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerLives, PlayerScore,
     PreferredGamepad, Projectile,
 };
 use crate::asteroid::{
@@ -31,6 +31,7 @@ use crate::asteroid::{
     spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
 };
 use crate::config::PhysicsConfig;
+use crate::menu::GameState;
 use bevy::input::gamepad::GamepadAxis;
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
@@ -147,8 +148,11 @@ pub fn despawn_old_projectiles_system(
 /// Detect asteroid–player collisions and deal proportional damage.
 ///
 /// Only activates when relative speed exceeds `DAMAGE_SPEED_THRESHOLD`.
-/// Grants invincibility frames after each successful damage event to prevent
-/// rapid repeated damage from a single sustained contact.
+/// Grants invincibility frames after each successful damage event.
+///
+/// On death: decrements [`PlayerLives`] and starts a respawn countdown.
+/// When no lives remain, transitions to [`GameState::GameOver`].
+#[allow(clippy::too_many_arguments)]
 pub fn player_collision_damage_system(
     mut commands: Commands,
     mut q_player: Query<(Entity, &mut PlayerHealth, &Velocity), With<Player>>,
@@ -156,12 +160,18 @@ pub fn player_collision_damage_system(
     rapier_context: ReadRapierContext,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
+    mut lives: ResMut<PlayerLives>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
     let Ok((player_entity, mut health, player_vel)) = q_player.single_mut() else {
         return;
     };
 
-    health.inv_timer = (health.inv_timer - time.delta_secs()).max(0.0);
+    // Tick down invincibility; tick up time since last damage.
+    let dt = time.delta_secs();
+    health.inv_timer = (health.inv_timer - dt).max(0.0);
+    health.time_since_damage += dt;
+
     if health.inv_timer > 0.0 {
         return;
     }
@@ -201,16 +211,103 @@ pub fn player_collision_damage_system(
     if total_damage > 0.0 {
         health.hp -= total_damage;
         health.inv_timer = config.invincibility_duration;
-        println!(
-            "Player hit! HP: {:.1}/{:.1}",
-            health.hp.max(0.0),
-            health.max_hp
-        );
+        health.time_since_damage = 0.0;
         if health.hp <= 0.0 {
+            // Ship destroyed — consume one life.
             commands.entity(player_entity).despawn();
-            println!("Player ship destroyed!");
+            lives.remaining -= 1;
+            if lives.remaining <= 0 {
+                // No lives left → game over.
+                lives.remaining = 0;
+                next_state.set(GameState::GameOver);
+            } else {
+                // Still have lives → schedule respawn.
+                lives.respawn_timer = Some(config.respawn_delay_secs);
+                println!(
+                    "Player ship destroyed! Lives remaining: {}  Respawning in {:.1}s…",
+                    lives.remaining, config.respawn_delay_secs
+                );
+            }
         }
     }
+}
+
+// ── Player respawn ────────────────────────────────────────────────────────────
+
+/// Countdown the respawn timer and re-spawn the player ship when it reaches zero.
+///
+/// Only runs while no `Player` entity exists and `respawn_timer.is_some()`.
+/// The freshly-spawned ship is given a long invincibility window so the player
+/// can orient themselves before taking damage again.
+pub fn player_respawn_system(
+    mut commands: Commands,
+    q_player: Query<(), With<Player>>,
+    mut lives: ResMut<PlayerLives>,
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+) {
+    // Only tick when the ship is absent and we have a pending respawn.
+    if q_player.single().is_ok() {
+        return;
+    }
+    let Some(ref mut timer) = lives.respawn_timer else {
+        return;
+    };
+    *timer -= time.delta_secs();
+    if *timer > 0.0 {
+        return;
+    }
+    lives.respawn_timer = None;
+
+    // Spawn with full HP and extended invincibility.
+    let health = PlayerHealth {
+        inv_timer: config.respawn_invincibility_secs,
+        ..Default::default()
+    };
+
+    commands.spawn((
+        Player,
+        health,
+        bevy_rapier2d::prelude::RigidBody::Dynamic,
+        bevy_rapier2d::prelude::Collider::ball(config.player_collider_radius),
+        bevy_rapier2d::prelude::Velocity::zero(),
+        bevy_rapier2d::prelude::ExternalForce::default(),
+        bevy_rapier2d::prelude::Damping {
+            linear_damping: config.player_linear_damping,
+            angular_damping: config.player_angular_damping,
+        },
+        bevy_rapier2d::prelude::Restitution::coefficient(config.player_restitution),
+        bevy_rapier2d::prelude::CollisionGroups::new(
+            bevy_rapier2d::geometry::Group::GROUP_2,
+            bevy_rapier2d::geometry::Group::GROUP_1,
+        ),
+        bevy_rapier2d::prelude::ActiveEvents::COLLISION_EVENTS,
+        Transform::from_translation(Vec3::ZERO),
+        Visibility::default(),
+    ));
+}
+
+// ── Passive healing ───────────────────────────────────────────────────────────
+
+/// Regenerate the player's HP slowly after `passive_heal_delay_secs` of no damage.
+///
+/// Healing is capped at `max_hp`.  The delay resets every time damage is taken,
+/// so combat interrupts healing immediately.
+pub fn player_heal_system(
+    mut q: Query<&mut PlayerHealth, With<Player>>,
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+) {
+    let Ok(mut health) = q.single_mut() else {
+        return;
+    };
+    if health.hp >= health.max_hp {
+        return;
+    }
+    if health.time_since_damage < config.passive_heal_delay_secs {
+        return;
+    }
+    health.hp = (health.hp + config.passive_heal_rate * time.delta_secs()).min(health.max_hp);
 }
 
 // ── Projectile–Asteroid hit system ───────────────────────────────────────────

@@ -95,6 +95,15 @@ pub struct PhysicsConfig {
     pub damage_speed_threshold: f32,
     pub invincibility_duration: f32,
 
+    // ── Player: Lives & Respawn ────────────────────────────────────────────────
+    pub player_lives: i32,
+    pub respawn_delay_secs: f32,
+    pub respawn_invincibility_secs: f32,
+
+    // ── Player: Passive Healing ────────────────────────────────────────────────
+    pub passive_heal_delay_secs: f32,
+    pub passive_heal_rate: f32,
+
     // ── Gamepad ───────────────────────────────────────────────────────────────
     pub gamepad_left_deadzone: f32,
     pub gamepad_brake_damping: f32,
@@ -178,6 +187,13 @@ impl Default for PhysicsConfig {
             player_max_hp: PLAYER_MAX_HP,
             damage_speed_threshold: DAMAGE_SPEED_THRESHOLD,
             invincibility_duration: INVINCIBILITY_DURATION,
+            // Player: Lives & Respawn
+            player_lives: PLAYER_LIVES,
+            respawn_delay_secs: RESPAWN_DELAY_SECS,
+            respawn_invincibility_secs: RESPAWN_INVINCIBILITY_SECS,
+            // Player: Passive Healing
+            passive_heal_delay_secs: PASSIVE_HEAL_DELAY_SECS,
+            passive_heal_rate: PASSIVE_HEAL_RATE,
             // Gamepad
             gamepad_left_deadzone: GAMEPAD_LEFT_DEADZONE,
             gamepad_brake_damping: GAMEPAD_BRAKE_DAMPING,

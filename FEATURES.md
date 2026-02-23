@@ -57,6 +57,31 @@
 - **X-axis**: Right (positive)
 - **Y-axis**: Up (positive)
 
+## Lives, Respawn & Game Over
+
+### Lives System
+
+- The player starts each session with **3 lives** (displayed as ♥ hearts in the HUD, below the score).
+- Each time the ship is destroyed one heart is consumed and a respawn countdown begins.
+- The `player_lives` count (default `PLAYER_LIVES = 3`) and all timing constants can be tuned in `assets/physics.toml` without recompilation.
+
+### Respawn
+
+- After destruction the HUD shows **"RESPAWNING IN X.Xs…"** counting down `respawn_delay_secs` (default 2.5 s).
+- The ship re-spawns at the **world origin** (simulation centre) with full HP.
+- A post-respawn **invincibility window** (`respawn_invincibility_secs`, default 4.0 s) protects the ship long enough to orient and escape any nearby asteroids.
+
+### Passive Healing
+
+- If the ship takes no damage for `passive_heal_delay_secs` (default 6.0 s), HP begins regenerating at `passive_heal_rate` HP/s (default 6.0).
+- Healing stops when HP reaches the maximum and resets its cooldown on the next hit.
+
+### Game Over
+
+- When the final life is lost the simulation freezes and a **full-screen Game Over overlay** appears, showing the current score.
+- **PLAY AGAIN** (button or **Enter**): resets lives to 3 and returns to the existing world (asteroids remain intact).
+- **QUIT** (button): exits the application.
+
 ## Visual Feedback
 
 ### Score HUD

@@ -39,7 +39,7 @@
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
-use crate::player::PlayerScore;
+use crate::player::{PlayerLives, PlayerScore};
 use crate::simulation::SimulationStats;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
@@ -91,6 +91,14 @@ pub struct BoundaryRing;
 /// Marker for the debug overlay panel root node.
 #[derive(Component)]
 pub struct DebugPanel;
+
+/// Marker for the lives / respawn-countdown HUD node.
+#[derive(Component)]
+pub struct LivesHudDisplay;
+
+/// Marker for the respawn-countdown text within the lives HUD.
+#[derive(Component)]
+pub struct RespawnCountdownText;
 
 /// Tags a toggle button in the debug panel with the overlay field it controls.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
@@ -246,14 +254,97 @@ pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>) {
 
 // ── Startup: stats overlay text ───────────────────────────────────────────────
 
-/// Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
-pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+/// Spawn the lives counter and respawn-countdown HUD (always visible during play).
+///
+/// Structure (top-left column, below score):
+/// ```text
+///  Lives: ♥ ♥ ♥
+///  RESPAWNING IN 2.4s   ← hidden while alive
+/// ```
+pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
+    let row_h = config.stats_font_size + 6.0;
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
-                top: Val::Px(10.0 + config.stats_font_size + 6.0),
+                top: Val::Px(10.0 + row_h),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(2.0),
+                ..default()
+            },
+            LivesHudDisplay,
+        ))
+        .with_children(|parent| {
+            // Lives counter row
+            parent.spawn((
+                Text::new("Lives: * * *"),
+                TextFont {
+                    font_size: config.stats_font_size,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.95, 0.45, 0.45)),
+            ));
+            // Respawn countdown — hidden while alive
+            parent.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: config.stats_font_size - 2.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.75, 0.0)),
+                Visibility::Hidden,
+                RespawnCountdownText,
+            ));
+        });
+}
+
+/// Refresh the lives HUD and respawn-countdown text each frame.
+pub fn lives_hud_display_system(
+    lives: Res<PlayerLives>,
+    config: Res<PhysicsConfig>,
+    parent_query: Query<&Children, With<LivesHudDisplay>>,
+    mut text_query: Query<(&mut Text, &mut Visibility, Option<&RespawnCountdownText>)>,
+) {
+    if !lives.is_changed() {
+        return;
+    }
+    for children in parent_query.iter() {
+        for child in children.iter() {
+            let Ok((mut text, mut vis, respawn_tag)) = text_query.get_mut(child) else {
+                continue;
+            };
+            if respawn_tag.is_some() {
+                // Respawn countdown text
+                if let Some(t) = lives.respawn_timer {
+                    *text = Text::new(format!("RESPAWNING IN {t:.1}s…"));
+                    *vis = Visibility::Visible;
+                } else {
+                    *text = Text::new("");
+                    *vis = Visibility::Hidden;
+                }
+            } else {
+                // Lives counter — filled (*) and lost (-) markers
+                let total = config.player_lives.max(0) as usize;
+                let filled = lives.remaining.max(0) as usize;
+                let stars: String =
+                    "* ".repeat(filled) + &"- ".repeat(total.saturating_sub(filled));
+                *text = Text::new(format!("Lives: {}", stars.trim_end()));
+            }
+        }
+    }
+}
+
+/// Startup: stats overlay text — Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
+pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+    let row_h = config.stats_font_size + 6.0;
+    // Position below score row (row 0) and the two-row lives HUD (rows 1-2).
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                top: Val::Px(10.0 + row_h * 3.0),
                 ..default()
             },
             StatsTextDisplay,

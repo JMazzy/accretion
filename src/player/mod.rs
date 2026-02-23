@@ -21,8 +21,8 @@ pub mod state;
 // ── Flat re-exports (backward-compatible API surface) ─────────────────────────
 
 pub use combat::{
-    despawn_old_projectiles_system, player_collision_damage_system, projectile_asteroid_hit_system,
-    projectile_fire_system,
+    despawn_old_projectiles_system, player_collision_damage_system, player_heal_system,
+    player_respawn_system, projectile_asteroid_hit_system, projectile_fire_system,
 };
 pub use control::{
     aim_snap_system, apply_player_intent_system, gamepad_connection_system,
@@ -37,7 +37,7 @@ pub use rendering::{
 };
 pub use state::{
     AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerIntent,
-    PlayerScore, PreferredGamepad,
+    PlayerLives, PlayerScore, PreferredGamepad,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

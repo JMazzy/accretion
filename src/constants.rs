@@ -207,6 +207,23 @@ pub const DAMAGE_SPEED_THRESHOLD: f32 = 30.0;
 /// Prevents rapid-fire damage from a sustained graze contact.
 pub const INVINCIBILITY_DURATION: f32 = 0.5;
 
+/// Number of lives the player starts with.  Decrements on each death;
+/// the game ends when it reaches zero.
+pub const PLAYER_LIVES: i32 = 3;
+
+/// Seconds to wait after death before the ship re-materialises.
+pub const RESPAWN_DELAY_SECS: f32 = 2.5;
+
+/// Seconds of invincibility granted on respawn — longer than a normal hit so
+/// the player has time to orientate before taking damage again.
+pub const RESPAWN_INVINCIBILITY_SECS: f32 = 4.0;
+
+/// Seconds without any damage before passive HP regeneration begins.
+pub const PASSIVE_HEAL_DELAY_SECS: f32 = 6.0;
+
+/// HP regenerated per second once the passive heal delay has elapsed.
+pub const PASSIVE_HEAL_RATE: f32 = 6.0;
+
 // ── Gamepad ───────────────────────────────────────────────────────────────────
 
 /// Left-stick dead zone: inputs smaller than this fraction are ignored.

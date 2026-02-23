@@ -27,6 +27,8 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::RapierConfiguration;
 
+use crate::player::{PlayerLives, PlayerScore};
+
 // ── Game state ────────────────────────────────────────────────────────────────
 
 /// Top-level application state machine.
@@ -43,6 +45,8 @@ pub enum GameState {
     Playing,
     /// Simulation frozen; in-game pause overlay is visible.
     Paused,
+    /// Player has exhausted all lives; game-over overlay shown.
+    GameOver,
 }
 
 // ── Component markers ─────────────────────────────────────────────────────────
@@ -72,6 +76,16 @@ pub struct PauseResumeButton;
 /// Tags the "Debug Overlays" toggle button in the pause menu.
 #[derive(Component)]
 pub struct PauseDebugButton;
+
+// ── Game-Over component markers ──────────────────────────────────────────────
+
+/// Root node of the game-over overlay; despawned on `OnExit(GameOver)`.
+#[derive(Component)]
+pub struct GameOverRoot;
+
+/// Tags the "Play Again" button in the game-over overlay.
+#[derive(Component)]
+pub struct GameOverPlayAgainButton;
 
 // ── Plugin ────────────────────────────────────────────────────────────────────
 
@@ -109,6 +123,13 @@ impl Plugin for MainMenuPlugin {
             .add_systems(
                 Update,
                 toggle_pause_system.run_if(in_state(GameState::Playing)),
+            )
+            // ── Game Over ─────────────────────────────────────────────────────
+            .add_systems(OnEnter(GameState::GameOver), setup_game_over)
+            .add_systems(OnExit(GameState::GameOver), cleanup_game_over)
+            .add_systems(
+                Update,
+                game_over_button_system.run_if(in_state(GameState::GameOver)),
             );
     }
 }
@@ -646,6 +667,219 @@ pub fn pause_menu_button_system(
                     }
                 }
             }
+        }
+    }
+
+    for (interaction, children) in quit_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                exit.write(bevy::app::AppExit::Success);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(quit_text());
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── OnEnter(GameOver): spawn game-over overlay ────────────────────────────────
+
+/// Spawn the game-over overlay centred over the frozen world.
+///
+/// Shows final score and a "PLAY AGAIN" button that re-spawns the player
+/// with a fresh set of lives without resetting the asteroid field.
+pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.82)),
+            ZIndex(300),
+            GameOverRoot,
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::all(Val::Px(40.0)),
+                        row_gap: Val::Px(16.0),
+                        border: UiRect::all(Val::Px(2.0)),
+                        min_width: Val::Px(320.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.06, 0.02, 0.02)),
+                    BorderColor::all(Color::srgb(0.55, 0.10, 0.10)),
+                ))
+                .with_children(|card| {
+                    card.spawn((
+                        Text::new("GAME OVER"),
+                        TextFont {
+                            font_size: 46.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(1.0, 0.22, 0.22)),
+                    ));
+
+                    pause_spacer(card, 4.0);
+
+                    card.spawn((
+                        Text::new(format!(
+                            "Score: {}   ({} hits · {} destroyed)",
+                            score.total(),
+                            score.hits,
+                            score.destroyed
+                        )),
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(subtitle_color()),
+                    ));
+
+                    pause_spacer(card, 8.0);
+
+                    // Play Again button
+                    card.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(220.0),
+                            height: Val::Px(50.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(pause_resume_bg()),
+                        BorderColor::all(pause_resume_border()),
+                        GameOverPlayAgainButton,
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new("PLAY AGAIN"),
+                            TextFont {
+                                font_size: 18.0,
+                                ..default()
+                            },
+                            TextColor(pause_resume_text()),
+                        ));
+                    });
+
+                    // Quit button
+                    card.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(220.0),
+                            height: Val::Px(50.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(quit_bg()),
+                        BorderColor::all(quit_border()),
+                        MenuQuitButton,
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new("QUIT"),
+                            TextFont {
+                                font_size: 18.0,
+                                ..default()
+                            },
+                            TextColor(quit_text()),
+                        ));
+                    });
+
+                    pause_spacer(card, 4.0);
+
+                    card.spawn((
+                        Text::new("Press Enter to play again"),
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(hint_color()),
+                    ));
+                });
+        });
+}
+
+// ── OnExit(GameOver): despawn overlay ────────────────────────────────────────
+
+/// Recursively despawn all game-over overlay entities.
+pub fn cleanup_game_over(mut commands: Commands, query: Query<Entity, With<GameOverRoot>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
+    }
+}
+
+// ── Update (GameOver): button + keyboard interaction ─────────────────────────
+
+/// Handle Play Again / Quit actions in the game-over overlay.
+///
+/// - **PLAY AGAIN** (button or Enter): reset [`PlayerLives`] → transition
+///   back to `Playing` so `OnTransition{GameOver→Playing}` re-spawns the ship.
+/// - **QUIT** (button): sends [`AppExit`].
+#[allow(clippy::type_complexity)]
+pub fn game_over_button_system(
+    play_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<GameOverPlayAgainButton>),
+    >,
+    quit_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuQuitButton>)>,
+    mut btn_text: Query<&mut TextColor>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut exit: MessageWriter<bevy::app::AppExit>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut lives: ResMut<PlayerLives>,
+) {
+    let wants_play_again = keys.just_pressed(KeyCode::Enter)
+        || play_query.iter().any(|(i, _)| *i == Interaction::Pressed);
+
+    if wants_play_again {
+        lives.reset();
+        next_state.set(GameState::Playing);
+        return;
+    }
+
+    for (interaction, children) in play_query.iter() {
+        match interaction {
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(pause_resume_text());
+                    }
+                }
+            }
+            Interaction::Pressed => {}
         }
     }
 

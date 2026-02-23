@@ -1,5 +1,31 @@
 # GRAV-SIM Changelog
 
+## Player Respawn — Lives System, Healing & Game Over — February 22, 2026
+
+### Players now have 3 lives; the ship respawns automatically after destruction, heals passively over time, and a Game Over overlay appears when all lives are spent
+
+**Changes**:
+
+- **`src/constants.rs`**: Added `PLAYER_LIVES` (3), `RESPAWN_DELAY_SECS` (2.5 s), `RESPAWN_INVINCIBILITY_SECS` (4.0 s), `PASSIVE_HEAL_DELAY_SECS` (6.0 s), `PASSIVE_HEAL_RATE` (6.0 HP/s).
+- **`src/config.rs`**: Mirrored the five new constants as `PhysicsConfig` fields so they can be overridden at runtime via `assets/physics.toml`.
+- **`src/player/state.rs`**: Added `time_since_damage: f32` to `PlayerHealth`. Added `PlayerLives` resource (`remaining`, `respawn_timer`).
+- **`src/player/combat.rs`**: Rewrote death handling: ship despawns, life consumed, respawn countdown set (or `GameState::GameOver` on last life). Added `player_respawn_system` and `player_heal_system`.
+- **`src/menu.rs`**: Added `GameOver` to `GameState`. Added full-screen Game Over overlay (`setup_game_over`, `cleanup_game_over`, `game_over_button_system`). PLAY AGAIN resets lives; QUIT exits.
+- **`src/rendering.rs`**: Added lives HUD (hearts ♥/♡) and respawn countdown text below the score. Added `lives_hud_display_system`.
+- **`src/simulation.rs`**: Registered `PlayerLives` resource; wired in three new systems.
+- **`src/main.rs`**: Added `setup_lives_hud` to startup; added `OnTransition{GameOver→Playing}` → `spawn_player`.
+
+**Behaviour summary**:
+- Ship starts with 3 lives (♥ ♥ ♥ in HUD)
+- On death: ship despawns; one heart removed; 2.5 s respawn countdown shown
+- After countdown: ship re-spawns at origin with 4 s invincibility
+- Last life lost → Game Over overlay; PLAY AGAIN resets lives without resetting the asteroid world
+- Passive healing: 6 HP/s after 6 s of no damage
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `./test_all.sh` 10/10 ✅ PASS
+
+---
+
 ## Bug Fix: Health Bar Frozen After Resuming from Pause — February 22, 2026
 
 **Root cause**: `OnEnter(GameState::Playing)` fires on *every* transition into `Playing`, including `Paused → Playing` on resume. This caused `spawn_player` (and `spawn_initial_world`, `setup_boundary_ring`, etc.) to re-run each time the player resumed. With two `Player` entities in the world, `q_player.single()` in `sync_player_health_bar_system` returned an error and the system exited early, leaving the health bar mesh frozen at its last position instead of following the ship.
