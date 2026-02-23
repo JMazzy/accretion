@@ -21,8 +21,10 @@ pub mod state;
 // ── Flat re-exports (backward-compatible API surface) ─────────────────────────
 
 pub use combat::{
-    despawn_old_projectiles_system, player_collision_damage_system, player_heal_system,
-    player_respawn_system, projectile_asteroid_hit_system, projectile_fire_system,
+    despawn_old_missiles_system, despawn_old_projectiles_system, missile_asteroid_hit_system,
+    missile_fire_system, missile_recharge_system, player_collision_damage_system,
+    player_heal_system, player_respawn_system, projectile_asteroid_hit_system,
+    projectile_fire_system,
 };
 pub use control::{
     aim_snap_system, apply_player_intent_system, gamepad_connection_system,
@@ -30,14 +32,15 @@ pub use control::{
     player_oob_damping_system,
 };
 pub use rendering::{
-    attach_player_ship_mesh_system, attach_player_ui_system, attach_projectile_mesh_system,
-    camera_follow_system, cleanup_player_ui_system, player_gizmo_system, sync_aim_indicator_system,
+    attach_missile_mesh_system, attach_player_ship_mesh_system, attach_player_ui_system,
+    attach_projectile_mesh_system, camera_follow_system, cleanup_player_ui_system,
+    player_gizmo_system, sync_aim_indicator_system,
     sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system,
     PlayerUiEntities,
 };
 pub use state::{
-    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerIntent,
-    PlayerLives, PlayerScore, PreferredGamepad,
+    AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
+    PlayerHealth, PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

@@ -194,6 +194,29 @@ pub const PROJECTILE_MAX_DIST: f32 = 2000.0;
 /// Radius (u) of projectile ball collider.
 pub const PROJECTILE_COLLIDER_RADIUS: f32 = 2.0;
 
+// ── Player: Missiles ─────────────────────────────────────────────────────────
+
+/// Maximum number of missiles the player can carry.
+pub const MISSILE_AMMO_MAX: u32 = 5;
+
+/// Speed (u/s) of fired missiles — slower than bullets, heavier impact.
+pub const MISSILE_SPEED: f32 = 380.0;
+
+/// Minimum seconds between consecutive missile shots.
+pub const MISSILE_COOLDOWN: f32 = 0.5;
+
+/// Seconds after which a missile is automatically despawned.
+pub const MISSILE_LIFETIME: f32 = 4.0;
+
+/// Distance from origin beyond which a live missile is despawned.
+pub const MISSILE_MAX_DIST: f32 = 2000.0;
+
+/// Radius (u) of missile ball collider — larger than a bullet.
+pub const MISSILE_COLLIDER_RADIUS: f32 = 5.0;
+
+/// Seconds for one missile to recharge automatically.
+pub const MISSILE_RECHARGE_SECS: f32 = 12.0;
+
 // ── Player: Health ────────────────────────────────────────────────────────────
 
 /// Player ship starting and maximum HP.

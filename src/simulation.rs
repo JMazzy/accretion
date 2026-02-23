@@ -11,20 +11,22 @@ use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_rende
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::player::{
-    aim_snap_system, apply_player_intent_system, attach_player_ship_mesh_system,
-    attach_player_ui_system, attach_projectile_mesh_system, camera_follow_system,
-    cleanup_player_ui_system, despawn_old_projectiles_system, gamepad_connection_system,
-    gamepad_to_intent_system, keyboard_to_intent_system, player_collision_damage_system,
-    player_gizmo_system, player_heal_system, player_intent_clear_system, player_oob_damping_system,
+    aim_snap_system, apply_player_intent_system, attach_missile_mesh_system,
+    attach_player_ship_mesh_system, attach_player_ui_system, attach_projectile_mesh_system,
+    camera_follow_system, cleanup_player_ui_system, despawn_old_missiles_system,
+    despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
+    keyboard_to_intent_system, missile_asteroid_hit_system, missile_fire_system,
+    missile_recharge_system, player_collision_damage_system, player_gizmo_system,
+    player_heal_system, player_intent_clear_system, player_oob_damping_system,
     player_respawn_system, projectile_asteroid_hit_system, projectile_fire_system,
     sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
-    sync_player_health_bar_system, AimDirection, AimIdleTimer, PlayerIntent, PlayerLives,
-    PlayerScore, PlayerUiEntities, PreferredGamepad,
+    sync_player_health_bar_system, AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown,
+    PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad,
 };
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
-    lives_hud_display_system, stats_display_system, sync_boundary_ring_visibility_system,
-    sync_stats_overlay_visibility_system, OverlayState,
+    lives_hud_display_system, missile_hud_display_system, stats_display_system,
+    sync_boundary_ring_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -75,6 +77,8 @@ impl Plugin for SimulationPlugin {
             .insert_resource(PlayerIntent::default())
             .insert_resource(PlayerScore::default())
             .insert_resource(PlayerLives::default())
+            .insert_resource(MissileAmmo::default())
+            .insert_resource(MissileCooldown::default())
             .insert_resource(PlayerUiEntities::default())
             .insert_resource(SpatialGrid::default())
             .add_systems(
@@ -97,8 +101,11 @@ impl Plugin for SimulationPlugin {
                     // ── Group 2a: input / camera / mesh attachment ───────────
                     (
                         projectile_fire_system,           // Space/click/right-stick fires
+                        missile_fire_system,              // X/right-click fires a missile
                         aim_snap_system,                  // Snap aim after idle timeout
                         despawn_old_projectiles_system,   // Expire old projectiles
+                        despawn_old_missiles_system,      // Expire old missiles
+                        missile_recharge_system,          // Recharge missile ammo over time
                         user_input_system,                // Mouse wheel zoom
                         camera_follow_system,             // Camera tracks player
                         camera_zoom_system,               // Apply zoom scale
@@ -107,6 +114,7 @@ impl Plugin for SimulationPlugin {
                         attach_player_ship_mesh_system,   // Attach Mesh2d to player ship
                         attach_player_ui_system,          // Spawn health bar + aim indicator
                         attach_projectile_mesh_system,    // Attach Mesh2d to new projectiles
+                        attach_missile_mesh_system,       // Attach Mesh2d to new missiles
                         sync_player_and_projectile_mesh_visibility_system, // Propagate wireframe_only
                     )
                         .chain(),
@@ -120,6 +128,7 @@ impl Plugin for SimulationPlugin {
                         sync_aim_indicator_system, // Update aim arrow orientation + visibility
                         hud_score_display_system, // Refresh score HUD
                         lives_hud_display_system, // Refresh lives + respawn-countdown HUD
+                        missile_hud_display_system, // Refresh missile ammo HUD
                         stats_display_system, // Render stats overlay text
                         player_oob_damping_system, // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
@@ -151,7 +160,11 @@ impl Plugin for SimulationPlugin {
             // merged and despawned by the formation system in the same frame.
             .add_systems(
                 PostUpdate,
-                (asteroid_formation_system, projectile_asteroid_hit_system)
+                (
+                    asteroid_formation_system,
+                    projectile_asteroid_hit_system,
+                    missile_asteroid_hit_system,
+                )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             )

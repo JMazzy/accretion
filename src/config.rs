@@ -90,6 +90,15 @@ pub struct PhysicsConfig {
     pub projectile_max_dist: f32,
     pub projectile_collider_radius: f32,
 
+    // ── Player: Missiles ─────────────────────────────────────────────────────
+    pub missile_ammo_max: u32,
+    pub missile_speed: f32,
+    pub missile_cooldown: f32,
+    pub missile_lifetime: f32,
+    pub missile_max_dist: f32,
+    pub missile_collider_radius: f32,
+    pub missile_recharge_secs: f32,
+
     // ── Player: Health ────────────────────────────────────────────────────────
     pub player_max_hp: f32,
     pub damage_speed_threshold: f32,
@@ -183,6 +192,14 @@ impl Default for PhysicsConfig {
             projectile_lifetime: PROJECTILE_LIFETIME,
             projectile_max_dist: PROJECTILE_MAX_DIST,
             projectile_collider_radius: PROJECTILE_COLLIDER_RADIUS,
+            // Player: Missiles
+            missile_ammo_max: MISSILE_AMMO_MAX,
+            missile_speed: MISSILE_SPEED,
+            missile_cooldown: MISSILE_COOLDOWN,
+            missile_lifetime: MISSILE_LIFETIME,
+            missile_max_dist: MISSILE_MAX_DIST,
+            missile_collider_radius: MISSILE_COLLIDER_RADIUS,
+            missile_recharge_secs: MISSILE_RECHARGE_SECS,
             // Player: Health
             player_max_hp: PLAYER_MAX_HP,
             damage_speed_threshold: DAMAGE_SPEED_THRESHOLD,

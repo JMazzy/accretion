@@ -10,7 +10,8 @@
 | **S**                       | Thrust backward                                                                |
 | **A**                       | Rotate ship left                                                               |
 | **D**                       | Rotate ship right                                                              |
-| **Space** or **Left-click** | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
+| **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
+| **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
 
@@ -24,6 +25,7 @@
 | --------------- | ---------------------------------------------------------------------- |
 | **Left stick**  | Rotate ship toward stick direction at fixed speed, then thrust forward |
 | **Right stick** | Aim and auto-fire projectiles in stick direction                       |
+| **West button** | Fire missile in current aim direction (X on Xbox, Square on PS)       |
 | **B button**    | Brake — applies strong velocity damping each frame while held          |
 
 - **Left stick movement**: the ship rotates at a fixed angular speed until aligned with the stick direction, then applies forward thrust proportional to stick magnitude. Thrust is suppressed while rotating sharply (above the heading correction threshold in `src/constants.rs`) to avoid fighting the turn.
@@ -94,8 +96,13 @@ Score: 42  (30 hits, 12 destroyed)
 
 | Event                  | Points |
 | ---------------------- | ------ |
-| Projectile hits asteroid| +1    |
-| Asteroid fully destroyed (size 0–1) | +5 |
+| Bullet/missile hits asteroid | +1 × multiplier |
+| Asteroid fully destroyed (size 0–1) by bullet | +5 × multiplier |
+| Asteroid fully destroyed (size ≤ 3) by missile | +10 × multiplier |
+
+**Hit-streak multiplier** — consecutive hits without missing build a streak; the multiplier increases at thresholds (×2 at 5, ×3 at 10, ×4 at 20, ×5 at 40). Missing a shot or dying resets the streak.
+
+**Missile ammo** — starts at 5; recharges 1 every 12 s automatically. HUD row 3 shows current ammo (`M M M - -`) with recharge countdown.
 
 ### On-Screen Statistics Display
 
@@ -215,6 +222,25 @@ The player ship has a health pool that depletes when struck by asteroids at high
 ### Asteroid Destruction (Projectile Hits)
 
 Projectiles interact with asteroids based on the target's `AsteroidSize` unit count:
+
+| Size | Effect |
+|---|---|
+| 0–1 | **Destroy** — asteroid fully despawned |
+| 2–3 | **Scatter** — despawns and spawns `N` unit fragments at evenly-spaced angles with random velocity jitter |
+| 4–8 | **Split** — cut roughly in half along the projectile's impact axis; each half retains its velocity plus a separation impulse |
+| ≥ 9 | **Chip** — removes the vertex closest to the impact point; spawns one unit fragment; original asteroid loses one mass unit |
+
+In all cases the projectile is despawned on contact.
+
+### Asteroid Destruction (Missile Hits)
+
+Missiles deal heavier damage than bullets:
+
+| Size | Effect |
+|---|---|
+| ≤ 3 | **Instant destroy** — full despawn, double bonus points |
+| 4–8 | **Full scatter** — despawns and ejects all `n` unit fragments with large random velocity jitter |
+| ≥ 9 | **Burst chip** — scatters 4 unit fragments; original asteroid shrinks by 3 mass units (min 1) |
 
 | Size (units) | Behaviour                                                                                                                          |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |

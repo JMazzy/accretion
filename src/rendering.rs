@@ -39,6 +39,7 @@
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
+use crate::player::state::MissileAmmo;
 use crate::player::{PlayerLives, PlayerScore};
 use crate::simulation::SimulationStats;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
@@ -99,6 +100,10 @@ pub struct LivesHudDisplay;
 /// Marker for the respawn-countdown text within the lives HUD.
 #[derive(Component)]
 pub struct RespawnCountdownText;
+
+/// Marker for the missile-ammo HUD node (row 3, below lives HUD).
+#[derive(Component)]
+pub struct MissileHudDisplay;
 
 /// Tags a toggle button in the debug panel with the overlay field it controls.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
@@ -335,16 +340,68 @@ pub fn lives_hud_display_system(
     }
 }
 
-/// Startup: stats overlay text — Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
-pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+/// Startup: spawn the missile-ammo indicator HUD (row 3, below lives HUD).
+pub fn setup_missile_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
     let row_h = config.stats_font_size + 6.0;
-    // Position below score row (row 0) and the two-row lives HUD (rows 1-2).
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
                 top: Val::Px(10.0 + row_h * 3.0),
+                ..default()
+            },
+            MissileHudDisplay,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Missiles: M M M M M"),
+                TextFont {
+                    font_size: config.stats_font_size,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.55, 0.1)),
+            ));
+        });
+}
+
+/// Refresh the missile ammo HUD each frame.
+pub fn missile_hud_display_system(
+    ammo: Res<MissileAmmo>,
+    config: Res<PhysicsConfig>,
+    parent_query: Query<&Children, With<MissileHudDisplay>>,
+    mut text_query: Query<&mut Text>,
+) {
+    if !ammo.is_changed() {
+        return;
+    }
+    for children in parent_query.iter() {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                let max = config.missile_ammo_max as usize;
+                let count = ammo.count as usize;
+                let filled: String = "M ".repeat(count) + &"- ".repeat(max.saturating_sub(count));
+                let recharge_hint = if let Some(t) = ammo.recharge_timer {
+                    format!(" ({:.0}s)", t.ceil())
+                } else {
+                    String::new()
+                };
+                *text = Text::new(format!("Missiles: {}{}", filled.trim_end(), recharge_hint));
+            }
+        }
+    }
+}
+
+/// Startup: stats overlay text — Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
+pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+    let row_h = config.stats_font_size + 6.0;
+    // Position below score (row 0), lives HUD (rows 1-2), missile HUD (row 3).
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                top: Val::Px(10.0 + row_h * 4.0),
                 ..default()
             },
             StatsTextDisplay,

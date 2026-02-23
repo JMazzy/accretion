@@ -88,6 +88,7 @@ fn main() {
             rendering::setup_boundary_ring,
             rendering::setup_hud_score,
             rendering::setup_lives_hud,
+            rendering::setup_missile_hud,
             rendering::setup_stats_text,
             rendering::setup_debug_panel,
         ),

@@ -23,8 +23,8 @@
 //! | ≥ 6           | hexagon    | 6            |
 
 use super::state::{
-    AimDirection, AimIdleTimer, Player, PlayerFireCooldown, PlayerHealth, PlayerLives, PlayerScore,
-    PreferredGamepad, Projectile,
+    AimDirection, AimIdleTimer, Missile, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
+    PlayerHealth, PlayerLives, PlayerScore, PreferredGamepad, Projectile,
 };
 use crate::asteroid::{
     canonical_vertices_for_mass, compute_convex_hull_from_points, min_vertices_for_mass,
@@ -33,6 +33,7 @@ use crate::asteroid::{
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use bevy::input::gamepad::GamepadAxis;
+use bevy::input::gamepad::GamepadButton;
 use bevy::input::mouse::MouseButton;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -151,6 +152,247 @@ pub fn despawn_old_projectiles_system(
                 score.streak = 0;
             }
             commands.entity(entity).despawn();
+        }
+    }
+}
+
+// ── Missile systems ────────────────────────────────────────────────────────────
+
+/// Fire a missile when the player presses `X` / right-click / gamepad West button.
+///
+/// Missiles are heavier, slower, and more destructive than regular projectiles.
+/// A missile uses one `[MissileAmmo]` count; silently does nothing when empty.
+#[allow(clippy::too_many_arguments)]
+pub fn missile_fire_system(
+    mut commands: Commands,
+    q_player: Query<&Transform, With<Player>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    preferred: Res<PreferredGamepad>,
+    gamepads: Query<&Gamepad>,
+    aim: Res<AimDirection>,
+    mut cooldown: ResMut<MissileCooldown>,
+    mut ammo: ResMut<MissileAmmo>,
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+) {
+    cooldown.timer = (cooldown.timer - time.delta_secs()).max(0.0);
+
+    let Ok(transform) = q_player.single() else {
+        return;
+    };
+
+    // Gamepad West button (X on Xbox, Square on PS)
+    let mut gamepad_wants_fire = false;
+    if let Some(gamepad_entity) = preferred.0 {
+        if let Ok(gamepad) = gamepads.get(gamepad_entity) {
+            if gamepad.just_pressed(GamepadButton::West) {
+                gamepad_wants_fire = true;
+            }
+        }
+    }
+
+    let kb_fire = keys.just_pressed(KeyCode::KeyX);
+    let mouse_fire = mouse_buttons.just_pressed(MouseButton::Right);
+
+    if !(kb_fire || mouse_fire || gamepad_wants_fire) || cooldown.timer > 0.0 {
+        return;
+    }
+    if ammo.count == 0 {
+        return; // no ammo — ignore silently
+    }
+
+    cooldown.timer = config.missile_cooldown;
+    ammo.count -= 1;
+    // Start recharge timer if not already running
+    if ammo.count < config.missile_ammo_max && ammo.recharge_timer.is_none() {
+        ammo.recharge_timer = Some(config.missile_recharge_secs);
+    }
+
+    let fire_dir = if aim.0.length_squared() > 0.01 {
+        aim.0.normalize_or_zero()
+    } else {
+        transform.rotation.mul_vec3(Vec3::Y).truncate()
+    };
+
+    let spawn_pos = transform.translation.truncate() + fire_dir * 16.0;
+
+    commands.spawn((
+        Missile::default(),
+        Transform::from_translation(spawn_pos.extend(0.0)),
+        Visibility::default(),
+        RigidBody::KinematicVelocityBased,
+        Velocity {
+            linvel: fire_dir * config.missile_speed,
+            angvel: 0.0,
+        },
+        Collider::ball(config.missile_collider_radius),
+        Sensor,
+        Ccd { enabled: true },
+        CollisionGroups::new(
+            bevy_rapier2d::geometry::Group::GROUP_3,
+            bevy_rapier2d::geometry::Group::GROUP_1,
+        ),
+        ActiveCollisionTypes::DYNAMIC_KINEMATIC,
+        ActiveEvents::COLLISION_EVENTS,
+    ));
+}
+
+/// Age missiles each frame; despawn when they expire or go out of range.
+pub fn despawn_old_missiles_system(
+    mut commands: Commands,
+    mut q: Query<(Entity, &mut Missile, &Transform)>,
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+) {
+    let dt = time.delta_secs();
+    for (entity, mut missile, transform) in q.iter_mut() {
+        missile.age += dt;
+        let dist = transform.translation.truncate().length();
+        if missile.age >= config.missile_lifetime || dist > config.missile_max_dist {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Tick the missile ammo recharge timer.
+///
+/// Recharges one missile per `missile_recharge_secs` until the ammo is full.
+pub fn missile_recharge_system(
+    mut ammo: ResMut<MissileAmmo>,
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+) {
+    let Some(t) = ammo.recharge_timer else {
+        return;
+    };
+    let new_t = t - time.delta_secs();
+    if new_t > 0.0 {
+        ammo.recharge_timer = Some(new_t);
+        return;
+    }
+    // Timer elapsed: recharge one missile
+    ammo.recharge_timer = None;
+    ammo.count = (ammo.count + 1).min(config.missile_ammo_max);
+    if ammo.count < config.missile_ammo_max {
+        ammo.recharge_timer = Some(config.missile_recharge_secs);
+    }
+}
+
+/// Missile hit rules (different from regular projectiles):
+///
+/// | Asteroid size | Effect |
+/// |---|---|
+/// | ≤ 3 | Immediate destroy + double destroy bonus |
+/// | 4–8 | Scatter into `n` unit fragments |
+/// | ≥ 9 | Scatter 4 unit fragments, chip mass by 3 |
+#[allow(clippy::too_many_arguments)]
+pub fn missile_asteroid_hit_system(
+    mut commands: Commands,
+    mut collision_events: MessageReader<CollisionEvent>,
+    q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity), With<Asteroid>>,
+    q_missiles: Query<Entity, With<Missile>>,
+    mut stats: ResMut<crate::simulation::SimulationStats>,
+    mut score: ResMut<PlayerScore>,
+) {
+    let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
+    let mut processed_missiles: std::collections::HashSet<Entity> = Default::default();
+
+    for event in collision_events.read() {
+        let (e1, e2) = match event {
+            CollisionEvent::Started(e1, e2, _) => (*e1, *e2),
+            CollisionEvent::Stopped(..) => continue,
+        };
+
+        let (missile_entity, asteroid_entity) =
+            if q_missiles.contains(e1) && q_asteroids.contains(e2) {
+                (e1, e2)
+            } else if q_missiles.contains(e2) && q_asteroids.contains(e1) {
+                (e2, e1)
+            } else {
+                continue;
+            };
+
+        if processed_missiles.contains(&missile_entity)
+            || processed_asteroids.contains(&asteroid_entity)
+        {
+            continue;
+        }
+
+        let Ok((size, transform, velocity)) = q_asteroids.get(asteroid_entity) else {
+            continue;
+        };
+
+        processed_missiles.insert(missile_entity);
+        processed_asteroids.insert(asteroid_entity);
+
+        commands.entity(missile_entity).despawn();
+
+        let pos = transform.translation.truncate();
+        let vel = velocity.linvel;
+        let ang_vel = velocity.angvel;
+        let n = size.0;
+
+        // Missiles grant streak + multiplier like bullets.
+        score.hits += 1;
+        score.streak += 1;
+        let multiplier = score.multiplier();
+
+        match n {
+            // ── Instant destroy (small asteroids) ─────────────────────────────
+            0..=3 => {
+                commands.entity(asteroid_entity).despawn();
+                stats.destroyed_total += 1;
+                score.destroyed += 1;
+                // Missiles award double the destroy bonus for small targets.
+                score.points += multiplier + 10 * multiplier;
+            }
+
+            // ── Scatter into fragments (medium) ───────────────────────────
+            4..=8 => {
+                commands.entity(asteroid_entity).despawn();
+                stats.split_total += 1;
+                score.points += multiplier;
+                let mut rng = rand::thread_rng();
+                for i in 0..n {
+                    let angle = std::f32::consts::TAU * (i as f32 / n as f32);
+                    let offset = Vec2::new(angle.cos(), angle.sin()) * 10.0;
+                    let frag_vel =
+                        vel + Vec2::new(rng.gen_range(-50.0..50.0), rng.gen_range(-50.0..50.0));
+                    spawn_unit_fragment(&mut commands, pos + offset, frag_vel, ang_vel);
+                }
+            }
+
+            // ── Chip a large asteroid, scatter burst ─────────────────────────
+            _ => {
+                score.points += multiplier;
+                let mut rng = rand::thread_rng();
+                // Scatter burst of 4 fragments
+                for i in 0u32..4 {
+                    let angle = std::f32::consts::TAU * (i as f32 / 4.0);
+                    let offset = Vec2::new(angle.cos(), angle.sin()) * 12.0;
+                    let frag_vel =
+                        vel + Vec2::new(rng.gen_range(-60.0..60.0), rng.gen_range(-60.0..60.0));
+                    spawn_unit_fragment(&mut commands, pos + offset, frag_vel, ang_vel);
+                }
+                // Reduce mass of the original asteroid by 3 (min 1)
+                let chip_mass = n.saturating_sub(3).max(1);
+                let grey = 0.4 + rand::random::<f32>() * 0.3;
+                let local = canonical_vertices_for_mass(chip_mass);
+                let new_ent = spawn_asteroid_with_vertices(
+                    &mut commands,
+                    pos,
+                    &local,
+                    Color::srgb(grey, grey, grey),
+                    chip_mass,
+                );
+                commands.entity(asteroid_entity).despawn();
+                stats.split_total += 1;
+                commands.entity(new_ent).insert(Velocity {
+                    linvel: vel,
+                    angvel: ang_vel,
+                });
+            }
         }
     }
 }

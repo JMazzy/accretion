@@ -1,5 +1,42 @@
 # GRAV-SIM Changelog
 
+## Secondary Weapon: Missiles — February 22, 2026
+
+### Players can now fire missiles (X / right-click / gamepad West button) for heavier, more destructive hits with limited ammo that recharges over time
+
+**Missile destruction rules**:
+
+| Asteroid size | Effect |
+|---|---|
+| ≤ 3 | Instant destroy + double bonus points (hit × multiplier + 10 × multiplier) |
+| 4–8 | Full scatter: all `n` unit fragments ejected at once |
+| ≥ 9 | Burst: 4 unit fragments scattered + original asteroid shrinks by 3 mass |
+
+**Ammo**: Starts at 5. Recharges 1 every 12 seconds automatically. Missiles award hits + streak/multiplier like bullets.
+
+**Controls**: `X` or right mouse button (keyboard/mouse) | Gamepad West button (X/Square)
+
+**Changes**:
+
+- **`src/constants.rs`**: Added `MISSILE_AMMO_MAX` (5), `MISSILE_SPEED` (380), `MISSILE_COOLDOWN` (0.5 s), `MISSILE_LIFETIME` (4 s), `MISSILE_MAX_DIST` (2000), `MISSILE_COLLIDER_RADIUS` (5.0), `MISSILE_RECHARGE_SECS` (12 s).
+- **`src/config.rs`**: Mirrored all 7 missile constants as `PhysicsConfig` fields.
+- **`src/player/state.rs`**: Added `Missile` component (age). Added `MissileAmmo` resource (count, recharge_timer). Added `MissileCooldown` resource.
+- **`src/player/combat.rs`**: Added `missile_fire_system` (X/RMB/gamepad West), `despawn_old_missiles_system`, `missile_recharge_system`, `missile_asteroid_hit_system` with variant destruction logic.
+- **`src/player/rendering.rs`**: Added `attach_missile_mesh_system` (larger orange disc). Updated `sync_player_and_projectile_mesh_visibility_system` and `player_gizmo_system` to include missiles.
+- **`src/rendering.rs`**: Added `MissileHudDisplay` marker, `setup_missile_hud`, `missile_hud_display_system` (row 3 below lives HUD; shows `M M M - -` with recharge countdown).
+- **`src/simulation.rs`**: Registered `MissileAmmo` + `MissileCooldown` resources; wired 4 new missile systems into Update/PostUpdate chains.
+- **`src/main.rs`**: Added `setup_missile_hud` to the `OnTransition{MainMenu→Playing}` startup batch.
+
+**Behaviour summary**:
+- Press `X` or right-click to fire; gamepad West button also fires
+- Orange disc (larger than yellow bullet) travels at 380 u/s
+- HUD row 3: `Missiles: M M M - -` fades as ammo is spent; shows `(12s)` countdown while recharging
+- Missiles participate in the hit-streak combo multiplier
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo build --release` ✅
+
+---
+
 ## Score Multiplier (Hit-Streak Combo System) — February 22, 2026
 
 ### Consecutive hits now build a streak; a tiered multiplier increases all point awards until the player misses or dies

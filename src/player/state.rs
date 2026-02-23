@@ -6,7 +6,7 @@
 //! - [`super::combat`] — projectile firing + damage
 //! - [`super::rendering`] — gizmo drawing + camera
 
-use crate::constants::{INVINCIBILITY_DURATION, PLAYER_LIVES, PLAYER_MAX_HP};
+use crate::constants::{INVINCIBILITY_DURATION, MISSILE_AMMO_MAX, PLAYER_LIVES, PLAYER_MAX_HP};
 use bevy::prelude::*;
 
 // ── Components ─────────────────────────────────────────────────────────────────
@@ -51,7 +51,42 @@ pub struct Projectile {
     pub was_hit: bool,
 }
 
+/// Per-missile state attached to each fired missile.
+///
+/// Missiles are fired with `X` / right-click and have different destruction
+/// rules from normal projectiles (see `combat::missile_asteroid_hit_system`).
+#[derive(Component, Default)]
+pub struct Missile {
+    /// Seconds since this missile was spawned.
+    pub age: f32,
+}
+
 // ── Resources ──────────────────────────────────────────────────────────────────
+
+/// Tracks available missile ammo and recharge state.
+#[derive(Resource, Debug, Clone)]
+pub struct MissileAmmo {
+    /// Missiles currently available to fire.
+    pub count: u32,
+    /// Seconds until the next missile recharges; `None` when full.
+    pub recharge_timer: Option<f32>,
+}
+
+impl Default for MissileAmmo {
+    fn default() -> Self {
+        Self {
+            count: MISSILE_AMMO_MAX,
+            recharge_timer: None,
+        }
+    }
+}
+
+/// Enforces a minimum interval between consecutive missile shots.
+#[derive(Resource, Default)]
+pub struct MissileCooldown {
+    /// Remaining cooldown in seconds; decremented each frame, clamped to 0.
+    pub timer: f32,
+}
 
 /// Enforces a minimum interval between consecutive shots.
 #[derive(Resource, Default)]

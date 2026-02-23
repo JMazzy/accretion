@@ -12,7 +12,7 @@
 //! | Projectile filled disc | `Mesh2d`   | ON      | hidden in `wireframe_only` |
 //! | Projectile outline     | Gizmos     | OFF     | `show_projectile_outline`  |
 
-use super::state::{AimDirection, Player, PlayerHealth, Projectile};
+use super::state::{AimDirection, Missile, Player, PlayerHealth, Projectile};
 use crate::asteroid_rendering::filled_polygon_mesh;
 use crate::rendering::OverlayState;
 use bevy::prelude::*;
@@ -166,6 +166,33 @@ pub fn attach_projectile_mesh_system(
     let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.85, 0.1)));
     for entity in query.iter() {
         let mesh_handle = meshes.add(disc_mesh(PROJ_RADIUS, 12));
+        let visibility = if overlay.wireframe_only {
+            Visibility::Hidden
+        } else {
+            Visibility::Visible
+        };
+        commands.entity(entity).insert((
+            Mesh2d(mesh_handle),
+            MeshMaterial2d(mat_handle.clone()),
+            visibility,
+        ));
+    }
+}
+
+/// Attach a filled disc `Mesh2d` to every newly-fired missile.
+///
+/// Missiles are rendered as a larger orange disc to distinguish them from bullets.
+pub fn attach_missile_mesh_system(
+    mut commands: Commands,
+    query: Query<Entity, Added<Missile>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    overlay: Res<OverlayState>,
+) {
+    const MISSILE_RADIUS: f32 = 5.5;
+    let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.45, 0.05)));
+    for entity in query.iter() {
+        let mesh_handle = meshes.add(disc_mesh(MISSILE_RADIUS, 14));
         let visibility = if overlay.wireframe_only {
             Visibility::Hidden
         } else {
@@ -346,14 +373,39 @@ pub fn cleanup_player_ui_system(
         }
     }
 }
-/// Propagate the `wireframe_only` flag to all live ship and projectile meshes.
+/// Propagate the `wireframe_only` flag to all live ship, projectile, and missile meshes.
 ///
 /// Only runs when [`OverlayState`] changes, so the per-frame cost is negligible.
 #[allow(clippy::type_complexity)]
 pub fn sync_player_and_projectile_mesh_visibility_system(
     overlay: Res<OverlayState>,
-    mut q_ship: Query<&mut Visibility, (With<Player>, With<Mesh2d>, Without<Projectile>)>,
-    mut q_proj: Query<&mut Visibility, (With<Projectile>, With<Mesh2d>, Without<Player>)>,
+    mut q_ship: Query<
+        &mut Visibility,
+        (
+            With<Player>,
+            With<Mesh2d>,
+            Without<Projectile>,
+            Without<Missile>,
+        ),
+    >,
+    mut q_proj: Query<
+        &mut Visibility,
+        (
+            With<Projectile>,
+            With<Mesh2d>,
+            Without<Player>,
+            Without<Missile>,
+        ),
+    >,
+    mut q_missile: Query<
+        &mut Visibility,
+        (
+            With<Missile>,
+            With<Mesh2d>,
+            Without<Player>,
+            Without<Projectile>,
+        ),
+    >,
 ) {
     if !overlay.is_changed() {
         return;
@@ -367,6 +419,9 @@ pub fn sync_player_and_projectile_mesh_visibility_system(
         *v = vis;
     }
     for mut v in q_proj.iter_mut() {
+        *v = vis;
+    }
+    for mut v in q_missile.iter_mut() {
         *v = vis;
     }
 }
@@ -386,6 +441,7 @@ pub fn player_gizmo_system(
     mut gizmos: Gizmos,
     q_player: Query<(&Transform, &PlayerHealth), With<Player>>,
     q_projectiles: Query<&Transform, With<Projectile>>,
+    q_missiles: Query<&Transform, With<Missile>>,
     overlay: Res<OverlayState>,
 ) {
     // ── Ship ──────────────────────────────────────────────────────────────────
@@ -424,6 +480,12 @@ pub fn player_gizmo_system(
         for transform in q_projectiles.iter() {
             let p = transform.translation.truncate();
             gizmos.circle_2d(p, 3.0, proj_color);
+        }
+        // Missiles: orange outline, larger
+        let missile_color = Color::srgb(1.0, 0.45, 0.05);
+        for transform in q_missiles.iter() {
+            let p = transform.translation.truncate();
+            gizmos.circle_2d(p, 5.5, missile_color);
         }
     }
 }

@@ -9,7 +9,7 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 - [x] **Player respawn** — lives system, respawn mechanic, healing damage system
 - [ ] **Save/load system** — Save games, load, snapshots, custom scenarios
 - [ ] **Asteroid mining** — Ore drops, currency system, ship upgrades
-- [ ] **Secondary weapon** — missiles (limited shots, fragments asteroids, destroys larger asteroids (size <= 3) right away for more points)
+- [x] **Secondary weapon** — missiles (limited shots, fragments asteroids, destroys larger asteroids (size <= 3) right away for more points)
 - [ ] **Enemy ships** — Computer-controlled enemies
 - [ ] **Boss ships** — Computer-controlled boss encounters
 - [ ] **Special Weapons** — tractor (grab/pull/push asteroids), ion cannon (disable enemy ships)
