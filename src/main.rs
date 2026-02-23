@@ -77,9 +77,13 @@ fn main() {
             setup_physics_config,
         ),
     )
-    // Game-world setup: runs once when entering Playing state (after Start is clicked).
+    // Game-world setup: runs only on the MainMenu → Playing transition (not on Paused → Playing
+    // resume), so world entities and HUD are spawned exactly once per session.
     .add_systems(
-        OnEnter(GameState::Playing),
+        OnTransition {
+            exited: GameState::MainMenu,
+            entered: GameState::Playing,
+        },
         (
             rendering::setup_boundary_ring,
             rendering::setup_hud_score,
@@ -97,12 +101,15 @@ fn main() {
         app.insert_state(GameState::Playing)
             .add_plugins(simulation::SimulationPlugin);
     } else {
-        // Normal mode: show the main menu first; transition to Playing on Start.
+        // World and player spawned only when transitioning from MainMenu → Playing.
+        // Using OnTransition (not OnEnter) prevents re-spawning on Paused → Playing resume.
         app.add_plugins(menu::MainMenuPlugin)
             .add_plugins(simulation::SimulationPlugin)
-            // World and player spawned once when we enter Playing via the menu.
             .add_systems(
-                OnEnter(GameState::Playing),
+                OnTransition {
+                    exited: GameState::MainMenu,
+                    entered: GameState::Playing,
+                },
                 (spawn_initial_world, player::spawn_player),
             )
             .insert_resource(TestConfig::default());

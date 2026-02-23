@@ -1,5 +1,15 @@
 # GRAV-SIM Changelog
 
+## Bug Fix: Health Bar Frozen After Resuming from Pause — February 22, 2026
+
+**Root cause**: `OnEnter(GameState::Playing)` fires on *every* transition into `Playing`, including `Paused → Playing` on resume. This caused `spawn_player` (and `spawn_initial_world`, `setup_boundary_ring`, etc.) to re-run each time the player resumed. With two `Player` entities in the world, `q_player.single()` in `sync_player_health_bar_system` returned an error and the system exited early, leaving the health bar mesh frozen at its last position instead of following the ship.
+
+**Fix**: Changed all `OnEnter(GameState::Playing)` registrations in `main.rs` to `OnTransition { exited: GameState::MainMenu, entered: GameState::Playing }`. This ensures world/player/HUD setup only fires on the initial menu → game transition, never on resume from pause.
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `./test_all.sh` 10/10 ✅ PASS
+
+---
+
 ## Pause + In-Game Menu — February 22, 2026
 
 ### ESC now pauses the simulation and shows a pause overlay; debug options panel is accessible from the pause menu
