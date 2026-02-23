@@ -12,6 +12,7 @@
 | **D**                       | Rotate ship right                                                              |
 | **Space** or **Left-click** | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **Mouse wheel**             | Zoom in / out                                                                  |
+| **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
 
 - **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
 - An **orange aim indicator** (line + dot) extends from the ship in the current fire direction. It is shown by default and can be hidden via the debug panel (*Aim Indicator* toggle).
@@ -220,9 +221,21 @@ The player ship is not culled like asteroids, but experiences increasing velocit
 - **Damping factor**: `OOB_DAMPING` (velocity scaled per frame), ramped smoothly over `OOB_RAMP_WIDTH` from 0% at the boundary to full effect beyond
 - **Effect**: Gentle drag that discourages escaping the simulation; the player can still re-enter under thrust
 
+## Pause Menu
+
+Press **ESC** during gameplay to pause the simulation. The pause menu appears as a semi-transparent overlay:
+
+| Button            | Action                                                  |
+| ----------------- | ------------------------------------------------------- |
+| **RESUME**        | Resume simulation (also triggered by pressing ESC again)|
+| **DEBUG OVERLAYS**| Toggle the floating debug overlay panel (top-right)     |
+| **QUIT**          | Exit the application                                    |
+
+While paused, Rapier's physics pipeline is fully disabled — all asteroids, velocities, and forces are frozen in place until the game is resumed.
+
 ## Debug Overlay Panel
 
-Press **ESC** to open or close the debug overlay panel (top-right corner).
+Open from the pause menu (**DEBUG OVERLAYS** button). Appears in the top-right corner.
 
 | Toggle                | Default | Description                                                      |
 | --------------------- | ------- | ---------------------------------------------------------------- |

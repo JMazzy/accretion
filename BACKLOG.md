@@ -5,14 +5,17 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 ## Gameplay
 
 - [x] **Main menu / splash screen** — Settings, start game
-- [ ] **Pause + in-game menu** — ESC pauses and shows menu (replaces debug options menu)
+- [x] **Pause + in-game menu** — ESC pauses and shows menu (replaces debug options menu)
 - [ ] **Player respawn** — lives system, respawn mechanic, healing damage system
 - [ ] **Save/load system** — Save games, load, snapshots, custom scenarios
 - [ ] **Asteroid mining** — Ore drops, currency system, ship upgrades
-- [ ] **Multiple weapons** — Laser (slice), ablative (chip), missiles (split), tractor (grab), ion (disable)
-- [ ] **Enemy ships** — Computer-controlled enemies; boss encounters
-- [ ] **Score system** — Point multipliers (e.g. by hit streak without misses)
+- [ ] **Multiple weapons** — Slicing laser (slice in half), ablative laser (quickly chip off pieces), missiles (multi-split), tractor (grab/pull/push)
+- [ ] **Enemy ships** — Computer-controlled enemies
+- [ ] **Boss ships** — Computer-controlled boss encounters
+- [ ] **Weapon** — ion cannon (disable enemy ships)
+- [ ] **Score system enhancements** — Point multipliers (e.g. by hit streak without misses)
 - [ ] **Local multiplayer** — Co-op and PvP modes
+- [ ] **New Name** - Both "particle" and "grav-sim" were placeholder names from early in development. The game needs a proper name. Actual name TBD.
 
 ## Physics
 

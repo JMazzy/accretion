@@ -18,7 +18,7 @@
 //! | Health bar         | `Mesh2d`     | always  | —                       |
 //! | Stats overlay      | Bevy UI      | OFF     | `show_stats`            |
 //! | Score HUD          | Bevy UI      | always  | —                       |
-//! | Debug panel        | Bevy UI      | hidden  | ESC key                 |
+//! | Debug panel        | Bevy UI      | hidden  | Pause menu button       |
 //!
 //! ## System Responsibilities
 //!
@@ -33,7 +33,6 @@
 //! | `hud_score_display_system`    | Update   | Refresh score HUD text              |
 //! | `sync_boundary_ring_visibility_system` | Update | Show/hide boundary ring   |
 //! | `sync_stats_overlay_visibility_system` | Update | Show/hide stats overlay   |
-//! | `toggle_debug_panel_system`   | Update   | Open/close panel on ESC             |
 //! | `debug_panel_button_system`   | Update   | Process toggle button clicks        |
 //! | `gizmo_rendering_system`      | Update   | Draw gizmo overlays per OverlayState|
 
@@ -312,7 +311,7 @@ pub fn setup_debug_panel(mut commands: Commands) {
         ))
         .with_children(|panel| {
             panel.spawn((
-                Text::new("Debug Overlays  (ESC to close)"),
+                Text::new("Debug Overlays"),
                 TextFont {
                     font_size: 13.0,
                     ..default()
@@ -343,7 +342,7 @@ pub fn setup_debug_panel(mut commands: Commands) {
             ));
 
             panel.spawn((
-                Text::new("Tip: press ESC to close"),
+                Text::new("Tip: toggle in pause menu (ESC)"),
                 TextFont {
                     font_size: 10.0,
                     ..default()
@@ -466,27 +465,6 @@ pub fn stats_display_system(
                     stats.destroyed_total
                 ));
             }
-        }
-    }
-}
-
-// ── Update: debug panel open/close ────────────────────────────────────────────
-
-/// Toggle the debug panel open or closed on ESC key press.
-pub fn toggle_debug_panel_system(
-    keys: Res<ButtonInput<KeyCode>>,
-    mut overlay: ResMut<OverlayState>,
-    mut panel_query: Query<&mut Visibility, With<DebugPanel>>,
-) {
-    if keys.just_pressed(KeyCode::Escape) {
-        overlay.menu_open = !overlay.menu_open;
-        let vis = if overlay.menu_open {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
-        };
-        for mut v in panel_query.iter_mut() {
-            *v = vis;
         }
     }
 }

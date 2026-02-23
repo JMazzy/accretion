@@ -5,8 +5,7 @@
 //! [`crate::rendering`]; player systems live in [`crate::player`].
 
 use crate::asteroid::{
-    compute_convex_hull_from_points, Asteroid, AsteroidSize, GravityForce, NeighborCount,
-    Vertices,
+    compute_convex_hull_from_points, Asteroid, AsteroidSize, GravityForce, NeighborCount, Vertices,
 };
 use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_render_mode_system};
 use crate::config::PhysicsConfig;
@@ -24,7 +23,7 @@ use crate::player::{
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
     stats_display_system, sync_boundary_ring_visibility_system,
-    sync_stats_overlay_visibility_system, toggle_debug_panel_system, OverlayState,
+    sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -113,8 +112,6 @@ impl Plugin for SimulationPlugin {
                     (
                         sync_boundary_ring_visibility_system, // Show/hide boundary ring
                         gizmo_rendering_system,               // Render gizmo overlays
-                        toggle_debug_panel_system,            // ESC opens/closes debug panel
-                        debug_panel_button_system,            // Click handling for toggles
                         sync_stats_overlay_visibility_system, // Show/hide stats overlay
                         player_gizmo_system, // Render ship outline (aim/hbar now Mesh2d)
                         sync_player_health_bar_system, // Update health bar position + colour
@@ -152,7 +149,10 @@ impl Plugin for SimulationPlugin {
                 (asteroid_formation_system, projectile_asteroid_hit_system)
                     .chain()
                     .run_if(in_state(GameState::Playing)),
-            );
+            )
+            // debug_panel_button_system runs outside the Playing gate so the debug
+            // overlay toggles remain functional while the game is paused.
+            .add_systems(Update, debug_panel_button_system);
     }
 }
 

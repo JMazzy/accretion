@@ -1,5 +1,27 @@
 # GRAV-SIM Changelog
 
+## Pause + In-Game Menu — February 22, 2026
+
+### ESC now pauses the simulation and shows a pause overlay; debug options panel is accessible from the pause menu
+
+**Changes**:
+
+- **`src/menu.rs`**: Added `Paused` variant to `GameState`. Added `PauseMenuRoot`, `PauseResumeButton`, `PauseDebugButton` component markers. Added `setup_pause_menu` / `cleanup_pause_menu` for the semi-transparent full-screen overlay (spawned on `OnEnter(Paused)`, despawned on `OnExit(Paused)`). Added `pause_physics` / `resume_physics` that toggle `RapierConfiguration::physics_pipeline_active` to truly freeze all physics (including velocity integration) while paused. Added `toggle_pause_system` (ESC in `Playing` → `Paused`) and `pause_resume_input_system` (ESC in `Paused` → `Playing`). Pause menu shows RESUME, DEBUG OVERLAYS, and QUIT buttons. Registered all new systems in `MainMenuPlugin`.
+
+- **`src/rendering.rs`**: Removed `toggle_debug_panel_system` (ESC no longer opens/closes the debug panel directly). Updated debug panel header and hint text to reflect new access method. Updated module-level docs.
+
+- **`src/simulation.rs`**: Removed `toggle_debug_panel_system` from the system chain and its import. Moved `debug_panel_button_system` outside the `Playing`-gated chain so overlay toggles remain functional while the game is paused (debug panel can be opened from the pause menu).
+
+**Behaviour summary**:
+- ESC during gameplay → game freezes, pause overlay appears
+- ESC again (or click RESUME) → game resumes exactly where it left off
+- Clicking DEBUG OVERLAYS in the pause menu → toggles the floating debug options panel
+- Clicking QUIT → exits the application
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `./test_all.sh` 10/10 ✅ PASS
+
+---
+
 ## Bug Fix: Collision-Spawned Asteroids Placed at Origin — February 21, 2026
 
 **Root cause**: `spawn_asteroid_with_vertices` was inserting `GlobalTransform::default()` (identity = world origin) rather than deriving it from the actual `Transform`.
