@@ -39,10 +39,6 @@
 
 ## Density invariant at spawn — February 24, 2026
 
----
-
-## Density invariant at spawn — February 24, 2026
-
 ### All spawn sites now enforce `vertices.area == AsteroidSize / density`
 
 **Root cause fixed**: Previously, every spawn site set `AsteroidSize` (gravitational mass) independently of vertex geometry, so the first merge/split/chip hit would "correct" the visual size — causing a visible pop.
@@ -1164,6 +1160,12 @@ max_zoom           = 8.0      // Maximum zoom (detail view)
 - All tests passing
 - Code quality verification
 - Documentation complete
+
+---
+
+## Project Renamed to Accretion — February 2026
+
+The project was previously known as **particle** (the original Cargo package name) and informally as **grav-sim** during early prototype work. It is now named **Accretion**, reflecting its core gameplay loop: asteroids aggregate through gravity into ever-larger composite bodies. The `Cargo.toml` package name, binary target, and all in-game UI / documentation now use **Accretion**.
 
 ---
 
