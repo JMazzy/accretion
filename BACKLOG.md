@@ -10,14 +10,14 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 - [x] **Custom scenarios** - Scenarios & Saves screen added with two built-in scenarios: "Field" and "Orbit"
 - [x] **Quit to main menu** - quit option on pause menu goes back to the main menu rather than quitting the game
 - [ ] **Save/load system** — Save/load persistent game files
-- [ ] **More/better scenarios** - "Orbit" object size more variable, "Comets" scenario with many large, relatively fast objects, "Shower" with lots of unit asteroids
+- [x] **More/better scenarios** - "Orbit" object size more variable (rings 2+3 now spawn mixed polygons with per-body orbital velocities), "Comets" scenario (20 large fast-moving boulders), "Shower" scenario (250 unit triangles, near-zero velocity)
 - [ ] **Asteroid mining** — Ore drops, currency system, ship upgrades
 - [x] **Score system enhancements** — Point multipliers (e.g. by hit streak without misses)
 - [x] **New Name** - Both "particle" and "grav-sim" were placeholder names from early in development. The game is now named **Accretion**.
 
 ## Physics
 
-- [x] **Density** - There should be a predictable relationship between mass and the size of the object on screen. Use a *density* value to make volume (or more accurately *area* since it's 2d) look more consistent when calculating the size of the created polygons based on its mass. Density can vary based on the asteroid.
+- [x] **Density** - There should be a predictable relationship between mass and the size of the object on screen. Use a *density* value to make volume (or more accurately *area* since it's 2d) look more consistent when calculating the size of the created polygons based on its mass. Density can vary based on the asteroid. Invariant `vertices.area == AsteroidSize / density` now enforced at every spawn site; asteroids no longer visually resize on first hit.
 - [ ] **Planets** - A new object type with the same gravity system as asteroids.Important differences - large, high mass, nearly circular, no merging or splitting, shooting does not increase score, fixed in place relative to the simulation area to give a steady frame of reference. Visually distinct (rendered purple as a placeholder). Update "Orbit" scenario to use a planet instead of the current planetoid.
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex, but it would look better if allowed to be concave; concave craters approximated by hull; Track per-vertex damage; move vertices inward and recompute hull
 - [ ] **Performance** — Determine next steps for performance improvements; implement the most impactful one and add the rest to the backlog.

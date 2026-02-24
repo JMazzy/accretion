@@ -63,8 +63,15 @@ pub enum SelectedScenario {
     #[default]
     Field,
     /// One very large planetoid at the origin with rings of smaller asteroids
-    /// in near-circular orbits around it.
+    /// in near-circular orbits around it.  Ring composition now features mixed
+    /// polygon sizes for visual variety.
     Orbit,
+    /// Twenty large, fast-moving asteroids on crossing trajectories.  They
+    /// fragment on impact rather than merging — dodge and destroy them.
+    Comets,
+    /// 250 unit triangles packed into a dense field with tiny initial velocities.
+    /// Gravity pulls them into aggregate clusters very quickly.
+    Shower,
 }
 
 // ── Component markers ─────────────────────────────────────────────────────────
@@ -94,6 +101,14 @@ pub struct ScenarioFieldButton;
 /// Tags the "Orbit" scenario button.
 #[derive(Component)]
 pub struct ScenarioOrbitButton;
+
+/// Tags the "Comets" scenario button.
+#[derive(Component)]
+pub struct ScenarioCometButton;
+
+/// Tags the "Shower" scenario button.
+#[derive(Component)]
+pub struct ScenarioShowerButton;
 
 /// Tags the "Back" button on the scenario-select screen.
 #[derive(Component)]
@@ -599,6 +614,96 @@ pub fn setup_scenario_select(mut commands: Commands) {
                 ));
             });
 
+            spacer(root, 14.0);
+
+            // ── COMETS card ──────────────────────────────────────────────────
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(460.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::FlexStart,
+                    padding: UiRect {
+                        left: Val::Px(22.0),
+                        right: Val::Px(22.0),
+                        top: Val::Px(18.0),
+                        bottom: Val::Px(18.0),
+                    },
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(scenario_card_bg()),
+                BorderColor::all(scenario_card_border()),
+                ScenarioCometButton,
+            ))
+            .with_children(|card| {
+                card.spawn((
+                    Text::new("COMETS"),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(scenario_label_color()),
+                ));
+                spacer(card, 6.0);
+                card.spawn((
+                    Text::new(
+                        "Twenty large, fast-moving boulders on crossing trajectories.\n\
+                         They fragment on impact — dodge and shoot before they escape.",
+                    ),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(scenario_desc_color()),
+                ));
+            });
+
+            spacer(root, 14.0);
+
+            // ── SHOWER card ──────────────────────────────────────────────────
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(460.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::FlexStart,
+                    padding: UiRect {
+                        left: Val::Px(22.0),
+                        right: Val::Px(22.0),
+                        top: Val::Px(18.0),
+                        bottom: Val::Px(18.0),
+                    },
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(scenario_card_bg()),
+                BorderColor::all(scenario_card_border()),
+                ScenarioShowerButton,
+            ))
+            .with_children(|card| {
+                card.spawn((
+                    Text::new("SHOWER"),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(scenario_label_color()),
+                ));
+                spacer(card, 6.0);
+                card.spawn((
+                    Text::new(
+                        "250 unit triangles, near-zero velocity.  Watch gravity\n\
+                         pull them into growing clusters in real time.",
+                    ),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(scenario_desc_color()),
+                ));
+            });
+
             spacer(root, 36.0);
 
             // ── Back button ──────────────────────────────────────────────────
@@ -643,12 +748,15 @@ pub fn cleanup_scenario_select(
 
 // ── Update (ScenarioSelect): button interaction ───────────────────────────────
 
-/// Handle Field, Orbit, and Back button presses on the scenario-select screen.
+/// Handle Field, Orbit, Comets, Shower, and Back button presses on the scenario-select screen.
 ///
-/// - **Field** → records [`SelectedScenario::Field`] then transitions to [`GameState::Playing`].
-/// - **Orbit** → records [`SelectedScenario::Orbit`] then transitions to [`GameState::Playing`].
-/// - **Back** → returns to [`GameState::MainMenu`].
+/// - **Field**  → records [`SelectedScenario::Field`]  then transitions to [`GameState::Playing`].
+/// - **Orbit**  → records [`SelectedScenario::Orbit`]  then transitions to [`GameState::Playing`].
+/// - **Comets** → records [`SelectedScenario::Comets`] then transitions to [`GameState::Playing`].
+/// - **Shower** → records [`SelectedScenario::Shower`] then transitions to [`GameState::Playing`].
+/// - **Back**   → returns to [`GameState::MainMenu`].
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn scenario_select_button_system(
     field_query: Query<
         (&Interaction, &Children),
@@ -657,6 +765,14 @@ pub fn scenario_select_button_system(
     orbit_query: Query<
         (&Interaction, &Children),
         (Changed<Interaction>, With<ScenarioOrbitButton>),
+    >,
+    comet_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<ScenarioCometButton>),
+    >,
+    shower_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<ScenarioShowerButton>),
     >,
     back_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<ScenarioBackButton>)>,
     mut btn_text: Query<&mut TextColor>,
@@ -690,6 +806,52 @@ pub fn scenario_select_button_system(
         match interaction {
             Interaction::Pressed => {
                 *selected = SelectedScenario::Orbit;
+                next_state.set(GameState::Playing);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_active_text());
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_label_color());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in comet_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                *selected = SelectedScenario::Comets;
+                next_state.set(GameState::Playing);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_active_text());
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_label_color());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in shower_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                *selected = SelectedScenario::Shower;
                 next_state.set(GameState::Playing);
             }
             Interaction::Hovered => {

@@ -150,15 +150,13 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
             // Apply vertex jitter for natural-looking shapes
             vertices = apply_vertex_jitter(vertices, size_scale, &mut rng);
 
-            // Unit count: tri=1, sq=2, pent=3, hex=4, hept=5, oct=6
-            let unit_size: u32 = match shape {
-                0 => 1,
-                1 => 2,
-                2 => 3,
-                3 => 4,
-                4 => 5,
-                _ => 6,
-            };
+            // Derive AsteroidSize from actual polygon area so the density invariant
+            // (vertices.area == AsteroidSize / density) holds from the very first frame.
+            // Accounts for the randomised scale and jitter applied above.
+            let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+            let unit_size = ((polygon_area(&vertices) / tri_area).round() as u32).max(1);
+            vertices =
+                rescale_vertices_to_area(&vertices, unit_size as f32 / config.asteroid_density);
 
             // Random velocity (gentle to avoid instant collisions)
             let velocity = Vec2::new(
@@ -236,7 +234,10 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
 /// spawn_planetoid(&mut commands, Vec2::new(500.0, 300.0), &config);
 /// ```
 pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &PhysicsConfig) {
-    let vertices = generate_regular_polygon(16, 1.0, config.planetoid_base_radius);
+    let vertices = rescale_vertices_to_area(
+        &generate_regular_polygon(16, 1.0, config.planetoid_base_radius),
+        config.planetoid_unit_size as f32 / config.asteroid_density,
+    );
     commands.spawn((
         (
             Transform::from_translation(position.extend(0.05)),
@@ -309,7 +310,10 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     // that keeps orbits stable for many revolutions.
     let central_radius = config.planetoid_base_radius * 4.0;
     let central_pos = Vec2::new(800.0, 0.0);
-    let central_vertices = generate_regular_polygon(16, 1.0, central_radius);
+    let central_vertices = rescale_vertices_to_area(
+        &generate_regular_polygon(16, 1.0, central_radius),
+        ORBIT_CENTRAL_MASS as f32 / config.asteroid_density,
+    );
 
     commands.spawn((
         (
@@ -352,81 +356,367 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 
     // ── Orbital debris rings ─────────────────────────────────────────────────
     //
-    // Orbital velocity from the centripetal condition:
-    //   v(r) = sqrt(G · M_central / (r · m_rapier_triangle))
+    // Orbital velocity formula per body (centripetal condition):
+    //   v = sqrt(G · AsteroidSize_i · M_central / (r · m_rapier_i))
     //
-    // m_rapier_triangle = area of equilateral triangle with side s (density=1,
-    // pixels_per_meter=1 so world units == physics units):
-    //   area = √3/4 · s²  ≈  27.71 for s=8
+    // m_rapier_i is the Rapier mass (= polygon area in world units, since
+    // density=1 and pixels_per_meter=1).  Each shape has a different area so
+    // each body's orbital speed is computed individually.
     //
-    // This is the mass Rapier actually assigns to the collider and uses to
-    // compute acceleration from ExternalForce.  Using the correct value here
-    // ensures the centripetal force exactly balances gravity at the given radius.
-    //
-    // Ring geometry — centred on `central_pos` (all within 1800u soft boundary):
-    //   Ring 1: radius=280, 14 asteroids
-    //   Ring 2: radius=480, 22 asteroids
-    //   Ring 3: radius=680, 30 asteroids
-    let side = config.triangle_base_side;
-    let m_rapier = 3.0_f32.sqrt() / 4.0 * side * side;
-    let rings: &[(f32, u32)] = &[(280.0, 14), (480.0, 22), (680.0, 30)];
+    // Ring layout — centred on `central_pos` (all within 1800u soft boundary):
+    //   Ring 1: r=280, 14 unit triangles         — fine, fast inner ring
+    //   Ring 2: r=480, 22 triangles + squares    — medium ring, mixed sizes
+    //   Ring 3: r=680, 30 pentagons/hexs/hepts   — sparse outer ring, larger bodies
+    let g = config.gravity_const;
+    let cm = ORBIT_CENTRAL_MASS as f32;
+    let mut rng = rand::thread_rng();
 
-    for &(orbital_radius, count) in rings {
-        let v_mag =
-            (config.gravity_const * ORBIT_CENTRAL_MASS as f32 / (orbital_radius * m_rapier)).sqrt();
-        let angle_step = TAU / count as f32;
-
-        for i in 0..count {
-            let angle = i as f32 * angle_step;
-            // Position in world space
-            let local = Vec2::new(angle.cos(), angle.sin()) * orbital_radius;
-            let pos = central_pos + local;
-
-            // Tangential velocity (CCW orbit): rotate local 90° CCW
-            let tangent = Vec2::new(-angle.sin(), angle.cos());
-            let velocity = tangent * v_mag;
-
-            let vertices = generate_triangle(1.0, config.triangle_base_side);
-
-            commands.spawn((
-                (
-                    Transform::from_translation(pos.extend(0.05)),
-                    GlobalTransform::default(),
-                    Asteroid,
-                    AsteroidSize(1),
-                    NeighborCount(0),
-                    Vertices(vertices.clone()),
-                    RigidBody::Dynamic,
+    // ── Ring 1: unit triangles (inner, unchanged) ────────────────────────────
+    let (r1, n1) = (280.0_f32, 14u32);
+    let m_tri = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+    // v = sqrt(G·CM·density/r) — after density rescaling all bodies have
+    // m_rapier_i = AsteroidSize_i/density, so centripetal balance gives this.
+    let v_orbit = |r: f32| -> f32 { (g * cm * config.asteroid_density / r).sqrt() };
+    for i in 0..n1 {
+        let angle = i as f32 * TAU / n1 as f32;
+        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * r1;
+        let tangent = Vec2::new(-angle.sin(), angle.cos());
+        let vertices = rescale_vertices_to_area(
+            &generate_triangle(1.0, config.triangle_base_side),
+            1.0 / config.asteroid_density,
+        );
+        commands.spawn((
+            (
+                Transform::from_translation(pos.extend(0.05)),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(1),
+                NeighborCount(0),
+                Vertices(vertices.clone()),
+                RigidBody::Dynamic,
+            ),
+            (
+                Collider::convex_hull(&vertices)
+                    .unwrap_or_else(|| Collider::ball(config.triangle_base_side / 2.0)),
+                Restitution::coefficient(RESTITUTION_SMALL),
+                Friction::coefficient(FRICTION_ASTEROID),
+                Velocity {
+                    linvel: tangent * v_orbit(r1),
+                    angvel: 0.0,
+                },
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                GravityForce::default(),
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3,
                 ),
-                (
-                    Collider::convex_hull(&vertices)
-                        .unwrap_or_else(|| Collider::ball(TRIANGLE_BASE_SIDE / 2.0)),
-                    Restitution::coefficient(RESTITUTION_SMALL),
-                    Friction::coefficient(FRICTION_ASTEROID),
-                    Velocity {
-                        linvel: velocity,
-                        angvel: 0.0,
-                    },
-                    Damping {
-                        linear_damping: 0.0,
-                        angular_damping: 0.0,
-                    },
-                    ExternalForce {
-                        force: Vec2::ZERO,
-                        torque: 0.0,
-                    },
-                    GravityForce::default(),
-                    CollisionGroups::new(
-                        bevy_rapier2d::geometry::Group::GROUP_1,
-                        bevy_rapier2d::geometry::Group::GROUP_1
-                            | bevy_rapier2d::geometry::Group::GROUP_2
-                            | bevy_rapier2d::geometry::Group::GROUP_3,
-                    ),
-                    ActiveEvents::COLLISION_EVENTS,
-                    Sleeping::disabled(),
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
+        ));
+    }
+
+    // ── Ring 2: triangles and squares (mid ring, varied sizes) ───────────────
+    let (r2, n2) = (480.0_f32, 22u32);
+    for i in 0..n2 {
+        let angle = i as f32 * TAU / n2 as f32;
+        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * r2;
+        let tangent = Vec2::new(-angle.sin(), angle.cos());
+
+        // Random scale in 1.0–1.8 for visual size variety.
+        let scale: f32 = rng.gen_range(1.0..1.8);
+
+        let (raw_verts, pre_area) = if i % 2 == 0 {
+            // Triangle
+            let scaled_side = config.triangle_base_side * scale;
+            let a = 3.0_f32.sqrt() / 4.0 * scaled_side.powi(2);
+            (generate_triangle(scale, config.triangle_base_side), a)
+        } else {
+            // Square
+            let half = config.square_base_half * scale;
+            let a = (2.0 * half).powi(2);
+            (generate_square(scale, config.square_base_half), a)
+        };
+        // Derive AsteroidSize from polygon area, then rescale to the density-consistent
+        // area so the invariant vertices.area == AsteroidSize / density holds at spawn.
+        let asteroid_size = ((pre_area / m_tri).round() as u32).max(4);
+        let vertices =
+            rescale_vertices_to_area(&raw_verts, asteroid_size as f32 / config.asteroid_density);
+
+        commands.spawn((
+            (
+                Transform::from_translation(pos.extend(0.05)),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(asteroid_size),
+                NeighborCount(0),
+                Vertices(vertices.clone()),
+                RigidBody::Dynamic,
+            ),
+            (
+                Collider::convex_hull(&vertices)
+                    .unwrap_or_else(|| Collider::ball(config.polygon_base_radius * scale)),
+                Restitution::coefficient(RESTITUTION_SMALL),
+                Friction::coefficient(FRICTION_ASTEROID),
+                Velocity {
+                    linvel: tangent * v_orbit(r2),
+                    angvel: 0.0,
+                },
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                GravityForce::default(),
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3,
                 ),
-            ));
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
+        ));
+    }
+
+    // ── Ring 3: pentagons, hexagons, heptagons (outer, larger) ───────────────
+    let (r3, n3) = (680.0_f32, 30u32);
+    for i in 0..n3 {
+        let angle = i as f32 * TAU / n3 as f32;
+        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * r3;
+        let tangent = Vec2::new(-angle.sin(), angle.cos());
+
+        // Random scale in 1.0–2.2 for bigger visual spread.
+        let scale: f32 = rng.gen_range(1.0..2.2);
+
+        let (raw_verts, pre_area) = match i % 3 {
+            0 => {
+                // Pentagon (5 sides)
+                let r = config.polygon_base_radius * scale;
+                let a = 5.0 / 2.0 * r.powi(2) * (TAU / 5.0).sin();
+                (generate_pentagon(scale, config.polygon_base_radius), a)
+            }
+            1 => {
+                // Hexagon (6 sides)
+                let r = config.polygon_base_radius * scale;
+                let a = 6.0 / 2.0 * r.powi(2) * (TAU / 6.0).sin();
+                (generate_hexagon(scale, config.polygon_base_radius), a)
+            }
+            _ => {
+                // Heptagon (7 sides)
+                let r = config.heptagon_base_radius * scale;
+                let a = 7.0 / 2.0 * r.powi(2) * (TAU / 7.0).sin();
+                (generate_heptagon(scale, config.heptagon_base_radius), a)
+            }
+        };
+        let asteroid_size = ((pre_area / m_tri).round() as u32).max(4);
+        let vertices =
+            rescale_vertices_to_area(&raw_verts, asteroid_size as f32 / config.asteroid_density);
+
+        commands.spawn((
+            (
+                Transform::from_translation(pos.extend(0.05)),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(asteroid_size),
+                NeighborCount(0),
+                Vertices(vertices.clone()),
+                RigidBody::Dynamic,
+            ),
+            (
+                Collider::convex_hull(&vertices)
+                    .unwrap_or_else(|| Collider::ball(config.polygon_base_radius * scale)),
+                Restitution::coefficient(RESTITUTION_SMALL),
+                Friction::coefficient(FRICTION_ASTEROID),
+                Velocity {
+                    linvel: tangent * v_orbit(r3),
+                    angvel: 0.0,
+                },
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                GravityForce::default(),
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                ),
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
+        ));
+    }
+}
+
+/// Spawns the "comets" scenario.
+///
+/// Twenty large polygonal asteroids (9–12 sides, scale 2.5–4.5) are launched
+/// on fast inward crossing trajectories.  Their high relative speed means they
+/// fragment rather than merge on contact, providing a high-action
+/// dodge-and-shoot challenge.
+///
+/// `AsteroidSize` is derived from the ratio of each polygon's area to the
+/// unit-triangle area so that the gravity system weights them correctly.
+pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
+    let mut rng = rand::thread_rng();
+    let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+
+    for _ in 0..20u32 {
+        // Spawn position: 400–1500 units from origin at a random angle.
+        let spawn_angle: f32 = rng.gen_range(0.0..TAU);
+        let dist: f32 = rng.gen_range(400.0..1500.0);
+        let position = Vec2::new(dist * spawn_angle.cos(), dist * spawn_angle.sin());
+
+        // Scale: visually large.
+        let scale: f32 = rng.gen_range(2.5..4.5);
+
+        // Pick a high-sided polygon (9–12 sides).
+        let sides: usize = rng.gen_range(9usize..=12);
+        let base_radius = config.polygon_base_radius;
+        let vertices = generate_regular_polygon(sides, scale, base_radius);
+
+        // Inward velocity with angular spread so comets cross the arena.
+        let inward_dir = std::f32::consts::PI + spawn_angle;
+        let spread: f32 = rng.gen_range(-0.7..0.7);
+        let vel_angle = inward_dir + spread;
+        let speed: f32 = rng.gen_range(35.0..60.0);
+        let velocity = Vec2::new(vel_angle.cos() * speed, vel_angle.sin() * speed);
+
+        // Derive AsteroidSize from polygon area, then rescale vertices to satisfy
+        // the density invariant: vertices.area == AsteroidSize / density.
+        let pre_area =
+            (sides as f32 / 2.0) * (base_radius * scale).powi(2) * (TAU / sides as f32).sin();
+        let unit_size = ((pre_area / tri_area).round() as u32).max(1);
+        let vertices =
+            rescale_vertices_to_area(&vertices, unit_size as f32 / config.asteroid_density);
+
+        commands.spawn((
+            (
+                Transform::from_translation(position.extend(0.05)),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(unit_size),
+                NeighborCount(0),
+                Vertices(vertices.clone()),
+                RigidBody::Dynamic,
+            ),
+            (
+                Collider::convex_hull(&vertices)
+                    .unwrap_or_else(|| Collider::ball(base_radius * scale)),
+                Restitution::coefficient(RESTITUTION_SMALL),
+                Friction::coefficient(FRICTION_ASTEROID),
+                Velocity {
+                    linvel: velocity,
+                    angvel: rng.gen_range(-0.2..0.2),
+                },
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                GravityForce::default(),
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                ),
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
+        ));
+    }
+}
+
+/// Spawns the "shower" scenario.
+///
+/// 250 unit-triangle asteroids are scattered uniformly across a 1600-unit
+/// radius disk with near-zero initial velocity.  Mutual N-body gravity quickly
+/// collapses them into growing clusters — watch the field accrete in real time.
+pub fn spawn_shower_scenario(commands: &mut Commands, config: &PhysicsConfig) {
+    let mut rng = rand::thread_rng();
+    let sim_radius: f32 = 1600.0;
+    let player_buffer = config.player_buffer_radius;
+    let mut spawned = 0u32;
+
+    while spawned < 120 {
+        // Uniform-area random point within sim_radius (sqrt gives uniform disk distribution).
+        let angle: f32 = rng.gen_range(0.0..TAU);
+        let dist: f32 = rng.gen_range(0.0_f32..1.0).sqrt() * sim_radius;
+        let position = Vec2::new(dist * angle.cos(), dist * angle.sin());
+
+        if position.length() < player_buffer {
+            continue;
         }
+
+        let vertices = rescale_vertices_to_area(
+            &generate_triangle(1.0, config.triangle_base_side),
+            1.0 / config.asteroid_density,
+        );
+        let velocity = Vec2::new(rng.gen_range(-3.0..3.0), rng.gen_range(-3.0..3.0));
+
+        commands.spawn((
+            (
+                Transform::from_translation(position.extend(0.05)),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(1),
+                NeighborCount(0),
+                Vertices(vertices.clone()),
+                RigidBody::Dynamic,
+            ),
+            (
+                Collider::convex_hull(&vertices)
+                    .unwrap_or_else(|| Collider::ball(config.triangle_base_side * 0.5)),
+                Restitution::coefficient(RESTITUTION_SMALL),
+                Friction::coefficient(FRICTION_ASTEROID),
+                Velocity {
+                    linvel: velocity,
+                    angvel: rng.gen_range(-0.5..0.5),
+                },
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                GravityForce::default(),
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                ),
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
+        ));
+
+        spawned += 1;
     }
 }
 
@@ -496,25 +786,12 @@ fn generate_regular_polygon(sides: usize, scale: f32, base_radius: f32) -> Vec<V
 /// | ≥ 10  | octagon    | 8            |
 ///
 /// Merging is exempt — merged composites keep however many hull vertices they produce.
-pub fn min_vertices_for_mass(mass: u32) -> usize {
-    match mass {
-        0 | 1 => 3,
-        2..=4 => 4,
-        5 => 5,
-        6..=7 => 6,
-        8..=9 => 7,
-        _ => 8,
-    }
-}
-
 /// Returns canonical centred (local-space) polygon vertices at base scale for
-/// the given mass.  Used when a split or chip fragment has fewer vertices than
-/// `min_vertices_for_mass(mass)` requires.
+/// the given mass.  Used for unit-fragment spawns (mass 1) and as a
+/// last-resort fallback when no hull vertices are available.
 ///
 /// Vertices are always centred at the origin, so placing the entity at the
-/// split centroid position produces a correctly-positioned shape.
-///
-/// Merging is exempt and never calls this function.
+/// desired position produces a correctly-positioned shape.
 pub fn canonical_vertices_for_mass(mass: u32) -> Vec<Vec2> {
     let raw = match mass {
         0 | 1 => generate_triangle(1.0, TRIANGLE_BASE_SIDE),
@@ -780,10 +1057,7 @@ mod tests {
             Vec2::new(-1.0, 1.0),
         ];
         let area = polygon_area(&sq);
-        assert!(
-            (area - 4.0).abs() < 1e-4,
-            "expected area ≈ 4.0, got {area}"
-        );
+        assert!((area - 4.0).abs() < 1e-4, "expected area ≈ 4.0, got {area}");
     }
 
     #[test]
@@ -837,8 +1111,7 @@ mod tests {
             Vec2::new(-1.0, 1.0),
         ];
         let rescaled = rescale_vertices_to_area(&sq, 16.0);
-        let centroid =
-            rescaled.iter().copied().sum::<Vec2>() / rescaled.len() as f32;
+        let centroid = rescaled.iter().copied().sum::<Vec2>() / rescaled.len() as f32;
         assert!(
             centroid.length() < 1e-4,
             "centroid should remain near origin after rescaling, got {centroid:?}"
@@ -1042,54 +1315,17 @@ mod tests {
         );
     }
 
-    // ── min_vertices_for_mass / canonical_vertices_for_mass ───────────────────
+    // ── canonical_vertices_for_mass ────────────────────────────────────────────
 
     #[test]
-    fn min_vertices_for_mass_mass_1_is_3() {
-        assert_eq!(min_vertices_for_mass(1), 3);
-    }
-
-    #[test]
-    fn min_vertices_for_mass_mass_2_through_4_are_4() {
-        for m in [2, 3, 4] {
-            assert_eq!(
-                min_vertices_for_mass(m),
-                4,
-                "mass {m} should need 4 vertices"
-            );
-        }
-    }
-
-    #[test]
-    fn min_vertices_for_mass_mass_5_is_5() {
-        assert_eq!(min_vertices_for_mass(5), 5);
-    }
-
-    #[test]
-    fn min_vertices_for_mass_shape_thresholds() {
-        // Verify the documented mass → min-vertices table.
-        // | 6–7   | hexagon    | 6 |
-        // | 8–9   | heptagon   | 7 |
-        // | ≥ 10  | octagon    | 8 |
-        assert_eq!(min_vertices_for_mass(6), 6, "mass 6 → hexagon (6)");
-        assert_eq!(min_vertices_for_mass(7), 6, "mass 7 → hexagon (6)");
-        assert_eq!(min_vertices_for_mass(8), 7, "mass 8 → heptagon (7)");
-        assert_eq!(min_vertices_for_mass(9), 7, "mass 9 → heptagon (7)");
-        assert_eq!(min_vertices_for_mass(10), 8, "mass 10 → octagon (8)");
-        assert_eq!(min_vertices_for_mass(20), 8, "mass 20 → octagon (8)");
-    }
-
-    #[test]
-    fn canonical_vertices_for_mass_shapes_meet_minimum() {
-        // Each canonical shape must have at least as many vertices as the minimum for
-        // that mass, and must produce a valid Rapier convex hull.
+    fn canonical_vertices_for_mass_shapes_are_valid() {
+        // Each canonical shape must produce a valid Rapier convex hull.
         for mass in [1u32, 2, 3, 4, 5, 6, 7, 8] {
             let verts = canonical_vertices_for_mass(mass);
             assert!(
-                verts.len() >= min_vertices_for_mass(mass),
-                "mass {mass}: canonical shape has {} verts but min is {}",
+                verts.len() >= 3,
+                "mass {mass}: canonical shape has {} verts (need ≥3)",
                 verts.len(),
-                min_vertices_for_mass(mass)
             );
             let collider = bevy_rapier2d::prelude::Collider::convex_hull(&verts);
             assert!(

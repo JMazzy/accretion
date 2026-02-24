@@ -1,5 +1,68 @@
 # Accretion Changelog
 
+## Visual shape consistency — February 24, 2026
+
+### Chip operations now produce geometrically meaningful results
+
+**Problem**: Chipping an asteroid removed a vertex from the hull entirely. This is geometrically wrong — a chipped shape should have a **flat facet** where material was removed, not a missing corner.
+
+**New chip behaviour** (bullet and missile):
+- Find the closest vertex to the impact point (bullet) or the most prominent vertex (missile)
+- Replace that vertex with **two cut points** placed ~30% along each adjacent edge from the tip
+- The flat cut between them is the new facet
+- Net: vertex count **increases by 1** — a triangle hit at a corner becomes a **quadrilateral**, an octagon gains a flat edge, etc.
+- Density rescaling to `chip_mass / density` still applies afterward, so size is correct
+
+**Examples**:
+- Triangle → quadrilateral (corner bevelled off)
+- Pentagon with one sharp tip → hexagon with one flat edge
+- Near-circle (octagon) → 9-gon with one flat face
+
+**`min_vertices_for_mass` removed**: This enforcement was replacing actual hull geometry with canonical regular polygons whenever vertex count fell below a per-mass threshold. Since the density invariant handles size correctness, it was redundant and harmful. Removed entirely.
+
+**Split** was already geometrically correct (Sutherland-Hodgman plane cut through centroid). No change needed: a near-circle split in half produces two semicircle-shaped halves.
+
+---
+
+## Density invariant at spawn — February 24, 2026
+
+---
+
+## Density invariant at spawn — February 24, 2026
+
+### All spawn sites now enforce `vertices.area == AsteroidSize / density`
+
+**Root cause fixed**: Previously, every spawn site set `AsteroidSize` (gravitational mass) independently of vertex geometry, so the first merge/split/chip hit would "correct" the visual size — causing a visible pop.
+
+**Invariant**: `polygon_area(vertices) == AsteroidSize / asteroid_density` must hold at construction. Combat and merge code already enforced this; spawners did not.
+
+**Changes**:
+- `spawn_initial_asteroids`: derives `unit_size` via `round(polygon_area / tri_area)` then calls `rescale_vertices_to_area`
+- `spawn_planetoid`: vertices rescaled to `planetoid_unit_size / density`
+- `spawn_orbit_scenario` central body: vertices rescaled to `ORBIT_CENTRAL_MASS / density`
+- `spawn_orbit_scenario` rings 1–3: each body's vertices rescaled to `AsteroidSize / density`; orbital velocity unified to `v = sqrt(G·CM·density/r)` via a shared `v_orbit` closure (same for all body types at the same radius once masses are consistent)
+- `spawn_comets_scenario`: `pre_area` derived from polygon formula, vertices rescaled to `unit_size / density`
+- `spawn_shower_scenario`: triangle vertices rescaled to `1.0 / density`
+- `spawn_unit_fragment` (combat.rs): now takes a `density: f32` parameter, uses `canonical_vertices_for_mass(1)` + `rescale_vertices_to_area` instead of a hardcoded side=6 triangle; all 4 call sites pass `config.asteroid_density`
+
+**Observable effect**: Asteroids no longer visually shrink or grow on first contact. Size is stable and invariant across merges, splits, chips, and spawns.
+
+---
+
+## More/better scenarios — February 24, 2026
+
+### Three new scenarios added; Orbit rings now feature mixed polygon sizes
+
+**Comets** — 20 large (9–12 sided) fast-moving polygons (scale 2.5–4.5, speed 80–140 u/s) launched on inward crossing trajectories from random positions 400–1500 u from origin. High relative speed means fragmentation rather than merging; high-action dodge-and-shoot gameplay.
+
+**Shower** — 250 unit triangles scattered uniformly across a 1 600-unit radius disk with near-zero initial velocity (±3 u/s). Mutual N-body gravity visibly collapses the field into growing clusters in real time.
+
+**Orbit improved** — Ring 2 (r=480) now alternates triangles and squares with random scale 1.0–1.8; ring 3 (r=680) cycles pentagons/hexagons/heptagons at scale 1.0–2.2. Each body's orbital speed is computed individually using its actual Rapier polygon-area mass so orbits remain stable despite size variation.
+
+Scenario-select screen updated with all four cards (FIELD, ORBIT, COMETS, SHOWER).
+
+---
+
 ## Density — February 23, 2026
 
 ### Asteroid visual size is now proportional to mass via a density constant

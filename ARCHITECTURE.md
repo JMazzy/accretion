@@ -190,6 +190,17 @@ Key constant groups (see `src/constants.rs` for current values):
 | Asteroid geometry | `TRIANGLE_BASE_SIDE`, `SQUARE_BASE_HALF`, `POLYGON_BASE_RADIUS`, `HEPTAGON_BASE_RADIUS`, `OCTAGON_BASE_RADIUS`, `PLANETOID_BASE_RADIUS`, `PLANETOID_UNIT_SIZE` |
 | Asteroid density | `ASTEROID_DENSITY` — mass units per world-unit² (default `0.1`); governs visual area of merged/split polygons |
 
+## Scenarios
+
+Built-in scenarios are variants of `SelectedScenario` (in `menu.rs`) and spawned by `spawn_initial_world` (in `main.rs`).
+
+| Scenario | Spawn function | Description |
+|----------|---------------|-------------|
+| **Field** | `spawn_initial_asteroids` (100) + `spawn_planetoid` | Noise-clustered asteroid field with one large planetoid offset from the player |
+| **Orbit** | `spawn_orbit_scenario` | Large central body ringed by debris: ring 1 triangles (r=280), ring 2 triangles+squares (r=480, scale 1.0–1.8), ring 3 pentagons/hexagons/heptagons (r=680, scale 1.0–2.2).  Each body's orbital speed is computed individually via `v = sqrt(G·AsteroidSize·M_central / (r·m_rapier))` |
+| **Comets** | `spawn_comets_scenario` | 20 large (9–12 sided, scale 2.5–4.5) asteroids launched inward at 80–140 u/s.  High speed → fragmentation gameplay |
+| **Shower** | `spawn_shower_scenario` | 250 unit triangles scattered uniformly within a 1 600-unit radius, near-zero velocity.  Shows natural accretion in real time |
+
 ## Testing Framework
 
 ### Test System

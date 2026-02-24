@@ -27,8 +27,8 @@ use super::state::{
     PlayerHealth, PlayerLives, PlayerScore, PreferredGamepad, Projectile,
 };
 use crate::asteroid::{
-    canonical_vertices_for_mass, compute_convex_hull_from_points, min_vertices_for_mass,
-    rescale_vertices_to_area, spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
+    canonical_vertices_for_mass, compute_convex_hull_from_points, rescale_vertices_to_area,
+    spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
 };
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
@@ -291,7 +291,7 @@ pub fn missile_recharge_system(
 pub fn missile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
-    q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity), With<Asteroid>>,
+    q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity, &Vertices), With<Asteroid>>,
     q_missiles: Query<Entity, With<Missile>>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
@@ -321,7 +321,7 @@ pub fn missile_asteroid_hit_system(
             continue;
         }
 
-        let Ok((size, transform, velocity)) = q_asteroids.get(asteroid_entity) else {
+        let Ok((size, transform, velocity, vertices)) = q_asteroids.get(asteroid_entity) else {
             continue;
         };
 
@@ -362,7 +362,13 @@ pub fn missile_asteroid_hit_system(
                     let offset = Vec2::new(angle.cos(), angle.sin()) * 10.0;
                     let frag_vel =
                         vel + Vec2::new(rng.gen_range(-50.0..50.0), rng.gen_range(-50.0..50.0));
-                    spawn_unit_fragment(&mut commands, pos + offset, frag_vel, ang_vel);
+                    spawn_unit_fragment(
+                        &mut commands,
+                        pos + offset,
+                        frag_vel,
+                        ang_vel,
+                        config.asteroid_density,
+                    );
                 }
                 spawn_debris_particles(&mut commands, pos, vel, n);
             }
@@ -377,14 +383,56 @@ pub fn missile_asteroid_hit_system(
                     let offset = Vec2::new(angle.cos(), angle.sin()) * 12.0;
                     let frag_vel =
                         vel + Vec2::new(rng.gen_range(-60.0..60.0), rng.gen_range(-60.0..60.0));
-                    spawn_unit_fragment(&mut commands, pos + offset, frag_vel, ang_vel);
+                    spawn_unit_fragment(
+                        &mut commands,
+                        pos + offset,
+                        frag_vel,
+                        ang_vel,
+                        config.asteroid_density,
+                    );
                 }
-                // Reduce mass of the original asteroid by 3 (min 1)
+                // Cut a flat facet at the most prominent vertex in the direction
+                // of the shot (the vertex furthest from centroid toward impact,
+                // approximated as the first vertex when hull is traversed from
+                // the scatter direction).  Same flat-facet bevel as bullet chip.
                 let chip_mass = n.saturating_sub(3).max(1);
-                let grey = 0.4 + rand::random::<f32>() * 0.3;
-                let local = canonical_vertices_for_mass(chip_mass);
+                let local_verts: Vec<Vec2> = if !vertices.0.is_empty() {
+                    let n_verts = vertices.0.len();
+                    // Pick the vertex with the largest local radius as the bevel target.
+                    let tip_idx = vertices
+                        .0
+                        .iter()
+                        .enumerate()
+                        .max_by(|(_, a), (_, b)| {
+                            a.length()
+                                .partial_cmp(&b.length())
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    let prev_idx = (tip_idx + n_verts - 1) % n_verts;
+                    let next_idx = (tip_idx + 1) % n_verts;
+                    let tip = vertices.0[tip_idx];
+                    let cut_a = tip + (vertices.0[prev_idx] - tip) * 0.30;
+                    let cut_b = tip + (vertices.0[next_idx] - tip) * 0.30;
+                    let mut bevelled: Vec<Vec2> = Vec::with_capacity(n_verts + 1);
+                    for (i, &v) in vertices.0.iter().enumerate() {
+                        if i == tip_idx {
+                            bevelled.push(cut_a);
+                            bevelled.push(cut_b);
+                        } else {
+                            bevelled.push(v);
+                        }
+                    }
+                    let hull = compute_convex_hull_from_points(&bevelled).unwrap_or(bevelled);
+                    let c = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
+                    hull.iter().map(|v| *v - c).collect()
+                } else {
+                    canonical_vertices_for_mass(chip_mass)
+                };
                 let target_area = chip_mass as f32 / config.asteroid_density;
-                let local = rescale_vertices_to_area(&local, target_area);
+                let local = rescale_vertices_to_area(&local_verts, target_area);
+                let grey = 0.4 + rand::random::<f32>() * 0.3;
                 let new_ent = spawn_asteroid_with_vertices(
                     &mut commands,
                     pos,
@@ -675,7 +723,13 @@ pub fn projectile_asteroid_hit_system(
                     let scatter_offset = Vec2::new(angle.cos(), angle.sin()) * 8.0;
                     let scatter_vel =
                         vel + Vec2::new(rng.gen_range(-30.0..30.0), rng.gen_range(-30.0..30.0));
-                    spawn_unit_fragment(&mut commands, pos + scatter_offset, scatter_vel, ang_vel);
+                    spawn_unit_fragment(
+                        &mut commands,
+                        pos + scatter_offset,
+                        scatter_vel,
+                        ang_vel,
+                        config.asteroid_density,
+                    );
                 }
                 spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
                 spawn_debris_particles(&mut commands, pos, vel, n);
@@ -703,13 +757,10 @@ pub fn projectile_asteroid_hit_system(
                     };
                     let centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
                     let final_mass = half_size.max(1);
-                    // Enforce mass→shape: if the hull has fewer vertices than the
-                    // mass requires, substitute the canonical regular polygon.
-                    let local: Vec<Vec2> = if hull.len() < min_vertices_for_mass(final_mass) {
-                        canonical_vertices_for_mass(final_mass)
-                    } else {
-                        hull.iter().map(|v| *v - centroid).collect()
-                    };
+                    // Use the actual split hull — no canonical substitution.
+                    // Visual identity (number of sides, shape) is preserved;
+                    // density rescaling ensures the size is correct for the mass.
+                    let local: Vec<Vec2> = hull.iter().map(|v| *v - centroid).collect();
                     // Scale to density-consistent area so split fragments look
                     // proportional to their mass regardless of pre-split visual size.
                     let target_area = final_mass as f32 / config.asteroid_density;
@@ -738,7 +789,7 @@ pub fn projectile_asteroid_hit_system(
                 spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
             }
 
-            // ── Chip: remove closest vertex, spawn one unit fragment ───────────
+            // ── Chip: cut a flat facet at the impact vertex ───────────────────
             _ => {
                 spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
                 let closest_idx = world_verts
@@ -758,27 +809,40 @@ pub fn projectile_asteroid_hit_system(
                 let chip_vel = vel
                     + chip_dir * 40.0
                     + Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
-                spawn_unit_fragment(&mut commands, chip_pos, chip_vel, 0.0);
+                spawn_unit_fragment(
+                    &mut commands,
+                    chip_pos,
+                    chip_vel,
+                    0.0,
+                    config.asteroid_density,
+                );
 
-                // Reduce original asteroid: remove impact vertex, recompute hull
-                let mut new_world_verts = world_verts;
-                if new_world_verts.len() > 3 {
-                    new_world_verts.remove(closest_idx);
+                // Cut a flat facet at the impact vertex: replace the tip with two
+                // cut points ~30% along each adjacent edge.
+                // Triangle hit at a corner → quadrilateral; octagon → 9-gon with
+                // a flat face; etc.
+                let n_verts = world_verts.len();
+                let prev_idx = (closest_idx + n_verts - 1) % n_verts;
+                let next_idx = (closest_idx + 1) % n_verts;
+                let tip = world_verts[closest_idx];
+                let cut_a = tip + (world_verts[prev_idx] - tip) * 0.30;
+                let cut_b = tip + (world_verts[next_idx] - tip) * 0.30;
+                let mut new_world_verts: Vec<Vec2> = Vec::with_capacity(n_verts + 1);
+                for (i, &v) in world_verts.iter().enumerate() {
+                    if i == closest_idx {
+                        new_world_verts.push(cut_a);
+                        new_world_verts.push(cut_b);
+                    } else {
+                        new_world_verts.push(v);
+                    }
                 }
 
-                let hull_world = compute_convex_hull_from_points(&new_world_verts)
-                    .unwrap_or_else(|| new_world_verts.clone());
+                let hull_world =
+                    compute_convex_hull_from_points(&new_world_verts).unwrap_or(new_world_verts);
                 let hull_centroid: Vec2 =
                     hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
                 let new_mass = (n - 1).max(1);
-                // Enforce mass→shape: if the hull has fewer vertices than the
-                // mass requires, substitute the canonical regular polygon.
-                let new_local: Vec<Vec2> = if hull_world.len() < min_vertices_for_mass(new_mass) {
-                    canonical_vertices_for_mass(new_mass)
-                } else {
-                    hull_world.iter().map(|v| *v - hull_centroid).collect()
-                };
-                // Scale to density-consistent area.
+                let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - hull_centroid).collect();
                 let target_area = new_mass as f32 / config.asteroid_density;
                 let new_local = rescale_vertices_to_area(&new_local, target_area);
 
@@ -1228,55 +1292,43 @@ mod tests {
         assert_chip_produces_valid_collider("triangle_no_remove", &tri, 0);
     }
 
-    // ── Mass→shape correction ─────────────────────────────────────────────────
+    // ── Split geometry ────────────────────────────────────────────────────────
 
-    /// Simulate the full split pipeline with mass→shape correction and assert the result
-    /// meets the minimum vertex count for the given mass.
-    fn split_with_shape_correction(
-        shape_name: &str,
-        verts: &[Vec2],
-        axis: Vec2,
-        mass_a: u32,
-        mass_b: u32,
-    ) {
+    /// Run the full split pipeline on a polygon and assert both halves produce
+    /// valid, spawn-able asteroids.  Vertex-count requirements are no longer
+    /// enforced; the only hard constraint is ≥3 vertices and a valid collider.
+    fn assert_split_halves_valid(shape_name: &str, verts: &[Vec2], axis: Vec2, density: f32) {
         let origin = Vec2::ZERO;
         let (front_raw, back_raw) = split_convex_polygon(verts, origin, axis);
-        for (side, raw, mass) in [("front", &front_raw, mass_a), ("back", &back_raw, mass_b)] {
+        for (side, raw) in [("front", &front_raw), ("back", &back_raw)] {
             if raw.len() < 3 {
-                continue; // empty half is fine
+                continue; // empty half is acceptable
             }
             let hull = match crate::asteroid::compute_convex_hull_from_points(raw) {
                 Some(h) if h.len() >= 3 => h,
-                _ => continue, // hull failed → production code skips this half
+                _ => continue,
             };
-            let final_mass = mass.max(1);
             let centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
-            let local: Vec<Vec2> = if hull.len() < min_vertices_for_mass(final_mass) {
-                canonical_vertices_for_mass(final_mass)
-            } else {
-                hull.iter().map(|v| *v - centroid).collect()
-            };
-
-            let min_v = min_vertices_for_mass(final_mass);
-            assert!(
-                local.len() >= min_v,
-                "{shape_name} {side} mass={final_mass}: got {} verts, expected ≥{min_v}",
-                local.len()
-            );
-            let collider = bevy_rapier2d::prelude::Collider::convex_hull(&local);
+            let local: Vec<Vec2> = hull.iter().map(|v| *v - centroid).collect();
+            // Density-rescaled area must produce a valid collider.
+            let mass = 2u32; // minimum representative mass
+            let rescaled = crate::asteroid::rescale_vertices_to_area(&local, mass as f32 / density);
+            let collider = bevy_rapier2d::prelude::Collider::convex_hull(&rescaled);
             assert!(
                 collider.is_some(),
-                "{shape_name} {side} mass={final_mass}: Collider::convex_hull returned None \
-                 for {} verts",
-                local.len()
+                "{shape_name} {side}: Collider::convex_hull returned None for {} verts",
+                rescaled.len()
+            );
+            assert!(
+                rescaled.len() >= 3,
+                "{shape_name} {side}: need ≥3 verts, got {}",
+                rescaled.len()
             );
         }
     }
 
     #[test]
-    fn mass_shape_correction_size4_square_split_gives_at_least_4_vertices() {
-        // A size-4 square (split → two halves each of mass 2).
-        // Mass 2 requires ≥4 vertices. The raw split half may only have 3.
+    fn split_size4_square_both_halves_valid() {
         use crate::constants::SQUARE_BASE_HALF;
         let h = SQUARE_BASE_HALF;
         let square = vec![
@@ -1286,13 +1338,12 @@ mod tests {
             Vec2::new(-h, h),
         ];
         for axis in [Vec2::X, Vec2::Y, Vec2::new(1.0, 1.0).normalize()] {
-            split_with_shape_correction("square_size4", &square, axis, 2, 2);
+            assert_split_halves_valid("square_size4", &square, axis, 0.1);
         }
     }
 
     #[test]
-    fn mass_shape_correction_size5_pentagon_split_both_halves_valid() {
-        // Size-5 split → mass 2 + mass 3 (both need ≥4 vertices).
+    fn split_size5_pentagon_both_halves_valid() {
         use crate::constants::POLYGON_BASE_RADIUS;
         let r = POLYGON_BASE_RADIUS;
         let pent: Vec<Vec2> = (0..5)
@@ -1302,13 +1353,12 @@ mod tests {
             })
             .collect();
         for axis in [Vec2::X, Vec2::Y] {
-            split_with_shape_correction("pentagon_size5", &pent, axis, 2, 3);
+            assert_split_halves_valid("pentagon_size5", &pent, axis, 0.1);
         }
     }
 
     #[test]
-    fn mass_shape_correction_size6_hexagon_split_both_halves_valid() {
-        // Size-6 hexagon split → mass 3 + mass 3 (each need ≥4 vertices).
+    fn split_size6_hexagon_both_halves_valid() {
         use crate::constants::POLYGON_BASE_RADIUS;
         let r = POLYGON_BASE_RADIUS;
         let hex: Vec<Vec2> = (0..6)
@@ -1318,45 +1368,58 @@ mod tests {
             })
             .collect();
         for axis in [Vec2::X, Vec2::Y, Vec2::new(1.0, 1.0).normalize()] {
-            split_with_shape_correction("hexagon_size6", &hex, axis, 3, 3);
+            assert_split_halves_valid("hexagon_size6", &hex, axis, 0.1);
         }
     }
 
     #[test]
-    fn mass_shape_correction_degenerate_input_uses_canonical() {
-        // Force a below-minimum scenario by directly calling the correction logic.
-        // A 3-vertex hull for mass=4 must be replaced with the 4-vertex canonical square.
-        let three_vert_hull = vec![
-            Vec2::new(-5.0, -5.0),
-            Vec2::new(5.0, -5.0),
-            Vec2::new(0.0, 5.0),
+    fn chip_bevel_adds_vertex_and_produces_valid_collider() {
+        // Chip a triangle at its first vertex: expect a quadrilateral (4 verts).
+        let tri = vec![
+            Vec2::new(0.0, 10.0),
+            Vec2::new(-8.0, -5.0),
+            Vec2::new(8.0, -5.0),
         ];
-        let mass = 4u32;
-        let centroid = Vec2::ZERO;
-        let result: Vec<Vec2> = if three_vert_hull.len() < min_vertices_for_mass(mass) {
-            canonical_vertices_for_mass(mass)
-        } else {
-            three_vert_hull.iter().map(|v| *v - centroid).collect()
-        };
-        let min_v = min_vertices_for_mass(mass);
+        let tip_idx = 0usize;
+        let n_verts = tri.len();
+        let prev_idx = (tip_idx + n_verts - 1) % n_verts;
+        let next_idx = (tip_idx + 1) % n_verts;
+        let tip = tri[tip_idx];
+        let cut_a = tip + (tri[prev_idx] - tip) * 0.30;
+        let cut_b = tip + (tri[next_idx] - tip) * 0.30;
+        let mut bevelled: Vec<Vec2> = Vec::new();
+        for (i, &v) in tri.iter().enumerate() {
+            if i == tip_idx {
+                bevelled.push(cut_a);
+                bevelled.push(cut_b);
+            } else {
+                bevelled.push(v);
+            }
+        }
+        let hull = crate::asteroid::compute_convex_hull_from_points(&bevelled).unwrap_or(bevelled);
+        assert_eq!(
+            hull.len(),
+            4,
+            "triangle chipped at corner should become quadrilateral"
+        );
+        let collider = bevy_rapier2d::prelude::Collider::convex_hull(&hull);
         assert!(
-            result.len() >= min_v,
-            "mass {mass}: expected ≥{min_v} vertices but got {}",
-            result.len()
+            collider.is_some(),
+            "bevelled hull must produce a valid collider"
         );
     }
 }
 
 /// Spawn a single unit-size (triangle) asteroid fragment at `pos` with the given velocity.
-fn spawn_unit_fragment(commands: &mut Commands, pos: Vec2, velocity: Vec2, angvel: f32) {
+fn spawn_unit_fragment(
+    commands: &mut Commands,
+    pos: Vec2,
+    velocity: Vec2,
+    angvel: f32,
+    density: f32,
+) {
     let grey = 0.4 + rand::random::<f32>() * 0.4;
-    let side = 6.0_f32;
-    let h = side * 3.0_f32.sqrt() / 2.0;
-    let verts = vec![
-        Vec2::new(0.0, h / 2.0),
-        Vec2::new(-side / 2.0, -h / 2.0),
-        Vec2::new(side / 2.0, -h / 2.0),
-    ];
+    let verts = rescale_vertices_to_area(&canonical_vertices_for_mass(1), 1.0 / density);
     let ent = spawn_asteroid_with_vertices(commands, pos, &verts, Color::srgb(grey, grey, grey), 1);
     commands.entity(ent).insert(Velocity {
         linvel: velocity,

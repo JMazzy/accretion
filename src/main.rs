@@ -48,6 +48,12 @@ fn spawn_initial_world(
         SelectedScenario::Orbit => {
             asteroid::spawn_orbit_scenario(&mut commands, &config);
         }
+        SelectedScenario::Comets => {
+            asteroid::spawn_comets_scenario(&mut commands, &config);
+        }
+        SelectedScenario::Shower => {
+            asteroid::spawn_shower_scenario(&mut commands, &config);
+        }
     }
 }
 
