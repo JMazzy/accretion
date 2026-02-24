@@ -292,6 +292,23 @@ pub const STATS_FONT_SIZE: f32 = 20.0;
 
 // ── Asteroid Geometry ─────────────────────────────────────────────────────────
 
+/// Density of asteroid material (mass units per world-unit²).
+///
+/// Used to establish a predictable relationship between an asteroid's `AsteroidSize`
+/// (gravitational mass in unit-triangle equivalents) and its visual area on screen:
+///
+/// ```text
+/// target_area = asteroid_size / ASTEROID_DENSITY
+/// ```
+///
+/// A lower density → larger visual size for the same mass.
+/// A higher density → smaller visual size for the same mass.
+///
+/// Calibrated so that a single unit triangle (`AsteroidSize = 1`) has roughly the
+/// same area as a triangle with `base_side ≈ 4 u` at scale 1.0 (≈ 7 u²),
+/// meaning `density ≈ 1 / 10 = 0.1`.
+pub const ASTEROID_DENSITY: f32 = 0.1;
+
 /// Minimum distance between two vertex points before they are considered duplicates
 /// during convex hull deduplication.  Prevents degenerate Rapier colliders.
 pub const HULL_DEDUP_MIN_DIST: f32 = 0.5;

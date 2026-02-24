@@ -28,7 +28,7 @@ use super::state::{
 };
 use crate::asteroid::{
     canonical_vertices_for_mass, compute_convex_hull_from_points, min_vertices_for_mass,
-    spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
+    rescale_vertices_to_area, spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
 };
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
@@ -295,6 +295,7 @@ pub fn missile_asteroid_hit_system(
     q_missiles: Query<Entity, With<Missile>>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
+    config: Res<PhysicsConfig>,
 ) {
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
     let mut processed_missiles: std::collections::HashSet<Entity> = Default::default();
@@ -382,6 +383,8 @@ pub fn missile_asteroid_hit_system(
                 let chip_mass = n.saturating_sub(3).max(1);
                 let grey = 0.4 + rand::random::<f32>() * 0.3;
                 let local = canonical_vertices_for_mass(chip_mass);
+                let target_area = chip_mass as f32 / config.asteroid_density;
+                let local = rescale_vertices_to_area(&local, target_area);
                 let new_ent = spawn_asteroid_with_vertices(
                     &mut commands,
                     pos,
@@ -584,6 +587,7 @@ pub fn projectile_asteroid_hit_system(
     mut q_proj: Query<(&Transform, &mut Projectile)>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
+    config: Res<PhysicsConfig>,
 ) {
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
     let mut processed_projectiles: std::collections::HashSet<Entity> = Default::default();
@@ -706,6 +710,10 @@ pub fn projectile_asteroid_hit_system(
                     } else {
                         hull.iter().map(|v| *v - centroid).collect()
                     };
+                    // Scale to density-consistent area so split fragments look
+                    // proportional to their mass regardless of pre-split visual size.
+                    let target_area = final_mass as f32 / config.asteroid_density;
+                    let local = rescale_vertices_to_area(&local, target_area);
                     let grey = 0.4 + rand::random::<f32>() * 0.3;
                     let push_sign = if (centroid - pos).dot(impact_dir) >= 0.0 {
                         1.0
@@ -770,6 +778,9 @@ pub fn projectile_asteroid_hit_system(
                 } else {
                     hull_world.iter().map(|v| *v - hull_centroid).collect()
                 };
+                // Scale to density-consistent area.
+                let target_area = new_mass as f32 / config.asteroid_density;
+                let new_local = rescale_vertices_to_area(&new_local, target_area);
 
                 commands.entity(asteroid_entity).despawn();
 

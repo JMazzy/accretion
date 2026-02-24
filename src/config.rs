@@ -140,6 +140,11 @@ pub struct PhysicsConfig {
     pub asteroid_size_scale_max: f32,
     pub asteroid_initial_velocity_range: f32,
     pub asteroid_initial_angvel_range: f32,
+
+    // ── Physics: Density ──────────────────────────────────────────────────────
+    /// Mass units per world-unit² used to scale polygon visual area to match mass.
+    /// See `ASTEROID_DENSITY` in `src/constants.rs` for full documentation.
+    pub asteroid_density: f32,
 }
 
 impl Default for PhysicsConfig {
@@ -236,6 +241,8 @@ impl Default for PhysicsConfig {
             asteroid_size_scale_max: ASTEROID_SIZE_SCALE_MAX,
             asteroid_initial_velocity_range: ASTEROID_INITIAL_VELOCITY_RANGE,
             asteroid_initial_angvel_range: ASTEROID_INITIAL_ANGVEL_RANGE,
+            // Density
+            asteroid_density: ASTEROID_DENSITY,
         }
     }
 }

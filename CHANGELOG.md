@@ -1,5 +1,34 @@
 # Accretion Changelog
 
+## Density — February 23, 2026
+
+### Asteroid visual size is now proportional to mass via a density constant
+
+**Feature**: Added `ASTEROID_DENSITY` (default `0.1` mass units per world-unit²) that gives merged composites and split/chip fragments a visual polygon area proportional to their `AsteroidSize`:
+
+```
+target_area = AsteroidSize / ASTEROID_DENSITY
+```
+
+Previously, merged asteroid polygons were sized by the convex hull of however far apart the constituents happened to be — a cluster of 10 closely-packed asteroids looked indistinguishable from a single unit asteroid. Now composites visually scale predictably with mass (area ∝ mass, radius ∝ √mass).
+
+**Implementation**:
+- `src/constants.rs`: `ASTEROID_DENSITY: f32 = 0.1` — compile-time default
+- `src/config.rs` / `assets/physics.toml`: `asteroid_density` runtime-tunable field
+- `src/asteroid.rs`: `polygon_area()` (shoelace formula) and `rescale_vertices_to_area()` helpers
+- `src/simulation.rs` (`asteroid_formation_system`): rescales merged hull to `total_size / density` before spawning
+- `src/player/combat.rs` (`projectile_asteroid_hit_system`, `missile_asteroid_hit_system`): rescales split halves and chipped fragments the same way. Both systems now accept `config: Res<PhysicsConfig>`.
+
+**Also fixed**: Pre-existing incorrect assertion `min_vertices_for_mass_mass_6_and_above_are_6` — the test expected mass 8–9 to use 6 vertices but the implementation (and documented table) correctly maps them to 7 (heptagon). Test renamed `min_vertices_for_mass_shape_thresholds` with accurate assertions for all tiers.
+
+**New unit tests**: `polygon_area_unit_square`, `polygon_area_equilateral_triangle`, `polygon_area_degenerate_returns_zero`, `rescale_vertices_doubles_area`, `rescale_vertices_preserves_centroid`, `rescale_vertices_zero_target_returns_unchanged` — all pass.
+
+**Files changed**: `src/constants.rs`, `src/config.rs`, `assets/physics.toml`, `src/asteroid.rs`, `src/simulation.rs`, `src/player/combat.rs`, `ARCHITECTURE.md`, `BACKLOG.md`
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo test --lib` ✅ (73/73 pass)
+
+---
+
 ## Quit to Main Menu — February 23, 2026
 
 ### Pause menu now returns to main menu; game world is fully cleaned up on exit

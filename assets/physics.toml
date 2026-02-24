@@ -212,5 +212,11 @@ asteroid_size_scale_max = 1.6
 # Random initial velocity component range per axis (u/s).
 asteroid_initial_velocity_range = 15.0
 
+# Asteroid density: mass units per world-unit² connecting visual size to mass.
+# target_area = asteroid_size / asteroid_density
+# Calibrated so an AsteroidSize=1 body has roughly the same area as a small triangle.
+# Lower → bigger asteroids; higher → smaller asteroids for the same mass.
+asteroid_density = 0.1
+
 # Random initial angular velocity range (rad/s).
 asteroid_initial_angvel_range = 5.0

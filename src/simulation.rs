@@ -5,7 +5,8 @@
 //! [`crate::rendering`]; player systems live in [`crate::player`].
 
 use crate::asteroid::{
-    compute_convex_hull_from_points, Asteroid, AsteroidSize, GravityForce, NeighborCount, Vertices,
+    compute_convex_hull_from_points, rescale_vertices_to_area, Asteroid, AsteroidSize,
+    GravityForce, NeighborCount, Vertices,
 };
 use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_render_mode_system};
 use crate::config::PhysicsConfig;
@@ -662,6 +663,12 @@ pub fn asteroid_formation_system(
 
                 // Sum unit sizes of all cluster members
                 let total_size: u32 = cluster.iter().map(|(_, _, _, _, s)| s).sum();
+
+                // Scale the hull so its visual area matches total_size / density.
+                // This ensures merged composites look proportional to their mass
+                // regardless of how spread out the constituent asteroids were.
+                let target_area = total_size as f32 / config.asteroid_density;
+                let hull_local = rescale_vertices_to_area(&hull_local, target_area);
 
                 let avg_color = Color::srgb(0.5, 0.5, 0.5);
                 let composite = crate::asteroid::spawn_asteroid_with_vertices(

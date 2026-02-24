@@ -17,10 +17,10 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 
 ## Physics
 
-- [ ] **Density** - There should be a predictable relationship between mass and the size of the object on screen. Use a *density* value to make volume (or more accurately *area* since it's 2d) look more consistent when calculating the size of the created polygons based on its mass. Density can vary based on the asteroid.
+- [x] **Density** - There should be a predictable relationship between mass and the size of the object on screen. Use a *density* value to make volume (or more accurately *area* since it's 2d) look more consistent when calculating the size of the created polygons based on its mass. Density can vary based on the asteroid.
 - [ ] **Planets** - A new object type with the same gravity system as asteroids.Important differences - large, high mass, nearly circular, no merging or splitting, shooting does not increase score, fixed in place relative to the simulation area to give a steady frame of reference. Visually distinct (rendered purple as a placeholder). Update "Orbit" scenario to use a planet instead of the current planetoid.
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex, but it would look better if allowed to be concave; concave craters approximated by hull; Track per-vertex damage; move vertices inward and recompute hull
-- [ ] **Multi-frame contact resolution** — Large simultaneous merges may need multiple frames
+- [ ] **Performance** — Determine next steps for performance improvements; implement the most impactful one and add the rest to the backlog.
 
 ## Combat Gameplay
 

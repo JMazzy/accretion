@@ -722,9 +722,140 @@ fn cross_product(o: Vec2, a: Vec2, b: Vec2) -> f32 {
     (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
 }
 
+/// Compute the area of a polygon (in world-unit²) using the shoelace formula.
+///
+/// Vertices should be given in order (either CW or CCW); the absolute value of the
+/// signed area is returned so winding direction does not matter.
+/// Returns `0.0` for degenerate inputs (fewer than 3 vertices).
+pub fn polygon_area(vertices: &[Vec2]) -> f32 {
+    if vertices.len() < 3 {
+        return 0.0;
+    }
+    let n = vertices.len();
+    let mut area = 0.0_f32;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area += vertices[i].x * vertices[j].y;
+        area -= vertices[j].x * vertices[i].y;
+    }
+    (area / 2.0).abs()
+}
+
+/// Rescale a polygon's vertices (in local space) so its enclosed area equals
+/// `target_area`.
+///
+/// The polygon centroid is preserved; each vertex is moved radially so the area
+/// changes by the scaling factor `sqrt(target_area / current_area)`.
+///
+/// If the current area is near zero (degenerate polygon) or `target_area ≤ 0`,
+/// the vertices are returned unchanged.
+pub fn rescale_vertices_to_area(vertices: &[Vec2], target_area: f32) -> Vec<Vec2> {
+    let current_area = polygon_area(vertices);
+    if current_area < 1e-6 || target_area <= 0.0 {
+        return vertices.to_vec();
+    }
+    let scale = (target_area / current_area).sqrt();
+    // Local-space vertices should already be centred at the origin, but compute
+    // the centroid defensively to handle any residual offset.
+    let centroid = vertices.iter().copied().sum::<Vec2>() / vertices.len() as f32;
+    vertices
+        .iter()
+        .map(|v| centroid + (*v - centroid) * scale)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── polygon_area ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn polygon_area_unit_square() {
+        // A 2×2 square centred at origin should have area 4.
+        let sq = vec![
+            Vec2::new(-1.0, -1.0),
+            Vec2::new(1.0, -1.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(-1.0, 1.0),
+        ];
+        let area = polygon_area(&sq);
+        assert!(
+            (area - 4.0).abs() < 1e-4,
+            "expected area ≈ 4.0, got {area}"
+        );
+    }
+
+    #[test]
+    fn polygon_area_equilateral_triangle() {
+        // Equilateral triangle with side 4: area = (√3/4)×16 ≈ 6.928.
+        let side = 4.0_f32;
+        let h = side * 3.0_f32.sqrt() / 2.0;
+        let tri = vec![
+            Vec2::new(0.0, h * 2.0 / 3.0),
+            Vec2::new(-side / 2.0, -h / 3.0),
+            Vec2::new(side / 2.0, -h / 3.0),
+        ];
+        let expected = (3.0_f32.sqrt() / 4.0) * side * side;
+        let area = polygon_area(&tri);
+        assert!(
+            (area - expected).abs() < 0.05,
+            "expected area ≈ {expected:.3}, got {area:.3}"
+        );
+    }
+
+    #[test]
+    fn polygon_area_degenerate_returns_zero() {
+        assert_eq!(polygon_area(&[]), 0.0);
+        assert_eq!(polygon_area(&[Vec2::ZERO, Vec2::ONE]), 0.0);
+    }
+
+    // ── rescale_vertices_to_area ──────────────────────────────────────────────
+
+    #[test]
+    fn rescale_vertices_doubles_area() {
+        let sq = vec![
+            Vec2::new(-1.0, -1.0),
+            Vec2::new(1.0, -1.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(-1.0, 1.0),
+        ];
+        let rescaled = rescale_vertices_to_area(&sq, 8.0); // original area = 4, target = 8
+        let new_area = polygon_area(&rescaled);
+        assert!(
+            (new_area - 8.0).abs() < 0.01,
+            "expected rescaled area ≈ 8.0, got {new_area}"
+        );
+    }
+
+    #[test]
+    fn rescale_vertices_preserves_centroid() {
+        let sq = vec![
+            Vec2::new(-1.0, -1.0),
+            Vec2::new(1.0, -1.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(-1.0, 1.0),
+        ];
+        let rescaled = rescale_vertices_to_area(&sq, 16.0);
+        let centroid =
+            rescaled.iter().copied().sum::<Vec2>() / rescaled.len() as f32;
+        assert!(
+            centroid.length() < 1e-4,
+            "centroid should remain near origin after rescaling, got {centroid:?}"
+        );
+    }
+
+    #[test]
+    fn rescale_vertices_zero_target_returns_unchanged() {
+        let sq = vec![
+            Vec2::new(-1.0, -1.0),
+            Vec2::new(1.0, -1.0),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(-1.0, 1.0),
+        ];
+        let unchanged = rescale_vertices_to_area(&sq, 0.0);
+        assert_eq!(unchanged, sq);
+    }
 
     // ── compute_convex_hull_from_points ───────────────────────────────────────
 
@@ -935,14 +1066,17 @@ mod tests {
     }
 
     #[test]
-    fn min_vertices_for_mass_mass_6_and_above_are_6() {
-        for m in [6, 7, 8, 10, 20] {
-            assert_eq!(
-                min_vertices_for_mass(m),
-                6,
-                "mass {m} should need 6 vertices"
-            );
-        }
+    fn min_vertices_for_mass_shape_thresholds() {
+        // Verify the documented mass → min-vertices table.
+        // | 6–7   | hexagon    | 6 |
+        // | 8–9   | heptagon   | 7 |
+        // | ≥ 10  | octagon    | 8 |
+        assert_eq!(min_vertices_for_mass(6), 6, "mass 6 → hexagon (6)");
+        assert_eq!(min_vertices_for_mass(7), 6, "mass 7 → hexagon (6)");
+        assert_eq!(min_vertices_for_mass(8), 7, "mass 8 → heptagon (7)");
+        assert_eq!(min_vertices_for_mass(9), 7, "mass 9 → heptagon (7)");
+        assert_eq!(min_vertices_for_mass(10), 8, "mass 10 → octagon (8)");
+        assert_eq!(min_vertices_for_mass(20), 8, "mass 20 → octagon (8)");
     }
 
     #[test]

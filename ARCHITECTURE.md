@@ -102,6 +102,19 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 - **Philosophy**: Energy loss occurs only through natural physics: collision restitution (Rapier) and gravity dynamics.
 - Asteroids may spin and bounce indefinitely if no collision occurs — this is correct physical behavior.
 
+### Density & Visual Size Scaling
+
+- **Constant**: `ASTEROID_DENSITY` (`src/constants.rs`, default `0.1`) — mass units per world-unit².
+- **Purpose**: Ensures a predictable, consistent relationship between an asteroid's `AsteroidSize` (gravitational mass in unit-triangle equivalents) and its visual polygon area on screen:
+  ```
+  target_area = AsteroidSize / ASTEROID_DENSITY
+  ```
+- **Applied to**: Merged composites (formation system) and split/chip fragments (combat system). Initial spawns retain their randomised size-scale for visual variety.
+- **Helpers** (`src/asteroid.rs`):
+  - `polygon_area(vertices)` — shoelace formula for polygon area
+  - `rescale_vertices_to_area(vertices, target_area)` — scales all vertices radially from the centroid so the polygon encloses exactly `target_area`
+- **Tunable** via `assets/physics.toml` (`asteroid_density`). Lower → bigger polygons; higher → smaller polygons for the same mass.
+
 ### Culling & Boundary
 
 - **Soft boundary**: `SOFT_BOUNDARY_RADIUS` — asteroids beyond this distance feel a linear inward spring force (`soft_boundary_system`) that nudges them back toward the centre.  Force = `SOFT_BOUNDARY_STRENGTH × (dist − SOFT_BOUNDARY_RADIUS)` inward.
@@ -175,6 +188,7 @@ Key constant groups (see `src/constants.rs` for current values):
 | Player health | `PLAYER_MAX_HP`, `DAMAGE_SPEED_THRESHOLD`, `INVINCIBILITY_DURATION` |
 | Gamepad | `GAMEPAD_BRAKE_DAMPING`, `GAMEPAD_LEFT_DEADZONE`, etc. |
 | Asteroid geometry | `TRIANGLE_BASE_SIDE`, `SQUARE_BASE_HALF`, `POLYGON_BASE_RADIUS`, `HEPTAGON_BASE_RADIUS`, `OCTAGON_BASE_RADIUS`, `PLANETOID_BASE_RADIUS`, `PLANETOID_UNIT_SIZE` |
+| Asteroid density | `ASTEROID_DENSITY` — mass units per world-unit² (default `0.1`); governs visual area of merged/split polygons |
 
 ## Testing Framework
 
