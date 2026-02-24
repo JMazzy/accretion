@@ -8,7 +8,7 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 - [x] **Pause + in-game menu** — ESC pauses and shows menu (replaces debug options menu)
 - [x] **Player respawn** — lives system, respawn mechanic, healing damage system
 - [x] **Custom scenarios** - Scenarios & Saves screen added with two built-in scenarios: "Field" and "Orbit"
-- [ ] **Quit to main menu** - quit option on pause menu goes back to the main menu rather than quitting the game
+- [x] **Quit to main menu** - quit option on pause menu goes back to the main menu rather than quitting the game
 - [ ] **Save/load system** — Save/load persistent game files
 - [ ] **More/better scenarios** - "Orbit" object size more variable, "Comets" scenario with many large, relatively fast objects, "Shower" with lots of unit asteroids
 - [ ] **Asteroid mining** — Ore drops, currency system, ship upgrades
@@ -32,6 +32,7 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 
 ## Visual & Rendering
 
+- [ ] **Remove Gizmos** - Remove remaining usage of Gizmos in favor of `Mesh2d` for everything
 - [x] **Particle effects** — Impact dust, merge vortex, debris trails
 - [ ] **Post-processing** — Bloom on collisions; chromatic aberration on invincibility frames
 

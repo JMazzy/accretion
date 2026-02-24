@@ -1,5 +1,26 @@
 # Accretion Changelog
 
+## Quit to Main Menu — February 23, 2026
+
+### Pause menu now returns to main menu; game world is fully cleaned up on exit
+
+**Feature**: The **QUIT** button in the pause menu has been renamed **MAIN MENU** and now returns the player to the main menu instead of exiting the application. Selecting a new scenario and pressing Start starts a fresh simulation. The game can still be quit via the **QUIT** button on the main menu.
+
+**Implementation**:
+- Added `PauseMainMenuButton` component marker (distinct from `MenuQuitButton` which is used on the main menu and game-over screen).
+- `setup_pause_menu`: button label changed from "QUIT" to "MAIN MENU"; uses `PauseMainMenuButton`.
+- `pause_menu_button_system`: `quit_query` now matches `PauseMainMenuButton`; Pressed action changed from `AppExit` to `next_state.set(GameState::MainMenu)`. Removed the now-unused `exit: MessageWriter<AppExit>` parameter.
+- Added `cleanup_game_world` system registered on `OnTransition { Paused → MainMenu }`:
+  - Despawns all `Asteroid`, `Player`, `Projectile`, `Missile`, `Particle`, HUD, and player-UI entities.
+  - Resets `PlayerScore`, `PlayerLives`, `PlayerUiEntities`, `OverlayState`, and `SimulationStats` to their defaults.
+- When the player subsequently starts a new game (ScenarioSelect → Playing), all setup systems (`spawn_initial_world`, `spawn_player`, `setup_boundary_ring`, HUD setup, etc.) re-run via the existing `OnTransition{ScenarioSelect→Playing}` handlers — no duplicate spawning occurs.
+
+**Files changed**: `src/menu.rs`, `BACKLOG.md`
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo build --release` ✅
+
+---
+
 ## Orbit calibration fix + orbit_pair test — February 23, 2026 (continued)
 
 ### Analytically correct orbital velocity + passing orbit stability test

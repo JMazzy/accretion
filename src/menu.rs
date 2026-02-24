@@ -113,6 +113,11 @@ pub struct PauseResumeButton;
 #[derive(Component)]
 pub struct PauseDebugButton;
 
+/// Tags the "Main Menu" button in the pause menu.
+/// Pressing it cleans up the game world and returns to [`GameState::MainMenu`].
+#[derive(Component)]
+pub struct PauseMainMenuButton;
+
 // ── Game-Over component markers ──────────────────────────────────────────────
 
 /// Root node of the game-over overlay; despawned on `OnExit(GameOver)`.
@@ -174,6 +179,16 @@ impl Plugin for MainMenuPlugin {
             .add_systems(
                 Update,
                 game_over_button_system.run_if(in_state(GameState::GameOver)),
+            )
+            // ── Quit to main menu ─────────────────────────────────────────────
+            // Despawn all game-world entities and reset resources so the engine
+            // is clean for the next play session.
+            .add_systems(
+                OnTransition {
+                    exited: GameState::Paused,
+                    entered: GameState::MainMenu,
+                },
+                cleanup_game_world,
             );
     }
 }
@@ -892,7 +907,7 @@ pub fn setup_pause_menu(mut commands: Commands) {
                         ));
                     });
 
-                    // Quit button
+                    // Main Menu button
                     card.spawn((
                         Button,
                         Node {
@@ -905,11 +920,11 @@ pub fn setup_pause_menu(mut commands: Commands) {
                         },
                         BackgroundColor(quit_bg()),
                         BorderColor::all(quit_border()),
-                        MenuQuitButton,
+                        PauseMainMenuButton,
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("QUIT"),
+                            Text::new("MAIN MENU"),
                             TextFont {
                                 font_size: 18.0,
                                 ..default()
@@ -950,21 +965,78 @@ pub fn cleanup_pause_menu(mut commands: Commands, query: Query<Entity, With<Paus
     }
 }
 
+// ── OnTransition(Paused → MainMenu): despawn entire game world ───────────────
+
+/// Despawn all simulation entities and reset per-session resources so the game
+/// is completely clean when the player returns to the main menu.
+///
+/// Runs on `OnTransition { Paused → MainMenu }` (after `OnExit(Paused)` has
+/// already removed the pause overlay).
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn cleanup_game_world(
+    mut commands: Commands,
+    asteroids: Query<Entity, With<crate::asteroid::Asteroid>>,
+    players: Query<Entity, With<crate::player::Player>>,
+    projectiles: Query<Entity, With<crate::player::state::Projectile>>,
+    missiles: Query<Entity, With<crate::player::state::Missile>>,
+    particles: Query<Entity, With<crate::particles::Particle>>,
+    hud: Query<
+        Entity,
+        Or<(
+            With<crate::rendering::HudScoreDisplay>,
+            With<crate::rendering::StatsTextDisplay>,
+            With<crate::rendering::DebugPanel>,
+            With<crate::rendering::LivesHudDisplay>,
+            With<crate::rendering::MissileHudDisplay>,
+            With<crate::rendering::BoundaryRing>,
+        )>,
+    >,
+    player_ui: Query<
+        Entity,
+        Or<(
+            With<crate::player::rendering::HealthBarBg>,
+            With<crate::player::rendering::HealthBarFill>,
+            With<crate::player::rendering::AimIndicatorMesh>,
+        )>,
+    >,
+    mut player_ui_res: ResMut<crate::player::PlayerUiEntities>,
+    mut score: ResMut<PlayerScore>,
+    mut lives: ResMut<PlayerLives>,
+    mut overlay: ResMut<crate::rendering::OverlayState>,
+    mut sim_stats: ResMut<crate::simulation::SimulationStats>,
+) {
+    for e in asteroids
+        .iter()
+        .chain(players.iter())
+        .chain(projectiles.iter())
+        .chain(missiles.iter())
+        .chain(particles.iter())
+        .chain(hud.iter())
+        .chain(player_ui.iter())
+    {
+        commands.entity(e).despawn();
+    }
+    *player_ui_res = crate::player::PlayerUiEntities::default();
+    *score = PlayerScore::default();
+    lives.reset();
+    *overlay = crate::rendering::OverlayState::default();
+    *sim_stats = crate::simulation::SimulationStats::default();
+}
+
 // ── Update (Paused only): button interaction ──────────────────────────────────
 
-/// Handle Resume, Debug Overlays, and Quit button presses in the pause menu.
+/// Handle Resume, Debug Overlays, and Main Menu button presses in the pause menu.
 ///
 /// - **Resume** → transitions back to [`GameState::Playing`].
 /// - **Debug Overlays** → opens / closes the floating debug overlay panel.
-/// - **Quit** → sends [`AppExit`] to gracefully shut down.
+/// - **Main Menu** → cleans up the game world and returns to [`GameState::MainMenu`].
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn pause_menu_button_system(
     resume_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<PauseResumeButton>)>,
     debug_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<PauseDebugButton>)>,
-    quit_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuQuitButton>)>,
+    quit_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<PauseMainMenuButton>)>,
     mut btn_text: Query<&mut TextColor>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut exit: MessageWriter<bevy::app::AppExit>,
     mut debug_panel_query: Query<&mut Visibility, With<crate::rendering::DebugPanel>>,
     mut overlay: ResMut<crate::rendering::OverlayState>,
 ) {
@@ -1024,7 +1096,7 @@ pub fn pause_menu_button_system(
     for (interaction, children) in quit_query.iter() {
         match interaction {
             Interaction::Pressed => {
-                exit.write(bevy::app::AppExit::Success);
+                next_state.set(GameState::MainMenu);
             }
             Interaction::Hovered => {
                 for child in children.iter() {
