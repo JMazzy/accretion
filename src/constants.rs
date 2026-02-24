@@ -249,6 +249,18 @@ pub const PASSIVE_HEAL_DELAY_SECS: f32 = 6.0;
 /// HP regenerated per second once the passive heal delay has elapsed.
 pub const PASSIVE_HEAL_RATE: f32 = 6.0;
 
+// ── Ore Magnet ────────────────────────────────────────────────────────────────
+
+/// Distance (u) from the player within which ore pickups are attracted toward
+/// the ship.  Beyond this radius ore drifts freely; at or inside it the magnet
+/// pull activates.
+pub const ORE_MAGNET_RADIUS: f32 = 250.0;
+
+/// Speed (u/s) at which attracted ore is lerped toward its target velocity
+/// (directly at the player).  Higher values make the pull faster and snappier;
+/// lower values produce a gentler, smoother drift.
+pub const ORE_MAGNET_STRENGTH: f32 = 120.0;
+
 // ── Gamepad ───────────────────────────────────────────────────────────────────
 
 /// Left-stick dead zone: inputs smaller than this fraction are ignored.

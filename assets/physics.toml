@@ -145,6 +145,14 @@ damage_speed_threshold = 30.0
 # Seconds of invincibility after taking damage (prevents rapid stacking).
 invincibility_duration = 0.5
 
+# ── Ore Magnet ────────────────────────────────────────────────────────────────
+
+# Distance (u) from the player within which ore pickups are attracted to the ship.
+ore_magnet_radius = 250.0
+
+# Speed (u/s) at which attracted ore lerps toward the player.
+ore_magnet_strength = 120.0
+
 # ── Gamepad ───────────────────────────────────────────────────────────────────
 
 # Left-stick dead zone fraction (inputs below this are ignored).

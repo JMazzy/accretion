@@ -5,14 +5,13 @@ Planned features, improvements, and known limitations. Completed items are remov
 ## Essential Features
 
 - [ ] **Save/load system** — Save/load persistent game files
-- [ ] **Ore Magnet** — Ore moves slowly toward the ship when the ship is a short distance away
-- [ ] **Ore is usable for healing** — Replenish health (replaces current slow auto-heal), replenish missiles (replaces current slow auto-missile)
+- [ ] **Ore is usable for healing** — Replenish health (replaces current slow auto-heal), replenish missiles (replaces current slow auto-missile). Add UI which allows for this (will be used for upgrade as well)
 - [ ] **Ore is usable for upgrades** — Increase primary weapon power, increase missile power, magnet pulls in ore faster and from further distances
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex; concave craters approximated by hull; track per-vertex damage; move vertices inward and recompute hull
 - [ ] **Enemy ships** — Computer-controlled enemies which fire their own weapon and take damage from player weapons and asteroid collisions.
 - [ ] **Boss ships** — Large enemies with more powerful attacks (depends on having enemy ships first)
-- [ ] **Tractor Beam** — Grab/pull/push asteroids
-- [ ] **Ion Cannon** — Disable enemy ships (depends on having enemy ships first)
+- [ ] **Tractor Beam** — A new weapon/action which can grab, pull, and push asteroids
+- [ ] **Ion Cannon** — A new weapon which disables enemy ships (depends on having enemy ships first)
 - [ ] **Planets** — A new object type with the same gravity system as asteroids, but otherwise very different. Important differences: larger, higher mass, nearly circular, no merging or splitting, shooting does not increase score, fixed in place relative to the simulation area to give a steady frame of reference. Visually distinct (rendered purple as a placeholder). Scenarios have 0–1 planet (not common). Update "Orbit" scenario to use a planet instead of the current planetoid.
 - [ ] **Local multiplayer** — Co-op and PvP modes
 

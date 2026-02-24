@@ -1,5 +1,15 @@
 # Accretion Changelog
 
+## Ore Magnet — February 24, 2026
+
+- **`src/constants.rs`**: Added `ORE_MAGNET_RADIUS` (250 u) and `ORE_MAGNET_STRENGTH` (120 u/s).
+- **`src/config.rs`**: Added `ore_magnet_radius` and `ore_magnet_strength` fields to `PhysicsConfig`; both default to the new constants.
+- **`assets/physics.toml`**: Added `# ── Ore Magnet` section with `ore_magnet_radius = 250.0` and `ore_magnet_strength = 120.0`.
+- **`src/mining.rs`**: Added `ore_magnet_system` — every frame, ore pickups within `ore_magnet_radius` lerp their `linvel` toward the player at `ore_magnet_strength` u/s. Registered in `MiningPlugin` alongside existing ore systems.
+- **`FEATURES.md`**: Added "Ore Pickups" section documenting drops, collection, and the new magnet behaviour.
+
+---
+
 ## Asteroid Mining — February 24, 2026
 
 ### Ore drops + player collection HUD

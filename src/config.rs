@@ -113,6 +113,10 @@ pub struct PhysicsConfig {
     pub passive_heal_delay_secs: f32,
     pub passive_heal_rate: f32,
 
+    // ── Ore Magnet ────────────────────────────────────────────────────────────
+    pub ore_magnet_radius: f32,
+    pub ore_magnet_strength: f32,
+
     // ── Gamepad ───────────────────────────────────────────────────────────────
     pub gamepad_left_deadzone: f32,
     pub gamepad_brake_damping: f32,
@@ -216,6 +220,9 @@ impl Default for PhysicsConfig {
             // Player: Passive Healing
             passive_heal_delay_secs: PASSIVE_HEAL_DELAY_SECS,
             passive_heal_rate: PASSIVE_HEAL_RATE,
+            // Ore Magnet
+            ore_magnet_radius: ORE_MAGNET_RADIUS,
+            ore_magnet_strength: ORE_MAGNET_STRENGTH,
             // Gamepad
             gamepad_left_deadzone: GAMEPAD_LEFT_DEADZONE,
             gamepad_brake_damping: GAMEPAD_BRAKE_DAMPING,

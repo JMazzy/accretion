@@ -23,6 +23,7 @@
 //! `CollisionGroups` filter is broadened to `GROUP_1 | GROUP_4` so the
 //! player-ore sensor events fire correctly.
 
+use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::player::Player;
 use bevy::prelude::*;
@@ -71,7 +72,12 @@ impl Plugin for MiningPlugin {
             .add_systems(Startup, setup_ore_mesh)
             .add_systems(
                 Update,
-                (attach_ore_mesh_system, ore_lifetime_system).run_if(in_state(GameState::Playing)),
+                (
+                    attach_ore_mesh_system,
+                    ore_lifetime_system,
+                    ore_magnet_system,
+                )
+                    .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 // Run alongside the other hit systems that read CollisionEvents.
@@ -132,6 +138,41 @@ fn attach_ore_mesh_system(
         commands
             .entity(entity)
             .insert((Mesh2d(ore_mesh.0.clone()), MeshMaterial2d(mat)));
+    }
+}
+
+/// Pull ore pickups toward the player when they are within `ore_magnet_radius`.
+///
+/// Uses a velocity lerp so the attraction feels smooth rather than a hard snap:
+/// each frame the ore's `linvel` is blended toward a target vector pointing
+/// directly at the player at `ore_magnet_strength` u/s.  Outside the magnet
+/// radius the ore velocity is left completely untouched.
+fn ore_magnet_system(
+    config: Res<PhysicsConfig>,
+    time: Res<Time>,
+    q_player: Query<&Transform, With<Player>>,
+    mut q_ore: Query<(&Transform, &mut Velocity), With<OrePickup>>,
+) {
+    let Ok(player_transform) = q_player.single() else {
+        return;
+    };
+    let player_pos = player_transform.translation.truncate();
+    let radius_sq = config.ore_magnet_radius * config.ore_magnet_radius;
+    let dt = time.delta_secs();
+    // Lerp alpha: at 4 × dt the velocity rotates ~14% per frame (≈60 fps →
+    // fully pointing at player in ~0.25 s), giving a smooth but responsive pull.
+    let alpha = (dt * 4.0).min(1.0);
+
+    for (ore_transform, mut vel) in q_ore.iter_mut() {
+        let ore_pos = ore_transform.translation.truncate();
+        let delta = player_pos - ore_pos;
+        if delta.length_squared() > radius_sq {
+            continue;
+        }
+        // direction is guaranteed non-zero: ore can't overlap the player sensor
+        // without already triggering collection.
+        let target_linvel = delta.normalize_or_zero() * config.ore_magnet_strength;
+        vel.linvel = vel.linvel.lerp(target_linvel, alpha);
     }
 }
 

@@ -84,6 +84,25 @@
 - **PLAY AGAIN** (button or **Enter**): resets lives to 3 and returns to the existing world (asteroids remain intact).
 - **QUIT** (button): exits the application.
 
+## Ore Pickups
+
+### Drops
+
+- Destroying a small asteroid (bullet: size ≤ 1, missile: size ≤ 3) spawns a **green diamond** ore pickup that drifts away from the impact point with a small random scatter velocity.
+- Each ore pickup expires automatically after `ORE_LIFETIME_SECS` (25 s) if not collected.
+
+### Collection
+
+- The player collects ore by flying over it — the ore sensor fires a `CollisionEvent::Started` when it overlaps the player ship.
+- The total collected count is shown in a **green "Ore: N" HUD row** (row 4, below the missile ammo display).
+
+### Ore Magnet
+
+- Ore pickups within `ore_magnet_radius` (default 250 u) of the player are automatically attracted toward the ship.
+- The pull uses a velocity lerp each frame: ore `linvel` smoothly transitions toward a vector pointing at the player at `ore_magnet_strength` u/s (default 120 u/s).
+- Ore outside the magnet radius drifts freely under its initial scatter velocity.
+- Both constants are runtime-tunable via `assets/physics.toml`.
+
 ## Visual Feedback
 
 ### Score HUD
