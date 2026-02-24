@@ -24,7 +24,7 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 
 ## Visual & Rendering
 
-- [ ] **Particle effects** — Impact dust, merge vortex, debris trails
+- [x] **Particle effects** — Impact dust, merge vortex, debris trails
 - [ ] **Post-processing** — Bloom on collisions; chromatic aberration on invincibility frames
 
 ## Developer Tooling

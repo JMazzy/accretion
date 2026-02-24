@@ -32,6 +32,7 @@ use crate::asteroid::{
 };
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
+use crate::particles::{spawn_debris_particles, spawn_impact_particles};
 use bevy::input::gamepad::GamepadAxis;
 use bevy::input::gamepad::GamepadButton;
 use bevy::input::mouse::MouseButton;
@@ -346,6 +347,7 @@ pub fn missile_asteroid_hit_system(
                 score.destroyed += 1;
                 // Missiles award double the destroy bonus for small targets.
                 score.points += multiplier + 10 * multiplier;
+                spawn_debris_particles(&mut commands, pos, vel, n + 2);
             }
 
             // ── Scatter into fragments (medium) ───────────────────────────
@@ -361,6 +363,7 @@ pub fn missile_asteroid_hit_system(
                         vel + Vec2::new(rng.gen_range(-50.0..50.0), rng.gen_range(-50.0..50.0));
                     spawn_unit_fragment(&mut commands, pos + offset, frag_vel, ang_vel);
                 }
+                spawn_debris_particles(&mut commands, pos, vel, n);
             }
 
             // ── Chip a large asteroid, scatter burst ─────────────────────────
@@ -392,6 +395,7 @@ pub fn missile_asteroid_hit_system(
                     linvel: vel,
                     angvel: ang_vel,
                 });
+                spawn_debris_particles(&mut commands, pos, vel, 4);
             }
         }
     }
@@ -643,6 +647,9 @@ pub fn projectile_asteroid_hit_system(
         let multiplier = score.multiplier();
         score.points += multiplier; // 1 × multiplier for the hit itself
 
+        // Unified impact direction for particle effects (projectile → asteroid).
+        let impact_dir = (pos - proj_pos).normalize_or_zero();
+
         match n {
             // ── Destroy ───────────────────────────────────────────────────────
             0 | 1 => {
@@ -650,6 +657,8 @@ pub fn projectile_asteroid_hit_system(
                 stats.destroyed_total += 1;
                 score.destroyed += 1;
                 score.points += 5 * multiplier; // bonus for full destroy
+                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
+                spawn_debris_particles(&mut commands, pos, vel, 1);
             }
 
             // ── Scatter into unit fragments ───────────────────────────────────
@@ -664,11 +673,12 @@ pub fn projectile_asteroid_hit_system(
                         vel + Vec2::new(rng.gen_range(-30.0..30.0), rng.gen_range(-30.0..30.0));
                     spawn_unit_fragment(&mut commands, pos + scatter_offset, scatter_vel, ang_vel);
                 }
+                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
+                spawn_debris_particles(&mut commands, pos, vel, n);
             }
 
             // ── Split in half along impact axis ───────────────────────────────
             4..=8 => {
-                let impact_dir = (pos - proj_pos).normalize_or_zero();
                 let split_axis = impact_dir;
                 let (front_world, back_world) = split_convex_polygon(&world_verts, pos, split_axis);
 
@@ -717,10 +727,12 @@ pub fn projectile_asteroid_hit_system(
                         angvel: ang_vel,
                     });
                 }
+                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
             }
 
             // ── Chip: remove closest vertex, spawn one unit fragment ───────────
             _ => {
+                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
                 let closest_idx = world_verts
                     .iter()
                     .enumerate()

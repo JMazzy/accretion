@@ -9,9 +9,9 @@
 //! 3. `Playing` state persists across frames with no new transition request.
 //! 4. `insert_state` can force-start directly in `Playing` (test-mode path).
 
+use accretion::menu::GameState;
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
-use accretion::menu::GameState;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

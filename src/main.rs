@@ -10,6 +10,7 @@ mod constants;
 mod error;
 mod graphics;
 mod menu;
+mod particles;
 mod player;
 mod rendering;
 mod simulation;
@@ -101,11 +102,13 @@ fn main() {
         // simulation systems (gated on `in_state(GameState::Playing)`) run
         // from the very first frame.
         app.insert_state(GameState::Playing)
+            .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin);
     } else {
         // World and player spawned only when transitioning from MainMenu → Playing.
         // Using OnTransition (not OnEnter) prevents re-spawning on Paused → Playing resume.
         app.add_plugins(menu::MainMenuPlugin)
+            .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin)
             .add_systems(
                 OnTransition {

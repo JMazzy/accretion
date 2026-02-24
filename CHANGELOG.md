@@ -1,5 +1,31 @@
 # Accretion Changelog
 
+## Particle Effects — February 23, 2026
+
+### Visual particle bursts now appear on every asteroid hit, destruction, and merge event
+
+Three distinct effect types have been implemented using a lightweight ECS particle system:
+
+| Event | Effect | Colour |
+|---|---|---|
+| Projectile / missile impact | 8 sparks fanning from hit point | Orange-yellow |
+| Asteroid destroy / scatter | 8–16 debris particles radiating from centre | Warm grey/white |
+| Asteroid merge (formation) | 10 cyan glow particles radiating outward | Cyan-white |
+
+**Design**: Particles are plain ECS entities with a `Particle` component (velocity, age, lifetime, RGB channels).  A separate `attach_particle_mesh_system` attaches a shared 6-sided circle `Mesh2d` and a unique `ColorMaterial` one frame after spawning.  `particle_update_system` then moves, quadratically fades the alpha, and despawns expired particles each Update.  The shared mesh avoids per-particle GPU uploads; only the material colour channel is updated per frame.
+
+**Files added / changed**:
+
+- **`src/particles.rs`** (new): `Particle` component, `ParticleMesh` resource, `ParticlesPlugin`, `attach_particle_mesh_system`, `particle_update_system`, `spawn_impact_particles`, `spawn_debris_particles`, `spawn_merge_particles`, `circle_mesh` helper.
+- **`src/player/combat.rs`**: Imported `spawn_impact_particles` / `spawn_debris_particles`.  Extracted shared `impact_dir` before `match n` block.  Added particle spawn calls in all six hit-system arms (projectile: destroy, scatter, split, chip; missile: destroy, scatter, chip).
+- **`src/simulation.rs`**: Called `crate::particles::spawn_merge_particles` from `asteroid_formation_system` on every successful merge.
+- **`src/main.rs`**: Added `mod particles;`; added `particles::ParticlesPlugin` to both normal and test-mode app paths.
+- **`src/lib.rs`**: Exported `pub mod particles;`.
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo build --release` ✅
+
+---
+
 ## Secondary Weapon: Missiles — February 22, 2026
 
 ### Players can now fire missiles (X / right-click / gamepad West button) for heavier, more destructive hits with limited ammo that recharges over time

@@ -663,6 +663,8 @@ pub fn asteroid_formation_system(
                 let merge_count = (cluster.len() - 1) as u32;
                 stats.merged_total += merge_count;
 
+                crate::particles::spawn_merge_particles(&mut commands, hull_centroid);
+
                 // Despawn all source asteroids
                 for (entity, _, _, _, _) in cluster {
                     commands.entity(entity).despawn();
