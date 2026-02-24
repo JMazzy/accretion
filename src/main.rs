@@ -10,6 +10,7 @@ mod constants;
 mod error;
 mod graphics;
 mod menu;
+mod mining;
 mod particles;
 mod player;
 mod rendering;
@@ -109,6 +110,7 @@ fn main() {
             rendering::setup_hud_score,
             rendering::setup_lives_hud,
             rendering::setup_missile_hud,
+            rendering::setup_ore_hud,
             rendering::setup_stats_text,
             rendering::setup_debug_panel,
         ),
@@ -122,13 +124,15 @@ fn main() {
         // from the very first frame.
         app.insert_state(GameState::Playing)
             .add_plugins(particles::ParticlesPlugin)
-            .add_plugins(simulation::SimulationPlugin);
+            .add_plugins(simulation::SimulationPlugin)
+            .add_plugins(mining::MiningPlugin);
     } else {
         // World and player spawned only when transitioning from ScenarioSelect → Playing.
         // Using OnTransition (not OnEnter) prevents re-spawning on Paused → Playing resume.
         app.add_plugins(menu::MainMenuPlugin)
             .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin)
+            .add_plugins(mining::MiningPlugin)
             .add_systems(
                 OnTransition {
                     exited: GameState::ScenarioSelect,

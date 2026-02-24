@@ -11,7 +11,8 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 - [x] **Quit to main menu** - quit option on pause menu goes back to the main menu rather than quitting the game
 - [ ] **Save/load system** — Save/load persistent game files
 - [x] **More/better scenarios** - "Orbit" object size more variable (rings 2+3 now spawn mixed polygons with per-body orbital velocities), "Comets" scenario (20 large fast-moving boulders), "Shower" scenario (250 unit triangles, near-zero velocity)
-- [ ] **Asteroid mining** — Ore drops, currency system, ship upgrades
+- [x] **Asteroid mining** — Ore drops when destroying asteroids, and the player is able to collect it.
+- [ ] **ship upgrades**
 - [x] **Score system enhancements** — Point multipliers (e.g. by hit streak without misses)
 - [x] **New Name** - Both "particle" and "grav-sim" were placeholder names from early in development. The game is now named **Accretion**.
 

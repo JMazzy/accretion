@@ -7,6 +7,7 @@ pub mod constants;
 pub mod error;
 pub mod graphics;
 pub mod menu;
+pub mod mining;
 pub mod particles;
 pub mod player;
 pub mod rendering;

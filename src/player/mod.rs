@@ -74,7 +74,7 @@ pub fn spawn_player(mut commands: Commands, config: Res<PhysicsConfig>) {
         Restitution::coefficient(config.player_restitution),
         CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_2,
-            bevy_rapier2d::geometry::Group::GROUP_1,
+            bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_4,
         ),
         ActiveEvents::COLLISION_EVENTS,
         // Transform / visibility

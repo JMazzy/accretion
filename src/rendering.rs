@@ -39,6 +39,7 @@
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
+use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
 use crate::player::{PlayerLives, PlayerScore};
 use crate::simulation::SimulationStats;
@@ -104,6 +105,10 @@ pub struct RespawnCountdownText;
 /// Marker for the missile-ammo HUD node (row 3, below lives HUD).
 #[derive(Component)]
 pub struct MissileHudDisplay;
+
+/// Marker for the ore-count HUD node (row 4, below missiles HUD).
+#[derive(Component)]
+pub struct OreHudDisplay;
 
 /// Tags a toggle button in the debug panel with the overlay field it controls.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
@@ -392,16 +397,59 @@ pub fn missile_hud_display_system(
     }
 }
 
-/// Startup: stats overlay text — Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
-pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+/// Startup: ore-count HUD (row 4, below missiles).
+pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
     let row_h = config.stats_font_size + 6.0;
-    // Position below score (row 0), lives HUD (rows 1-2), missile HUD (row 3).
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
                 top: Val::Px(10.0 + row_h * 4.0),
+                ..default()
+            },
+            OreHudDisplay,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Ore: 0"),
+                TextFont {
+                    font_size: config.stats_font_size,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.35, 1.0, 0.55)),
+            ));
+        });
+}
+
+/// Refresh the ore-count HUD each frame.
+pub fn ore_hud_display_system(
+    ore: Res<PlayerOre>,
+    parent_query: Query<&Children, With<OreHudDisplay>>,
+    mut text_query: Query<&mut Text>,
+) {
+    if !ore.is_changed() {
+        return;
+    }
+    for children in parent_query.iter() {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                *text = Text::new(format!("Ore: {}", ore.count));
+            }
+        }
+    }
+}
+
+/// Startup: stats overlay text — Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
+pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+    let row_h = config.stats_font_size + 6.0;
+    // Position below score (row 0), lives HUD (rows 1-2), missile HUD (row 3), ore HUD (row 4).
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                top: Val::Px(10.0 + row_h * 5.0),
                 ..default()
             },
             StatsTextDisplay,

@@ -32,6 +32,7 @@ use crate::asteroid::{
 };
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
+use crate::mining::spawn_ore_drop;
 use crate::particles::{spawn_debris_particles, spawn_impact_particles};
 use bevy::input::gamepad::GamepadAxis;
 use bevy::input::gamepad::GamepadButton;
@@ -348,6 +349,7 @@ pub fn missile_asteroid_hit_system(
                 score.destroyed += 1;
                 // Missiles award double the destroy bonus for small targets.
                 score.points += multiplier + 10 * multiplier;
+                spawn_ore_drop(&mut commands, pos, vel);
                 spawn_debris_particles(&mut commands, pos, vel, n + 2);
             }
 
@@ -590,7 +592,7 @@ pub fn player_respawn_system(
         bevy_rapier2d::prelude::Restitution::coefficient(config.player_restitution),
         bevy_rapier2d::prelude::CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_2,
-            bevy_rapier2d::geometry::Group::GROUP_1,
+            bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_4,
         ),
         bevy_rapier2d::prelude::ActiveEvents::COLLISION_EVENTS,
         Transform::from_translation(Vec3::ZERO),
@@ -709,6 +711,7 @@ pub fn projectile_asteroid_hit_system(
                 stats.destroyed_total += 1;
                 score.destroyed += 1;
                 score.points += 5 * multiplier; // bonus for full destroy
+                spawn_ore_drop(&mut commands, pos, vel);
                 spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
                 spawn_debris_particles(&mut commands, pos, vel, 1);
             }

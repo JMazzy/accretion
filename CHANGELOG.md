@@ -1,5 +1,18 @@
 # Accretion Changelog
 
+## Asteroid Mining — February 24, 2026
+
+### Ore drops + player collection HUD
+
+- Destroying a small asteroid (bullet: size ≤ 1, missile: size ≤ 3) now spawns an **ore pickup** that drifts away from the impact point.
+- Ore pickups are diamond-shaped green objects (half-width 3.5, half-height 5.5) that expire after **25 seconds**.
+- The player collects ore by flying over a pickup — no button press needed (sensor collision with the ship).
+- Collected count is shown in a new **"Ore: N"** HUD row (green, row 4, below missiles).
+- `src/mining.rs` — new module: `OrePickup`, `OreAge`, `PlayerOre`, `OreMesh`, `MiningPlugin`, `spawn_ore_drop`.
+- **Collision groups**: ore uses `GROUP_4`; player collision filter updated to `GROUP_1 | GROUP_4` in both initial spawn (`player/mod.rs`) and respawn (`player/combat.rs`).
+
+---
+
 ## Visual shape consistency — February 24, 2026
 
 ### Chip operations now produce geometrically meaningful results

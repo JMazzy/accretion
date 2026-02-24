@@ -26,8 +26,9 @@ use crate::player::{
 };
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
-    lives_hud_display_system, missile_hud_display_system, stats_display_system,
-    sync_boundary_ring_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
+    lives_hud_display_system, missile_hud_display_system, ore_hud_display_system,
+    stats_display_system, sync_boundary_ring_visibility_system,
+    sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -130,6 +131,7 @@ impl Plugin for SimulationPlugin {
                         hud_score_display_system, // Refresh score HUD
                         lives_hud_display_system, // Refresh lives + respawn-countdown HUD
                         missile_hud_display_system, // Refresh missile ammo HUD
+                        ore_hud_display_system, // Refresh ore count HUD
                         stats_display_system, // Render stats overlay text
                         player_oob_damping_system, // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
