@@ -14,7 +14,7 @@
 set -e
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║  GRAV-SIM Feature Isolation Performance Benchmark              ║"
+echo "║  Accretion Feature Isolation Performance Benchmark              ║"
 echo "║  Measures: Tidal Torque, Soft Boundary, KD-tree               ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
@@ -48,7 +48,7 @@ soft_boundary_strength = 0.0
 hard_cull_distance = 1250.0
 EOF
 
-GRAV_SIM_TEST=baseline_100 cargo run --release 2>&1 | tail -30
+ACCRETION_TEST=baseline_100 cargo run --release 2>&1 | tail -30
 echo ""
 
 # Test 2: TIDAL TORQUE ONLY
@@ -75,7 +75,7 @@ soft_boundary_strength = 0.0
 hard_cull_distance = 1250.0
 EOF
 
-GRAV_SIM_TEST=tidal_only cargo run --release 2>&1 | tail -30
+ACCRETION_TEST=tidal_only cargo run --release 2>&1 | tail -30
 echo ""
 
 # Test 3: SOFT BOUNDARY ONLY
@@ -102,7 +102,7 @@ soft_boundary_strength = 2.0
 hard_cull_distance = 1250.0
 EOF
 
-GRAV_SIM_TEST=soft_boundary_only cargo run --release 2>&1 | tail -30
+ACCRETION_TEST=soft_boundary_only cargo run --release 2>&1 | tail -30
 echo ""
 
 # Test 4: KD-TREE ONLY (no tidal, no soft boundary)
@@ -130,7 +130,7 @@ soft_boundary_strength = 0.0
 hard_cull_distance = 1250.0
 EOF
 
-GRAV_SIM_TEST=kdtree_only cargo run --release 2>&1 | tail -30
+ACCRETION_TEST=kdtree_only cargo run --release 2>&1 | tail -30
 echo ""
 
 # Test 5: ALL THREE FEATURES
@@ -157,7 +157,7 @@ soft_boundary_strength = 2.0
 hard_cull_distance = 1250.0
 EOF
 
-GRAV_SIM_TEST=all_three cargo run --release 2>&1 | tail -30
+ACCRETION_TEST=all_three cargo run --release 2>&1 | tail -30
 echo ""
 
 echo "╔════════════════════════════════════════════════════════════════╗"

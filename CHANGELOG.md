@@ -1,4 +1,4 @@
-# GRAV-SIM Changelog
+# Accretion Changelog
 
 ## Secondary Weapon: Missiles — February 22, 2026
 

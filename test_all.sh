@@ -6,7 +6,7 @@
 set -e
 
 echo "╔════════════════════════════════════════════════════════╗"
-echo "║        GRAV-SIM Physics Test Suite                     ║"
+echo "║        Accretion Physics Test Suite                     ║"
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -31,7 +31,7 @@ for test in "${TESTS[@]}"; do
     echo "▶ Running test: $test"
     TOTAL=$((TOTAL + 1))
     
-    RESULT=$(timeout 50 bash -c "GRAV_SIM_TEST=$test cargo run --release 2>&1" | grep -E "(PASS|FAIL)" | tail -1)
+    RESULT=$(timeout 50 bash -c "ACCRETION_TEST=$test cargo run --release 2>&1" | grep -E "(PASS|FAIL)" | tail -1)
     echo "$RESULT"
 
     if echo "$RESULT" | grep -q "✓ PASS"; then

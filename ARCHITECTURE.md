@@ -1,4 +1,4 @@
-# GRAV-SIM Architecture & Physics
+# Accretion Architecture & Physics
 
 ## Overview
 
@@ -180,7 +180,7 @@ Key constant groups (see `src/constants.rs` for current values):
 
 ### Test System
 
-- **Trigger**: `GRAV_SIM_TEST=<test_name>` environment variable
+- **Trigger**: `ACCRETION_TEST=<test_name>` environment variable
 - **Runs**: Single test scenario for exact reproducibility
 - **Framework**: Custom spawning functions in `src/testing.rs`
 - **Player isolation**: In test mode the player entity is **not spawned** — player systems run but find no `Player` component and are no-ops. This ensures asteroid-only tests are not affected by the player ship's collider (radius = `PLAYER_COLLIDER_RADIUS`) or its input/damage systems.
@@ -282,7 +282,7 @@ cargo clippy -- -D warnings
 cargo run --release
 
 # Run specific test
-GRAV_SIM_TEST=near_miss cargo run --release
+ACCRETION_TEST=near_miss cargo run --release
 
 # Run all tests
 ./test_all.sh

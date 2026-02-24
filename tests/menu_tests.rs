@@ -11,7 +11,7 @@
 
 use bevy::prelude::*;
 use bevy::state::app::StatesPlugin;
-use particle::menu::GameState;
+use accretion::menu::GameState;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

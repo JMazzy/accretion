@@ -1,4 +1,4 @@
-# GRAV-SIM Features & User Controls
+# Accretion Features & User Controls
 
 ## Runtime Controls
 

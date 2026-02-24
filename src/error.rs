@@ -20,7 +20,7 @@
 #![allow(dead_code)]
 use std::fmt;
 
-/// Top-level error enum for the grav-sim simulation.
+/// Top-level error enum for the Accretion simulation.
 #[derive(Debug)]
 pub enum SimError {
     /// Convex hull computation failed, usually because fewer than 2 non-duplicate

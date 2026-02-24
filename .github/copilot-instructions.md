@@ -8,7 +8,7 @@
 
 ## Architecture
 
-The "grav-sim" project is an ECS-based **asteroid simulation engine** built on **[Bevy](https://bevyengine.org/)** with physics powered by **[Rapier2D](https://rapier.rs/)**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
+The "Accretion" project is an ECS-based **asteroid simulation engine** built on **[Bevy](https://bevyengine.org/)** with physics powered by **[Rapier2D](https://rapier.rs/)**. All objects in the simulation are asteroids that naturally aggregate through N-body gravity into larger composite polygonal structures.
 
 > For authoritative version numbers, module layout, ECS system execution order, and physics constants see **[ARCHITECTURE.md](../ARCHITECTURE.md)**.  
 > For user controls, camera behaviour, and UI details see **[FEATURES.md](../FEATURES.md)**.
@@ -115,7 +115,7 @@ See **[FEATURES.md](../FEATURES.md)** for the full list of controls, camera beha
 
 ### Test Framework
 
-- **Environment Variable**: `GRAV_SIM_TEST=<test_name>` triggers test mode from `main.rs`
+- **Environment Variable**: `ACCRETION_TEST=<test_name>` triggers test mode from `main.rs`
 - **Available Tests**: See "Available Tests" in `ARCHITECTURE.md` for the current list
 - **Test Config Resource**: Tracks frame count, asteroid counts, test name for automated verification
 - **Player isolation**: In test mode the player entity is **not spawned** — player systems run but are no-ops
@@ -279,7 +279,7 @@ For any change to physics systems, UI, core logic, or test framework:
    - ✅ `cargo build --release` succeeds (optimized)
 3. **Test Existence & Execution**
    - ✅ Relevant tests exist for the changed functionality
-   - ✅ If modifying physics: run `./test_all.sh` or specific test with `GRAV_SIM_TEST=<name> cargo run --release`
+   - ✅ If modifying physics: run `./test_all.sh` or specific test with `ACCRETION_TEST=<name> cargo run --release`
    - ✅ If modifying UI/input: manually verify controls work as expected
    - ✅ All tests pass (compare initial vs final asteroid counts as applicable)
 
@@ -315,9 +315,9 @@ cargo build
 cargo build --release
 
 # 3. Run relevant tests
-GRAV_SIM_TEST=gravity cargo run --release
-GRAV_SIM_TEST=near_miss cargo run --release
-GRAV_SIM_TEST=culling_verification cargo run --release
+ACCRETION_TEST=gravity cargo run --release
+ACCRETION_TEST=near_miss cargo run --release
+ACCRETION_TEST=culling_verification cargo run --release
 
 # 4. Confirm all tests pass
 ./test_all.sh

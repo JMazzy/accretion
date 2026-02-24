@@ -1,4 +1,4 @@
-# GRAV-SIM Physics Configuration
+# Accretion Physics Configuration
 #
 # All values here override the compiled defaults in src/constants.rs.
 # Missing keys fall back to the compiled defaults — you only need to list

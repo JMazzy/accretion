@@ -1,4 +1,4 @@
-# GRAV-SIM Backlog
+# Accretion Backlog
 
 Planned features, improvements, and known limitations. Mark items as `[x]` when complete.
 
@@ -15,7 +15,7 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 - [ ] **Special Weapons** — tractor (grab/pull/push asteroids), ion cannon (disable enemy ships)
 - [x] **Score system enhancements** — Point multipliers (e.g. by hit streak without misses)
 - [ ] **Local multiplayer** — Co-op and PvP modes
-- [ ] **New Name** - Both "particle" and "grav-sim" were placeholder names from early in development. The game needs a proper name. Actual name TBD.
+- [x] **New Name** - Both "particle" and "grav-sim" were placeholder names from early in development. The game is now named **Accretion**.
 
 ## Physics
 

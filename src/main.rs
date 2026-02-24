@@ -46,13 +46,13 @@ fn setup_physics_config(mut config: Query<&mut RapierConfiguration>) {
 
 fn main() {
     // Check for test mode — bypasses the menu and starts directly in Playing.
-    let test_mode = env::var("GRAV_SIM_TEST").ok();
+    let test_mode = env::var("ACCRETION_TEST").ok();
 
     let mut app = App::new();
 
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: "Asteroid Simulator".into(),
+            title: "Accretion".into(),
             resolution: WindowResolution::new(1200, 680),
             ..Default::default()
         }),

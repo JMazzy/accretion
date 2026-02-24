@@ -1,9 +1,9 @@
 [package]
-name = "particle"
+name = "accretion"
 version = "0.1.0"
 edition = "2021"
 authors = ["Joshua"]
-description = "A simulation video game based on particle-based destructible environments"
+description = "Accretion — an asteroid aggregation simulation game built with Bevy and Rapier2D"
 
 
 [dependencies]
@@ -18,9 +18,9 @@ toml = "0.8"
 [dev-dependencies]
 
 [[bin]]
-name = "particle"
+name = "accretion"
 path = "src/main.rs"
 
 [lib]
-name = "particle"
+name = "accretion"
 path = "src/lib.rs"
