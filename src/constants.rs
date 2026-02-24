@@ -36,7 +36,9 @@ pub const PLAYER_BUFFER_RADIUS: f32 = 100.0;
 /// Higher values → stronger mutual attraction → faster cluster formation.
 /// Tested range: 5.0–15.0.  At 10.0 two asteroids 100 u apart collide in ~350 frames.
 /// Values above ~20.0 cause runaway acceleration at close range.
-pub const GRAVITY_CONST: f32 = 20.0;
+/// Reset to 10.0 now that gravity is mass-scaled (F = G·m_i·m_j/r²); the mass
+/// factor provides sufficient attraction without needing an inflated constant.
+pub const GRAVITY_CONST: f32 = 10.0;
 
 /// Asteroids closer than this distance are excluded from gravity calculations.
 ///

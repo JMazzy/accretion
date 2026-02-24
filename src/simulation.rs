@@ -230,27 +230,46 @@ pub fn particle_locking_system(
 /// - `dist_sq > max_dist_sq` (too far to matter)
 ///
 /// The reaction force on body `j` is the negation of the returned value (Newton's 3rd law).
+///
+/// `mass_i` and `mass_j` are the gravitational masses of the two bodies (typically
+/// their `AsteroidSize` values cast to `f32`).  The returned force magnitude is
+/// `G · mass_i · mass_j / r²`.
 pub(crate) fn gravity_force_between(
     pos_i: Vec2,
     pos_j: Vec2,
     gravity_const: f32,
     min_dist_sq: f32,
     max_dist_sq: f32,
+    mass_i: f32,
+    mass_j: f32,
 ) -> Option<Vec2> {
     let delta = pos_j - pos_i;
     let dist_sq = delta.length_squared();
     if dist_sq > max_dist_sq || dist_sq < min_dist_sq {
         return None;
     }
-    Some(delta.normalize_or_zero() * (gravity_const / dist_sq))
+    Some(delta.normalize_or_zero() * (gravity_const * mass_i * mass_j / dist_sq))
 }
 
-/// N-body gravity system: applies custom gravity between all asteroids.
+/// N-body gravity system: applies mass-scaled gravity between all asteroids.
 ///
-/// Uses O(N²/2) pair iteration since gravity dominates the computation anyway
-/// and the spatial index provides no significant speedup for full-world queries.
+/// Force magnitude: `G · m_i · m_j / r²` where `m_i` and `m_j` are the
+/// `AsteroidSize` values cast to `f32`.  This means larger composite bodies
+/// (and the Orbit scenario's massive central planetoid) are genuinely more
+/// gravitationally dominant, producing stable orbital dynamics.
+///
+/// Uses O(N²/2) pair iteration.
 pub(crate) fn nbody_gravity_system(
-    mut query: Query<(Entity, &Transform, &mut ExternalForce, &mut GravityForce), With<Asteroid>>,
+    mut query: Query<
+        (
+            Entity,
+            &Transform,
+            &AsteroidSize,
+            &mut ExternalForce,
+            &mut GravityForce,
+        ),
+        With<Asteroid>,
+    >,
     config: Res<PhysicsConfig>,
 ) {
     let gravity_const = config.gravity_const;
@@ -260,16 +279,16 @@ pub(crate) fn nbody_gravity_system(
     let max_gravity_dist_sq = max_gravity_dist * max_gravity_dist;
 
     // CRITICAL: Reset all forces to zero first, then calculate fresh.
-    for (_, _, mut force, mut grav) in query.iter_mut() {
+    for (_, _, _, mut force, mut grav) in query.iter_mut() {
         force.force = Vec2::ZERO;
         force.torque = 0.0;
         grav.0 = Vec2::ZERO;
     }
 
-    // Collect all entities with positions (needed for pairwise calculations)
-    let mut entity_data: Vec<(Entity, Vec2)> = Vec::new();
-    for (entity, transform, _, _) in query.iter() {
-        entity_data.push((entity, transform.translation.truncate()));
+    // Collect all entities with positions and gravitational masses.
+    let mut entity_data: Vec<(Entity, Vec2, f32)> = Vec::new();
+    for (entity, transform, size, _, _) in query.iter() {
+        entity_data.push((entity, transform.translation.truncate(), size.0 as f32));
     }
 
     // Collect all force pairs to apply (entity, force_delta)
@@ -278,15 +297,17 @@ pub(crate) fn nbody_gravity_system(
 
     // Calculate gravity between all asteroid pairs
     for idx_i in 0..entity_data.len() {
-        let (entity_i, pos_i) = entity_data[idx_i];
+        let (entity_i, pos_i, mass_i) = entity_data[idx_i];
 
-        for (_, &(entity_j, pos_j)) in entity_data.iter().enumerate().skip(idx_i + 1) {
+        for &(entity_j, pos_j, mass_j) in entity_data.iter().skip(idx_i + 1) {
             if let Some(force) = gravity_force_between(
                 pos_i,
                 pos_j,
                 gravity_const,
                 min_gravity_dist_sq,
                 max_gravity_dist_sq,
+                mass_i,
+                mass_j,
             ) {
                 // Apply Newton's third law: equal and opposite forces
                 *force_deltas.entry(entity_i).or_insert(Vec2::ZERO) += force;
@@ -297,7 +318,7 @@ pub(crate) fn nbody_gravity_system(
 
     // Apply all collected forces
     for (entity, force_delta) in force_deltas {
-        if let Ok((_, _, mut force, mut grav)) = query.get_mut(entity) {
+        if let Ok((_, _, _, mut force, mut grav)) = query.get_mut(entity) {
             force.force += force_delta;
             grav.0 += force_delta;
         }
@@ -682,8 +703,16 @@ mod tests {
 
     #[test]
     fn gravity_attracts_toward_other_body() {
-        let f = gravity_force_between(Vec2::ZERO, Vec2::new(100.0, 0.0), 10.0, 1.0, 1_000_000.0)
-            .expect("pair should be in range");
+        let f = gravity_force_between(
+            Vec2::ZERO,
+            Vec2::new(100.0, 0.0),
+            10.0,
+            1.0,
+            1_000_000.0,
+            1.0,
+            1.0,
+        )
+        .expect("pair should be in range");
         assert!(f.x > 0.0, "force x should be positive (toward body j)");
         assert!(
             f.y.abs() < 1e-6,
@@ -694,10 +723,26 @@ mod tests {
     #[test]
     fn gravity_inverse_square_law() {
         let g = 10.0_f32;
-        let f1 =
-            gravity_force_between(Vec2::ZERO, Vec2::new(10.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
-        let f2 =
-            gravity_force_between(Vec2::ZERO, Vec2::new(20.0, 0.0), g, 1.0, 1_000_000.0).unwrap();
+        let f1 = gravity_force_between(
+            Vec2::ZERO,
+            Vec2::new(10.0, 0.0),
+            g,
+            1.0,
+            1_000_000.0,
+            1.0,
+            1.0,
+        )
+        .unwrap();
+        let f2 = gravity_force_between(
+            Vec2::ZERO,
+            Vec2::new(20.0, 0.0),
+            g,
+            1.0,
+            1_000_000.0,
+            1.0,
+            1.0,
+        )
+        .unwrap();
         let ratio = f1.x / f2.x;
         assert!(
             (ratio - 4.0).abs() < 1e-4,
@@ -709,7 +754,8 @@ mod tests {
     fn gravity_force_magnitude_matches_formula() {
         let d = 50.0_f32;
         let g = 10.0_f32;
-        let f = gravity_force_between(Vec2::ZERO, Vec2::new(d, 0.0), g, 1.0, 1_000_000.0).unwrap();
+        let f = gravity_force_between(Vec2::ZERO, Vec2::new(d, 0.0), g, 1.0, 1_000_000.0, 1.0, 1.0)
+            .unwrap();
         let expected = g / (d * d);
         assert!(
             (f.x - expected).abs() < 1e-6,
@@ -727,6 +773,8 @@ mod tests {
             10.0,
             1.0,
             max_dist * max_dist,
+            1.0,
+            1.0,
         );
         assert!(f.is_none(), "should be None beyond max distance");
     }
@@ -740,6 +788,8 @@ mod tests {
             10.0,
             min_dist * min_dist,
             1_000_000.0,
+            1.0,
+            1.0,
         );
         assert!(f.is_none(), "should be None when closer than min distance");
     }
@@ -748,8 +798,8 @@ mod tests {
     fn gravity_newtons_third_law() {
         let pos_i = Vec2::new(-50.0, 30.0);
         let pos_j = Vec2::new(70.0, -20.0);
-        let f_ij = gravity_force_between(pos_i, pos_j, 10.0, 1.0, 1_000_000.0).unwrap();
-        let f_ji = gravity_force_between(pos_j, pos_i, 10.0, 1.0, 1_000_000.0).unwrap();
+        let f_ij = gravity_force_between(pos_i, pos_j, 10.0, 1.0, 1_000_000.0, 1.0, 1.0).unwrap();
+        let f_ji = gravity_force_between(pos_j, pos_i, 10.0, 1.0, 1_000_000.0, 1.0, 1.0).unwrap();
         assert!(
             (f_ij + f_ji).length() < 1e-5,
             "forces on i and j must sum to zero"
@@ -766,6 +816,8 @@ mod tests {
             10.0,
             1.0,
             max_dist * max_dist,
+            1.0,
+            1.0,
         );
         assert!(f.is_some(), "exactly at boundary should still return force");
     }

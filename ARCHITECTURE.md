@@ -2,7 +2,7 @@
 
 ## Overview
 
-GRAV-SIM is an ECS-based **asteroid simulation engine** built on **Bevy 0.17** with physics powered by **Rapier2D**. The simulation features natural asteroid aggregation through N-body gravity attraction and collision-based merging into larger composite structures.
+Accretion is an ECS-based **asteroid simulation engine** built on **Bevy 0.17** with physics powered by **Rapier2D**. The simulation features natural asteroid aggregation through N-body gravity attraction and collision-based merging into larger composite structures.
 
 ### Core Purpose
 
@@ -23,7 +23,7 @@ src/
 ├── main.rs               - Bevy app setup, window configuration, test mode routing
 ├── constants.rs          - All tuneable physics and gameplay constants (compile-time defaults)
 ├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup
-├── menu.rs               - GameState enum (MainMenu / Playing / Paused), MainMenuPlugin, splash screen + pause menu UI
+├── menu.rs               - GameState enum (MainMenu / ScenarioSelect / Playing / Paused / GameOver), SelectedScenario resource, MainMenuPlugin, splash screen + scenario-select + pause menu UI
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
 ├── spatial_partition.rs  - KD-tree spatial index for O(K + log N) neighbour lookup (replaces flat grid)

@@ -41,12 +41,30 @@ pub enum GameState {
     /// Main-menu splash screen; shown on startup.
     #[default]
     MainMenu,
+    /// Scenario / save picker shown after clicking Start Game.
+    ScenarioSelect,
     /// Active simulation / gameplay.
     Playing,
     /// Simulation frozen; in-game pause overlay is visible.
     Paused,
     /// Player has exhausted all lives; game-over overlay shown.
     GameOver,
+}
+
+// ── Scenario selection ────────────────────────────────────────────────────────
+
+/// Which scenario the player has chosen to play.
+///
+/// Written by [`scenario_select_button_system`] and read by the world-spawn
+/// system in `main.rs` to determine which asteroid layout to generate.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectedScenario {
+    /// 100 asteroids distributed by noise clusters — the classic asteroid field.
+    #[default]
+    Field,
+    /// One very large planetoid at the origin with rings of smaller asteroids
+    /// in near-circular orbits around it.
+    Orbit,
 }
 
 // ── Component markers ─────────────────────────────────────────────────────────
@@ -62,6 +80,24 @@ pub struct MenuStartButton;
 /// Tags the "Quit" button.
 #[derive(Component)]
 pub struct MenuQuitButton;
+
+// ── ScenarioSelect component markers ─────────────────────────────────────────
+
+/// Root node of the scenario-select screen; despawned on `OnExit(ScenarioSelect)`.
+#[derive(Component)]
+pub struct ScenarioSelectRoot;
+
+/// Tags the "Field" scenario button.
+#[derive(Component)]
+pub struct ScenarioFieldButton;
+
+/// Tags the "Orbit" scenario button.
+#[derive(Component)]
+pub struct ScenarioOrbitButton;
+
+/// Tags the "Back" button on the scenario-select screen.
+#[derive(Component)]
+pub struct ScenarioBackButton;
 
 // ── Pause-menu component markers ──────────────────────────────────────────────
 
@@ -99,12 +135,20 @@ pub struct MainMenuPlugin;
 impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<GameState>()
+            .init_resource::<SelectedScenario>()
             // ── Main menu ─────────────────────────────────────────────────────
             .add_systems(OnEnter(GameState::MainMenu), setup_main_menu)
             .add_systems(OnExit(GameState::MainMenu), cleanup_main_menu)
             .add_systems(
                 Update,
                 menu_button_system.run_if(in_state(GameState::MainMenu)),
+            )
+            // ── Scenario select ───────────────────────────────────────────────
+            .add_systems(OnEnter(GameState::ScenarioSelect), setup_scenario_select)
+            .add_systems(OnExit(GameState::ScenarioSelect), cleanup_scenario_select)
+            .add_systems(
+                Update,
+                scenario_select_button_system.run_if(in_state(GameState::ScenarioSelect)),
             )
             // ── Pause menu ────────────────────────────────────────────────────
             .add_systems(
@@ -324,7 +368,7 @@ pub fn menu_button_system(
         // Tint button text on hover; trigger on press
         match interaction {
             Interaction::Pressed => {
-                next_state.set(GameState::Playing);
+                next_state.set(GameState::ScenarioSelect);
             }
             Interaction::Hovered => {
                 for child in children.iter() {
@@ -359,6 +403,313 @@ pub fn menu_button_system(
                 for child in children.iter() {
                     if let Ok(mut color) = btn_text.get_mut(child) {
                         *color = TextColor(quit_text());
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── OnEnter(ScenarioSelect): spawn scenario-select screen ────────────────────
+
+/// Colour palette for scenario cards.
+fn scenario_card_bg() -> Color {
+    Color::srgb(0.06, 0.09, 0.18)
+}
+fn scenario_card_border() -> Color {
+    Color::srgb(0.22, 0.38, 0.72)
+}
+fn scenario_active_text() -> Color {
+    Color::srgb(0.80, 0.95, 1.0)
+}
+fn scenario_label_color() -> Color {
+    Color::srgb(0.90, 0.90, 1.0)
+}
+fn scenario_desc_color() -> Color {
+    Color::srgb(0.45, 0.50, 0.65)
+}
+fn back_bg() -> Color {
+    Color::srgb(0.12, 0.12, 0.18)
+}
+fn back_border() -> Color {
+    Color::srgb(0.30, 0.30, 0.46)
+}
+fn back_text() -> Color {
+    Color::srgb(0.55, 0.55, 0.70)
+}
+
+/// Spawn the full-screen scenario / save selection UI.
+///
+/// Layout:
+/// ```text
+/// ┌───────────────────────────────────────────────┐
+/// │         SCENARIOS & SAVES                     │
+/// │      Choose a scenario to play                │
+/// │                                               │
+/// │   ┌─────────────────────────────────────┐     │
+/// │   │  FIELD                              │     │
+/// │   │  100 asteroids in noise clusters    │     │
+/// │   └─────────────────────────────────────┘     │
+/// │   ┌─────────────────────────────────────┐     │
+/// │   │  ORBIT                              │     │
+/// │   │  Planetoid with orbital debris rings│     │
+/// │   └─────────────────────────────────────┘     │
+/// │                                               │
+/// │              [ BACK ]                         │
+/// └───────────────────────────────────────────────┘
+/// ```
+pub fn setup_scenario_select(mut commands: Commands) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::BLACK),
+            ScenarioSelectRoot,
+        ))
+        .with_children(|root| {
+            // ── Title ────────────────────────────────────────────────────────
+            root.spawn((
+                Text::new("SCENARIOS & SAVES"),
+                TextFont {
+                    font_size: 42.0,
+                    ..default()
+                },
+                TextColor(title_color()),
+            ));
+
+            spacer(root, 8.0);
+
+            root.spawn((
+                Text::new("Choose a scenario to play"),
+                TextFont {
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(subtitle_color()),
+            ));
+
+            spacer(root, 36.0);
+
+            // ── FIELD card ───────────────────────────────────────────────────
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(460.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::FlexStart,
+                    padding: UiRect {
+                        left: Val::Px(22.0),
+                        right: Val::Px(22.0),
+                        top: Val::Px(18.0),
+                        bottom: Val::Px(18.0),
+                    },
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(scenario_card_bg()),
+                BorderColor::all(scenario_card_border()),
+                ScenarioFieldButton,
+            ))
+            .with_children(|card| {
+                card.spawn((
+                    Text::new("FIELD"),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(scenario_label_color()),
+                ));
+                spacer(card, 6.0);
+                card.spawn((
+                    Text::new(
+                        "100 asteroids distributed across gravity-well clusters.\n\
+                         The original chaotic asteroid field.",
+                    ),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(scenario_desc_color()),
+                ));
+            });
+
+            spacer(root, 14.0);
+
+            // ── ORBIT card ───────────────────────────────────────────────────
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(460.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::FlexStart,
+                    padding: UiRect {
+                        left: Val::Px(22.0),
+                        right: Val::Px(22.0),
+                        top: Val::Px(18.0),
+                        bottom: Val::Px(18.0),
+                    },
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(scenario_card_bg()),
+                BorderColor::all(scenario_card_border()),
+                ScenarioOrbitButton,
+            ))
+            .with_children(|card| {
+                card.spawn((
+                    Text::new("ORBIT"),
+                    TextFont {
+                        font_size: 22.0,
+                        ..default()
+                    },
+                    TextColor(scenario_label_color()),
+                ));
+                spacer(card, 6.0);
+                card.spawn((
+                    Text::new(
+                        "A massive planetoid at the centre, ringed by debris\n\
+                         fields of smaller asteroids in near-circular orbits.",
+                    ),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(scenario_desc_color()),
+                ));
+            });
+
+            spacer(root, 36.0);
+
+            // ── Back button ──────────────────────────────────────────────────
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(160.0),
+                    height: Val::Px(44.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(back_bg()),
+                BorderColor::all(back_border()),
+                ScenarioBackButton,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new("BACK"),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(back_text()),
+                ));
+            });
+        });
+}
+
+// ── OnExit(ScenarioSelect): despawn screen ────────────────────────────────────
+
+/// Recursively despawn all scenario-select entities.
+pub fn cleanup_scenario_select(
+    mut commands: Commands,
+    query: Query<Entity, With<ScenarioSelectRoot>>,
+) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
+    }
+}
+
+// ── Update (ScenarioSelect): button interaction ───────────────────────────────
+
+/// Handle Field, Orbit, and Back button presses on the scenario-select screen.
+///
+/// - **Field** → records [`SelectedScenario::Field`] then transitions to [`GameState::Playing`].
+/// - **Orbit** → records [`SelectedScenario::Orbit`] then transitions to [`GameState::Playing`].
+/// - **Back** → returns to [`GameState::MainMenu`].
+#[allow(clippy::type_complexity)]
+pub fn scenario_select_button_system(
+    field_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<ScenarioFieldButton>),
+    >,
+    orbit_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<ScenarioOrbitButton>),
+    >,
+    back_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<ScenarioBackButton>)>,
+    mut btn_text: Query<&mut TextColor>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut selected: ResMut<SelectedScenario>,
+) {
+    for (interaction, children) in field_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                *selected = SelectedScenario::Field;
+                next_state.set(GameState::Playing);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_active_text());
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_label_color());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in orbit_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                *selected = SelectedScenario::Orbit;
+                next_state.set(GameState::Playing);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_active_text());
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(scenario_label_color());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in back_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                next_state.set(GameState::MainMenu);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(back_text());
                     }
                 }
             }

@@ -1,5 +1,85 @@
 # Accretion Changelog
 
+## Orbit calibration fix + orbit_pair test — February 23, 2026 (continued)
+
+### Analytically correct orbital velocity + passing orbit stability test
+
+**Root cause of remaining orbit instability**: `spawn_orbit_scenario` used a hard-coded `m_base = 3.0e-4` that was calibrated before mass-scaled gravity was introduced (and at G=20). With G reset to 10 and proper mass-scaled gravity the correct Rapier mass is `√3/4 · s² ≈ 27.71` for the default side=8 triangle, making the old value off by a factor of ~90 000×.
+
+**Fix — analytical Rapier mass**:
+- `spawn_orbit_scenario` now computes `m_rapier = √3/4 · config.triangle_base_side²` directly from Bevy config rather than a hand-tuned constant.
+- Orbital velocity formula: `v = sqrt(G · ORBIT_CENTRAL_MASS / (r · m_rapier))`.
+- `GRAVITY_CONST` reset to 10.0 in `src/constants.rs` and `assets/physics.toml` (had been raised to 20 to compensate for the wrong mass; no longer needed).
+
+**New test — `orbit_pair`** (`ACCRETION_TEST=orbit_pair`):
+- Spawns a central 16-gon (`AsteroidSize=2_000_000`, radius=10) at origin and a single triangle at (200, 0).
+- On frame 2, reads the actual `ReadMassProperties` Rapier assigned and sets the analytically correct tangential velocity.
+- Tracks orbital distance over 1500 frames; passes if drift ≤ 30%.
+- **Result**: `drift=7.7%` (200 → 215.5 u over ~25 s) ✓ PASS.
+
+**Files changed**:
+- **`src/asteroid.rs`**: `spawn_orbit_scenario` velocity formula replaced with `√3/4 · side²`.
+- **`src/constants.rs`**: `GRAVITY_CONST` 20.0 → 10.0.
+- **`assets/physics.toml`**: `gravity_const` 20.0 → 10.0.
+- **`src/testing.rs`**: Added `OrbitCentralBody` / `OrbitTestBody` markers, `spawn_test_orbit_pair`, `orbit_pair_calibrate_and_track_system`, `velocity_calibrated` / `orbit_initial_dist` / `orbit_final_dist` fields on `TestConfig`; `verify_test_result` gains `orbit_initial`, `orbit_final`, `orbit_calibrated` parameters.
+- **`src/main.rs`**: Wired `spawn_test_orbit_pair` + `orbit_pair_calibrate_and_track_system` into the PostUpdate chain.
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo build --release` ✅  `ACCRETION_TEST=orbit_pair` ✅
+
+---
+
+## Mass-scaled gravity + Orbit scenario stability — February 23, 2026
+
+### Gravity now scales with AsteroidSize; Orbit central body dominates its ring system
+
+**Root cause of orbit instability**: `gravity_force_between` used `G/r²` regardless of mass, so the AsteroidSize-200 planetoid exerted the same gravitational pull as a single triangle. With 66 ring asteroids each contributing unit gravity, collective ring perturbations overwhelmed the central body, causing widening orbits.
+
+**Fix — mass-scaled gravity** (`F = G·m_i·m_j / r²`):
+- Both bodies' `AsteroidSize` values are now multiplied into every gravity force pair.
+- Single triangles (size 1) attract each other identically to before (1×1 = unchanged).
+- Composite asteroids and the Orbit planetoid now correctly dominate their local gravity field.
+- The Field scenario gets a natural improvement: large composites become genuine gravitational attractors, accelerating cluster formation.
+
+**Orbit scenario updates**:
+- Central body: `AsteroidSize(2000)` (was 200) — provides 30:1 gravity dominance over all 66 ring asteroids combined.
+- Orbital velocity formula corrected to `v = sqrt(G · M_central / (r · m_rapier))` — previously missing the `M_central` factor.
+- Ring radii expanded to 280 / 480 / 680 (was 260 / 450 / 650) for more clearance from the central body's surface.
+
+**Files changed**:
+
+- **`src/simulation.rs`**: `gravity_force_between` gains `mass_i: f32` and `mass_j: f32` parameters; `nbody_gravity_system` now queries `&AsteroidSize` and passes `size.0 as f32` for both bodies. All unit-test call sites updated to pass `1.0, 1.0`.
+- **`src/asteroid.rs`**: `spawn_orbit_scenario` — central body `AsteroidSize` raised to `ORBIT_CENTRAL_MASS = 2000`; orbital velocity uses `G · ORBIT_CENTRAL_MASS / (r · m_base)`.
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo build --release` ✅  66/67 tests ✅ (pre-existing `min_vertices_for_mass_mass_6_and_above_are_6` failure unrelated to these changes)
+
+---
+
+## Scenarios & Saves Menu — February 23, 2026
+
+### "Start Game" now leads to a Scenarios & Saves screen; two built-in scenarios ("Field" and "Orbit") are provided
+
+**State machine change**: added `GameState::ScenarioSelect` between `MainMenu` and `Playing`.
+Clicking **Start Game** on the main menu navigates to the scenario-select screen; picking a scenario transitions to `Playing`.  Game Over → Play Again still transitions directly to `Playing` (same world, just re-spawns the player).
+
+**Scenarios**:
+
+| Scenario | Description |
+|---|---|
+| **Field** | 100 asteroids distributed across noise-based gravity-well clusters, plus one large planetoid at (700, 400).  The classic chaotic asteroid field. |
+| **Orbit** | One very large 16-gon central body at (800, 0) with three concentric rings of small triangle asteroids in near-circular counter-clockwise orbits (inner r=260, middle r=450, outer r=650; 14 + 22 + 30 = 66 debris asteroids). |
+
+**Orbital velocity formula** (Orbit scenario): `v = sqrt(G / (r × m_base))` where `G = config.gravity_const` and `m_base ≈ 3.0×10⁻⁴` (calibrated from the documented benchmark: unit triangle pair at distance 100 collides in ~350 physics frames at G = 10).
+
+**Files changed**:
+
+- **`src/menu.rs`**: Added `GameState::ScenarioSelect`, `SelectedScenario` resource (`Field` | `Orbit`), component markers (`ScenarioSelectRoot`, `ScenarioFieldButton`, `ScenarioOrbitButton`, `ScenarioBackButton`), and systems `setup_scenario_select`, `cleanup_scenario_select`, `scenario_select_button_system`.  `menu_button_system` "Start Game" now goes to `ScenarioSelect` instead of `Playing`.
+- **`src/asteroid.rs`**: Added `spawn_orbit_scenario` (central 16-gon body + 3 orbital rings).  Added `use std::f32::consts::TAU`.
+- **`src/main.rs`**: `spawn_initial_world` now reads `Res<SelectedScenario>` and dispatches.  All `OnTransition{MainMenu→Playing}` handlers updated to `OnTransition{ScenarioSelect→Playing}`.  Added `use menu::SelectedScenario`.
+
+**Build status**: `cargo clippy -- -D warnings` ✅  `cargo fmt` ✅  `cargo build --release` ✅
+
+---
+
 ## Particle Effects — February 23, 2026
 
 ### Visual particle bursts now appear on every asteroid hit, destruction, and merge event
@@ -996,7 +1076,7 @@ GRAV_SIM_TEST=near_miss cargo run --release
 
 ## Final Summary
 
-GRAV-SIM successfully demonstrates:
+Accretion successfully demonstrates:
 
 - ✅ Stable N-body gravity physics
 - ✅ Robust cluster detection and merging

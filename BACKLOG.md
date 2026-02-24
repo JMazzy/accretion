@@ -7,7 +7,8 @@ Planned features, improvements, and known limitations. Mark items as `[x]` when 
 - [x] **Main menu / splash screen** — Settings, start game
 - [x] **Pause + in-game menu** — ESC pauses and shows menu (replaces debug options menu)
 - [x] **Player respawn** — lives system, respawn mechanic, healing damage system
-- [ ] **Save/load system** — Save games, load, snapshots, custom scenarios
+- [x] **Custom scenarios** - Scenarios & Saves screen added with two built-in scenarios: "Field" and "Orbit"
+- [ ] **Save/load system** — Save/load persistent game files
 - [ ] **Asteroid mining** — Ore drops, currency system, ship upgrades
 - [x] **Secondary weapon** — missiles (limited shots, fragments asteroids, destroys larger asteroids (size <= 3) right away for more points)
 - [ ] **Enemy ships** — Computer-controlled enemies

@@ -18,24 +18,37 @@ mod spatial_partition;
 mod testing;
 
 use config::PhysicsConfig;
-use menu::GameState;
+use menu::{GameState, SelectedScenario};
 use testing::{
     spawn_test_all_three, spawn_test_baseline_100, spawn_test_culling_verification,
     spawn_test_gentle_approach, spawn_test_gravity, spawn_test_gravity_boundary,
     spawn_test_high_speed_collision, spawn_test_kdtree_only, spawn_test_large_small_pair,
-    spawn_test_mixed_size_asteroids, spawn_test_near_miss, spawn_test_passing_asteroid,
-    spawn_test_perf_benchmark, spawn_test_soft_boundary_only, spawn_test_three_triangles,
-    spawn_test_tidal_only, spawn_test_two_triangles, TestConfig,
+    spawn_test_mixed_size_asteroids, spawn_test_near_miss, spawn_test_orbit_pair,
+    spawn_test_passing_asteroid, spawn_test_perf_benchmark, spawn_test_soft_boundary_only,
+    spawn_test_three_triangles, spawn_test_tidal_only, spawn_test_two_triangles, TestConfig,
 };
 
-/// Spawn the initial asteroid field and planetoid.
+/// Spawn the initial asteroid world for the chosen scenario.
 ///
-/// Registered via `OnEnter(GameState::Playing)` so it runs only after the
-/// player starts the game from the main menu (not during the splash screen).
-fn spawn_initial_world(mut commands: Commands, config: Res<PhysicsConfig>) {
-    asteroid::spawn_initial_asteroids(&mut commands, 100, &config);
-    // Spawn one large planetoid offset from the player origin.
-    asteroid::spawn_planetoid(&mut commands, Vec2::new(700.0, 400.0), &config);
+/// Registered via `OnTransition{ScenarioSelect→Playing}` so it runs only after
+/// the player selects a scenario from the scenario-select screen.
+/// Using OnTransition (not OnEnter) prevents re-spawning on Paused↔Playing or
+/// GameOver→Playing transitions.
+fn spawn_initial_world(
+    mut commands: Commands,
+    config: Res<PhysicsConfig>,
+    scenario: Res<SelectedScenario>,
+) {
+    match *scenario {
+        SelectedScenario::Field => {
+            asteroid::spawn_initial_asteroids(&mut commands, 100, &config);
+            // Classic field also includes one large planetoid offset from the player.
+            asteroid::spawn_planetoid(&mut commands, Vec2::new(700.0, 400.0), &config);
+        }
+        SelectedScenario::Orbit => {
+            asteroid::spawn_orbit_scenario(&mut commands, &config);
+        }
+    }
 }
 
 /// Configure Rapier physics: disable gravity for the space simulation.
@@ -78,11 +91,11 @@ fn main() {
             setup_physics_config,
         ),
     )
-    // Game-world setup: runs only on the MainMenu → Playing transition (not on Paused → Playing
-    // resume), so world entities and HUD are spawned exactly once per session.
+    // Game-world setup: runs only on the ScenarioSelect → Playing transition (not on
+    // Paused → Playing resume), so world entities and HUD are spawned exactly once per session.
     .add_systems(
         OnTransition {
-            exited: GameState::MainMenu,
+            exited: GameState::ScenarioSelect,
             entered: GameState::Playing,
         },
         (
@@ -105,14 +118,14 @@ fn main() {
             .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin);
     } else {
-        // World and player spawned only when transitioning from MainMenu → Playing.
+        // World and player spawned only when transitioning from ScenarioSelect → Playing.
         // Using OnTransition (not OnEnter) prevents re-spawning on Paused → Playing resume.
         app.add_plugins(menu::MainMenuPlugin)
             .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin)
             .add_systems(
                 OnTransition {
-                    exited: GameState::MainMenu,
+                    exited: GameState::ScenarioSelect,
                     entered: GameState::Playing,
                 },
                 (spawn_initial_world, player::spawn_player),
@@ -208,6 +221,10 @@ fn main() {
                 Startup,
                 spawn_test_all_three.after(config::load_physics_config),
             ),
+            "orbit_pair" => app.add_systems(
+                Startup,
+                spawn_test_orbit_pair.after(config::load_physics_config),
+            ),
             _ => app.add_systems(
                 Startup,
                 spawn_test_two_triangles.after(config::load_physics_config),
@@ -220,8 +237,10 @@ fn main() {
             PostUpdate,
             (
                 testing::test_logging_system,
+                testing::orbit_pair_calibrate_and_track_system,
                 testing::test_verification_system,
             )
+                .chain()
                 .after(simulation::asteroid_formation_system),
         );
 

@@ -1,8 +1,9 @@
 //! Testing utilities for the simulation
 
-use crate::asteroid::{spawn_asteroid_with_vertices, Asteroid, Vertices};
+use crate::asteroid::{spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices};
+use crate::config::PhysicsConfig;
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::{ExternalForce, Velocity};
+use bevy_rapier2d::prelude::{ExternalForce, ReadMassProperties, Velocity};
 use std::io::Write;
 
 /// Test configuration
@@ -15,6 +16,13 @@ pub struct TestConfig {
     pub initial_asteroid_count: usize,
     /// Per-frame delta times (seconds) recorded for perf_benchmark test
     pub perf_frame_times: Vec<f32>,
+    /// For orbit_pair test: set to true once the orbiting body's velocity has been
+    /// calibrated from the actual Rapier mass read back by [`ReadMassProperties`].
+    pub velocity_calibrated: bool,
+    /// For orbit_pair test: orbital radius (world units) recorded after calibration.
+    pub orbit_initial_dist: f32,
+    /// For orbit_pair test: most-recent orbital radius, updated each frame.
+    pub orbit_final_dist: f32,
 }
 
 impl Default for TestConfig {
@@ -26,9 +34,22 @@ impl Default for TestConfig {
             frame_count: 0,
             initial_asteroid_count: 0,
             perf_frame_times: Vec::new(),
+            velocity_calibrated: false,
+            orbit_initial_dist: 0.0,
+            orbit_final_dist: 0.0,
         }
     }
 }
+
+// ── Orbit-test component markers ─────────────────────────────────────
+
+/// Tags the large central body in the `orbit_pair` test scenario.
+#[derive(Component)]
+pub struct OrbitCentralBody;
+
+/// Tags the small orbiting body in the `orbit_pair` test scenario.
+#[derive(Component)]
+pub struct OrbitTestBody;
 
 /// Spawn test scenario: two triangles touching
 pub fn spawn_test_two_triangles(mut commands: Commands, mut test_config: ResMut<TestConfig>) {
@@ -690,6 +711,147 @@ pub fn spawn_test_all_three(mut commands: Commands, mut test_config: ResMut<Test
 #[allow(dead_code)]
 pub struct TestMarker(pub usize); // Initial index for tracking
 
+// ── orbit_pair test ─────────────────────────────────────────────────────────────
+
+/// Spawn scenario for the `orbit_pair` test.
+///
+/// Spawns one large central body (AsteroidSize = 2 000 000) and one small
+/// triangle orbiting at 200 u.  On frame 2 the system
+/// [`orbit_pair_calibrate_and_track_system`] reads the actual Rapier mass back
+/// from [`ReadMassProperties`] and applies the correct circular-orbit velocity
+/// `v = sqrt(G · M_central / (r · m_rapier))`.
+///
+/// Run with `ACCRETION_TEST=orbit_pair cargo run --release`.
+pub fn spawn_test_orbit_pair(
+    mut commands: Commands,
+    mut test_config: ResMut<TestConfig>,
+    config: Res<PhysicsConfig>,
+) {
+    test_config.test_name = "orbit_pair".to_string();
+    test_config.frame_limit = 1500; // ~1.2 revolutions at expected velocity
+    test_config.velocity_calibrated = false;
+    test_config.orbit_initial_dist = 0.0;
+    test_config.orbit_final_dist = 0.0;
+
+    // Central body — very large AsteroidSize so it dominates gravity; small
+    // visual radius (10 u) so the orbiting triangle can't accidentally touch it.
+    let central_mass: u32 = 2_000_000;
+    let central_radius = 10.0_f32;
+    let central_verts: Vec<Vec2> = (0..16)
+        .map(|i| {
+            let angle = std::f32::consts::TAU * i as f32 / 16.0;
+            Vec2::new(central_radius * angle.cos(), central_radius * angle.sin())
+        })
+        .collect();
+    let central_entity = spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::ZERO,
+        &central_verts,
+        Color::srgb(0.9, 0.5, 0.1),
+        central_mass,
+    );
+    commands
+        .entity(central_entity)
+        .insert((ReadMassProperties::default(), OrbitCentralBody));
+
+    // Orbiting triangle — starts at (orbital_radius, 0); velocity applied on
+    // frame 2 once Rapier has written the real mass into ReadMassProperties.
+    let orbital_radius = 200.0_f32;
+    let side = config.triangle_base_side;
+    let h = side * 3.0_f32.sqrt() / 2.0;
+    let tri_verts = vec![
+        Vec2::new(0.0, h / 2.0),
+        Vec2::new(-side / 2.0, -h / 2.0),
+        Vec2::new(side / 2.0, -h / 2.0),
+    ];
+    let orbit_entity = spawn_asteroid_with_vertices(
+        &mut commands,
+        Vec2::new(orbital_radius, 0.0),
+        &tri_verts,
+        Color::srgb(0.4, 0.9, 0.4),
+        1,
+    );
+    commands
+        .entity(orbit_entity)
+        .insert((ReadMassProperties::default(), OrbitTestBody));
+
+    println!(
+        "✓ Spawned orbit_pair test: central at (0,0) r={central_radius} mass={central_mass}, \
+         orbiter at ({orbital_radius},0) side={side}"
+    );
+    println!(
+        "  Expected Rapier mass of triangle ≈ {:.4} (√3/4·{side}²)",
+        3.0_f32.sqrt() / 4.0 * side * side
+    );
+}
+
+/// Calibrates orbital velocity from actual Rapier mass and tracks orbit radius.
+///
+/// - **Frame 2**: reads [`ReadMassProperties`] from the orbiting triangle,
+///   computes `v = sqrt(G · M_central / (r · m_rapier))`, applies it to
+///   `Velocity`, and records `orbit_initial_dist`.
+/// - **Every subsequent frame**: updates [`TestConfig::orbit_final_dist`] so
+///   [`test_verification_system`] can assess orbit stability.
+///
+/// This system is a no-op for all tests other than `"orbit_pair"`.
+#[allow(clippy::type_complexity)]
+pub fn orbit_pair_calibrate_and_track_system(
+    mut test_config: ResMut<TestConfig>,
+    config: Res<PhysicsConfig>,
+    central_q: Query<(&Transform, &AsteroidSize), (With<OrbitCentralBody>, Without<OrbitTestBody>)>,
+    mut orbit_q: Query<
+        (&Transform, &ReadMassProperties, &mut Velocity),
+        (With<OrbitTestBody>, Without<OrbitCentralBody>),
+    >,
+) {
+    if !test_config.enabled || test_config.test_name != "orbit_pair" {
+        return;
+    }
+
+    let Ok((central_tf, central_size)) = central_q.single() else {
+        return;
+    };
+    let Ok((orbit_tf, mass_props, mut orbit_vel)) = orbit_q.single_mut() else {
+        return;
+    };
+
+    let central_pos = central_tf.translation.truncate();
+    let orbit_pos = orbit_tf.translation.truncate();
+    let current_dist = (orbit_pos - central_pos).length();
+
+    // On frame 2 (Rapier has run once; ReadMassProperties is populated) apply
+    // the analytically-correct circular-orbit velocity.
+    if !test_config.velocity_calibrated && test_config.frame_count >= 2 {
+        let m_rapier = mass_props.mass;
+        let m_central = central_size.0 as f32;
+        let g = config.gravity_const;
+
+        // v = sqrt(G · M_central / (r · m_rapier))  (centripetal condition)
+        let v_mag = (g * m_central / (current_dist * m_rapier)).sqrt();
+        let radial = (orbit_pos - central_pos).normalize_or_zero();
+        let tangent = Vec2::new(-radial.y, radial.x); // CCW
+        orbit_vel.linvel = tangent * v_mag;
+
+        test_config.orbit_initial_dist = current_dist;
+        test_config.velocity_calibrated = true;
+
+        let period_s = std::f32::consts::TAU * current_dist / v_mag;
+        println!(
+            "[Orbit calibration] frame={} G={g}  M_central={m_central}  \
+             m_rapier={m_rapier:.4}  r={current_dist:.1}  v={v_mag:.4} u/s",
+            test_config.frame_count
+        );
+        println!(
+            "[Orbit calibration] Expect period ≈ {period_s:.1}s = {:.0} frames at 60fps",
+            period_s * 60.0
+        );
+    }
+
+    if test_config.velocity_calibrated {
+        test_config.orbit_final_dist = current_dist;
+    }
+}
+
 pub fn test_logging_system(
     mut test_config: ResMut<TestConfig>,
     time: Res<Time>,
@@ -869,6 +1031,9 @@ pub fn test_verification_system(
         &test_config.test_name,
         test_config.initial_asteroid_count,
         final_count,
+        test_config.orbit_initial_dist,
+        test_config.orbit_final_dist,
+        test_config.velocity_calibrated,
     );
     println!("{}\n", result);
     let _ = std::io::stdout().flush();
@@ -878,7 +1043,14 @@ pub fn test_verification_system(
 }
 
 /// Verify if test passed
-fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> String {
+fn verify_test_result(
+    test_name: &str,
+    initial: usize,
+    final_count: usize,
+    orbit_initial: f32,
+    orbit_final: f32,
+    orbit_calibrated: bool,
+) -> String {
     match test_name {
         "two_triangles_combine" => {
             if final_count < initial && final_count >= 1 {
@@ -1043,6 +1215,27 @@ fn verify_test_result(test_name: &str, initial: usize, final_count: usize) -> St
                 "✓ PASS: all_three complete — {} asteroids | Full cost = all_three minus baseline_100",
                 final_count
             )
+        }
+        "orbit_pair" => {
+            if !orbit_calibrated {
+                format!(
+                    "✗ FAIL: orbit_pair — orbit never calibrated (check ReadMassProperties population). \
+                     asteroid_count={final_count}"
+                )
+            } else {
+                let drift_pct = ((orbit_final - orbit_initial) / orbit_initial).abs() * 100.0;
+                if drift_pct < 30.0 {
+                    format!(
+                        "✓ PASS: orbit_pair — orbit stable; drift={drift_pct:.1}% \
+                         (initial_dist={orbit_initial:.1} u, final_dist={orbit_final:.1} u)"
+                    )
+                } else {
+                    format!(
+                        "✗ FAIL: orbit_pair — orbit unstable; drift={drift_pct:.1}% > 30% \
+                         (initial_dist={orbit_initial:.1} u, final_dist={orbit_final:.1} u)"
+                    )
+                }
+            }
         }
         _ => format!("? UNKNOWN: {}", test_name),
     }

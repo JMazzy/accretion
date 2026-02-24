@@ -4,6 +4,8 @@
 //! Any two asteroids can combine if touching and slow, forming a new asteroid with
 //! the convex hull of their combined shapes.
 
+use std::f32::consts::TAU;
+
 use crate::config::PhysicsConfig;
 use crate::constants::{
     FRICTION_ASTEROID, HEPTAGON_BASE_RADIUS, HULL_DEDUP_MIN_DIST, OCTAGON_BASE_RADIUS,
@@ -275,6 +277,157 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
             Sleeping::disabled(),
         ),
     ));
+}
+
+/// Spawns the "orbit" pre-built scenario.
+///
+/// The scenario consists of:
+/// - One very large 16-gon central planetoid at `(800, 0)`.
+/// - Three concentric rings of small triangle asteroids in near-circular orbits
+///   around that body (CCW rotation).
+///
+/// Orbital velocities are derived from the calibrated unit-triangle Rapier mass so
+/// that each ring is approximately in balance against the N-body gravity force.
+/// In practice the orbits will slowly precess and exchange energy — this is expected
+/// and adds visual interest.
+/// Gravitational mass used for the Orbit scenario central body.
+/// Must match `AsteroidSize` set on the spawned entity; used in the orbital
+/// velocity formula below.
+const ORBIT_CENTRAL_MASS: u32 = 2000;
+
+pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
+    // ── Central planetoid ────────────────────────────────────────────────────
+    //
+    // 4× the normal planetoid radius gives a visually dominant body.  It is placed
+    // at (800, 0) so the player (always at origin) starts outside the ring system
+    // and can fly in.
+    //
+    // AsteroidSize(ORBIT_CENTRAL_MASS) makes this body gravitationally dominant:
+    // with mass-scaled gravity (F = G·m_i·m_j/r²), it attracts ring triangles
+    // with 2000× the force that a single triangle would.  The 66 ring asteroids
+    // combined exert only 66 units of perturbation, giving a 30:1 dominance ratio
+    // that keeps orbits stable for many revolutions.
+    let central_radius = config.planetoid_base_radius * 4.0;
+    let central_pos = Vec2::new(800.0, 0.0);
+    let central_vertices = generate_regular_polygon(16, 1.0, central_radius);
+
+    commands.spawn((
+        (
+            Transform::from_translation(central_pos.extend(0.05)),
+            GlobalTransform::default(),
+            Asteroid,
+            AsteroidSize(ORBIT_CENTRAL_MASS),
+            NeighborCount(0),
+            Vertices(central_vertices.clone()),
+            RigidBody::Dynamic,
+        ),
+        (
+            Collider::convex_hull(&central_vertices)
+                .unwrap_or_else(|| Collider::ball(central_radius)),
+            Restitution::coefficient(RESTITUTION_SMALL),
+            Friction::coefficient(FRICTION_ASTEROID),
+            Velocity {
+                linvel: Vec2::ZERO,
+                angvel: 0.03, // slow stately rotation
+            },
+            Damping {
+                linear_damping: 0.0,
+                angular_damping: 0.0,
+            },
+            ExternalForce {
+                force: Vec2::ZERO,
+                torque: 0.0,
+            },
+            GravityForce::default(),
+            CollisionGroups::new(
+                bevy_rapier2d::geometry::Group::GROUP_1,
+                bevy_rapier2d::geometry::Group::GROUP_1
+                    | bevy_rapier2d::geometry::Group::GROUP_2
+                    | bevy_rapier2d::geometry::Group::GROUP_3,
+            ),
+            ActiveEvents::COLLISION_EVENTS,
+            Sleeping::disabled(),
+        ),
+    ));
+
+    // ── Orbital debris rings ─────────────────────────────────────────────────
+    //
+    // Orbital velocity from the centripetal condition:
+    //   v(r) = sqrt(G · M_central / (r · m_rapier_triangle))
+    //
+    // m_rapier_triangle = area of equilateral triangle with side s (density=1,
+    // pixels_per_meter=1 so world units == physics units):
+    //   area = √3/4 · s²  ≈  27.71 for s=8
+    //
+    // This is the mass Rapier actually assigns to the collider and uses to
+    // compute acceleration from ExternalForce.  Using the correct value here
+    // ensures the centripetal force exactly balances gravity at the given radius.
+    //
+    // Ring geometry — centred on `central_pos` (all within 1800u soft boundary):
+    //   Ring 1: radius=280, 14 asteroids
+    //   Ring 2: radius=480, 22 asteroids
+    //   Ring 3: radius=680, 30 asteroids
+    let side = config.triangle_base_side;
+    let m_rapier = 3.0_f32.sqrt() / 4.0 * side * side;
+    let rings: &[(f32, u32)] = &[(280.0, 14), (480.0, 22), (680.0, 30)];
+
+    for &(orbital_radius, count) in rings {
+        let v_mag =
+            (config.gravity_const * ORBIT_CENTRAL_MASS as f32 / (orbital_radius * m_rapier)).sqrt();
+        let angle_step = TAU / count as f32;
+
+        for i in 0..count {
+            let angle = i as f32 * angle_step;
+            // Position in world space
+            let local = Vec2::new(angle.cos(), angle.sin()) * orbital_radius;
+            let pos = central_pos + local;
+
+            // Tangential velocity (CCW orbit): rotate local 90° CCW
+            let tangent = Vec2::new(-angle.sin(), angle.cos());
+            let velocity = tangent * v_mag;
+
+            let vertices = generate_triangle(1.0, config.triangle_base_side);
+
+            commands.spawn((
+                (
+                    Transform::from_translation(pos.extend(0.05)),
+                    GlobalTransform::default(),
+                    Asteroid,
+                    AsteroidSize(1),
+                    NeighborCount(0),
+                    Vertices(vertices.clone()),
+                    RigidBody::Dynamic,
+                ),
+                (
+                    Collider::convex_hull(&vertices)
+                        .unwrap_or_else(|| Collider::ball(TRIANGLE_BASE_SIDE / 2.0)),
+                    Restitution::coefficient(RESTITUTION_SMALL),
+                    Friction::coefficient(FRICTION_ASTEROID),
+                    Velocity {
+                        linvel: velocity,
+                        angvel: 0.0,
+                    },
+                    Damping {
+                        linear_damping: 0.0,
+                        angular_damping: 0.0,
+                    },
+                    ExternalForce {
+                        force: Vec2::ZERO,
+                        torque: 0.0,
+                    },
+                    GravityForce::default(),
+                    CollisionGroups::new(
+                        bevy_rapier2d::geometry::Group::GROUP_1,
+                        bevy_rapier2d::geometry::Group::GROUP_1
+                            | bevy_rapier2d::geometry::Group::GROUP_2
+                            | bevy_rapier2d::geometry::Group::GROUP_3,
+                    ),
+                    ActiveEvents::COLLISION_EVENTS,
+                    Sleeping::disabled(),
+                ),
+            ));
+        }
+    }
 }
 
 /// Generate an equilateral triangle with configurable size
