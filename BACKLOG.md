@@ -5,18 +5,24 @@ Planned features, improvements, and known limitations. Completed items are remov
 ## Essential Features
 
 - [ ] **Save/load system** — Save/load persistent game files
-- [ ] **Ore is usable for upgrades** — Increase primary weapon power, increase missile power, magnet pulls in ore faster and from further distances
+- [ ] **Primary Weapon Upgrades** — Uses ore. Increases primary weapon power. Power scale should be based on "maximum chipping size". The primary weapon's initial power should change to be weaker than now - it should always chip off size=1 asteroids. Level 2 should chip off asteroids sized 1-2. Level 3 should chip off asteroids sized 1-3. And so on. However - one additional rule should be that no hit from the primary weapon should break off more than half of the target asteroid (i.e. splitting in half is the ceiling of primary weapon power). Needs UI element added.
+- [ ] **Secondary Weapon Upgrades** — Increase missile power. Start on level 1 (which is the same as now). Each level chips off a larger number of size=1 asteroid fragments.
+- [ ] **Ore magnet upgrades** - With each increased level, the magnet pulls in ore faster and from further distances. Significantly "nerf" the starting magnet strength so it starts off very weak and needs to be upgraded to pull in ore from further away.
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex; concave craters approximated by hull; track per-vertex damage; move vertices inward and recompute hull
-- [ ] **Enemy ships** — Computer-controlled enemies which fire their own weapon and take damage from player weapons and asteroid collisions.
+- [ ] **Enemy ships** — Computer-controlled enemies which fire their own weapon and take damage from player weapons and asteroid collisions. Should have multiple "levels" which equate to health and attack power.
 - [ ] **Boss ships** — Large enemies with more powerful attacks (depends on having enemy ships first)
-- [ ] **Tractor Beam** — A new weapon/action which can grab, pull, and push asteroids
-- [ ] **Ion Cannon** — A new weapon which disables enemy ships (depends on having enemy ships first)
+- [ ] **Tractor Beam** — A new weapon/action which can grab, pull, and push asteroids. Strength/upgrade leveling is based on the strength of the pull (i.e. higher levels are effective against larger and faster moving asteroids)
+- [ ] **Ion Cannon** — A new weapon which disables or stuns enemy ships (depends on having enemy ships first). Strength/upgrade leveling increases minimum size effected (level 1 only effects level 1 enemies, level 2 effects level 1-2 enemies, etc.), as well as length of time lower level enemies are stunned.
 - [ ] **Planets** — A new object type with the same gravity system as asteroids, but otherwise very different. Important differences: larger, higher mass, nearly circular, no merging or splitting, shooting does not increase score, fixed in place relative to the simulation area to give a steady frame of reference. Visually distinct (rendered purple as a placeholder). Scenarios have 0–1 planet (not common). Update "Orbit" scenario to use a planet instead of the current planetoid.
 - [ ] **Local multiplayer** — Co-op and PvP modes
 
 ## Enhancements
 
 - [ ] **Performance** — Determine next steps for performance improvements; implement the most impactful one and add the rest to the backlog.
+- [ ] **Primary Weapon Projectile** - Update the shape of the projectile to be elongated in the direction of travel like a sci-fi "plasma pulse" or "blaster bolt".
+- [ ] **Missile Model** - Missiles have a model with a rocket-like shape pointing in the direction of travel (instead of a ball).
+- [ ] **Missile Particles** - Missiles shoot particles in the opposite direction of movement.
+- [ ] **Missile Movement** - Missiles start slow and accelerate until impact
 - [ ] **Remove Gizmos** — Remove remaining usage of Gizmos in favor of `Mesh2d` for everything
 - [ ] **Post-processing** — Bloom on collisions; chromatic aberration on invincibility frames
 

@@ -265,7 +265,7 @@ pub fn missile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
     q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity, &Vertices), With<Asteroid>>,
-    q_missiles: Query<Entity, With<Missile>>,
+    q_missiles: Query<&Transform, With<Missile>>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
     config: Res<PhysicsConfig>,
@@ -300,6 +300,12 @@ pub fn missile_asteroid_hit_system(
 
         processed_missiles.insert(missile_entity);
         processed_asteroids.insert(asteroid_entity);
+
+        // Capture missile world position before the deferred despawn flushes it.
+        let missile_pos = q_missiles
+            .get(missile_entity)
+            .map(|t| t.translation.truncate())
+            .unwrap_or_else(|_| transform.translation.truncate());
 
         commands.entity(missile_entity).despawn();
 
@@ -351,23 +357,68 @@ pub fn missile_asteroid_hit_system(
             _ => {
                 score.points += multiplier;
                 let mut rng = rand::thread_rng();
-                // Scatter fragments outside the asteroid's hull by using its
-                // actual outer radius so they never spawn inside the body.
-                let outer_radius = vertices
+
+                // World-space hull for surface-point computation.
+                let rot = transform.rotation;
+                let world_verts: Vec<Vec2> = vertices
                     .0
                     .iter()
-                    .map(|v| v.length())
-                    .fold(0.0_f32, f32::max);
-                let scatter_dist = outer_radius + 15.0;
-                // Scatter burst of 4 fragments
-                for i in 0u32..4 {
-                    let angle = std::f32::consts::TAU * (i as f32 / 4.0);
-                    let offset = Vec2::new(angle.cos(), angle.sin()) * scatter_dist;
-                    let frag_vel =
-                        vel + Vec2::new(rng.gen_range(-60.0..60.0), rng.gen_range(-60.0..60.0));
+                    .map(|v| pos + rot.mul_vec3(v.extend(0.0)).truncate())
+                    .collect();
+
+                // Direction pointing outward from the asteroid toward the
+                // missile — this is the "hit side" of the surface.
+                let impact_outward = (missile_pos - pos).normalize_or_zero();
+                let impact_outward = if impact_outward == Vec2::ZERO {
+                    Vec2::X
+                } else {
+                    impact_outward
+                };
+
+                // Fan 4 fragments ±67.5° / ±22.5° around the impact direction.
+                let base_angle = impact_outward.y.atan2(impact_outward.x);
+                for da in [-67.5_f32, -22.5, 22.5, 67.5] {
+                    let angle = base_angle + da.to_radians();
+                    let dir = Vec2::new(angle.cos(), angle.sin());
+
+                    // Ray from asteroid center outward — find where it exits
+                    // the convex hull so we can spawn at the surface.
+                    let surface_pt = if world_verts.len() >= 3 {
+                        let nv = world_verts.len();
+                        let mut best_t = f32::MAX;
+                        for i in 0..nv {
+                            let a = world_verts[i];
+                            let b = world_verts[(i + 1) % nv];
+                            let edge = b - a;
+                            let denom = dir.x * edge.y - dir.y * edge.x;
+                            if denom.abs() < 1e-6 {
+                                continue;
+                            }
+                            let diff = a - pos;
+                            let t = (diff.x * edge.y - diff.y * edge.x) / denom;
+                            let s = (diff.x * dir.y - diff.y * dir.x) / denom;
+                            if t > 0.0 && s >= 0.0 && s <= 1.0 && t < best_t {
+                                best_t = t;
+                            }
+                        }
+                        if best_t < f32::MAX {
+                            pos + dir * best_t
+                        } else {
+                            let outer = vertices.0.iter().map(|v| v.length()).fold(0.0_f32, f32::max);
+                            pos + dir * outer
+                        }
+                    } else {
+                        missile_pos
+                    };
+
+                    // Place the fragment just beyond the surface and eject it
+                    // outward from the impact with some random spread.
+                    let frag_vel = vel
+                        + dir * 45.0
+                        + Vec2::new(rng.gen_range(-20.0..20.0), rng.gen_range(-20.0..20.0));
                     spawn_unit_fragment(
                         &mut commands,
-                        pos + offset,
+                        surface_pt + dir * 6.0,
                         frag_vel,
                         ang_vel,
                         config.asteroid_density,
