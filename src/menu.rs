@@ -1170,6 +1170,7 @@ pub fn cleanup_game_world(
             With<crate::rendering::LivesHudDisplay>,
             With<crate::rendering::MissileHudDisplay>,
             With<crate::rendering::BoundaryRing>,
+            With<crate::rendering::OreHudDisplay>,
         )>,
     >,
     player_ui: Query<

@@ -351,10 +351,18 @@ pub fn missile_asteroid_hit_system(
             _ => {
                 score.points += multiplier;
                 let mut rng = rand::thread_rng();
+                // Scatter fragments outside the asteroid's hull by using its
+                // actual outer radius so they never spawn inside the body.
+                let outer_radius = vertices
+                    .0
+                    .iter()
+                    .map(|v| v.length())
+                    .fold(0.0_f32, f32::max);
+                let scatter_dist = outer_radius + 15.0;
                 // Scatter burst of 4 fragments
                 for i in 0u32..4 {
                     let angle = std::f32::consts::TAU * (i as f32 / 4.0);
-                    let offset = Vec2::new(angle.cos(), angle.sin()) * 12.0;
+                    let offset = Vec2::new(angle.cos(), angle.sin()) * scatter_dist;
                     let frag_vel =
                         vel + Vec2::new(rng.gen_range(-60.0..60.0), rng.gen_range(-60.0..60.0));
                     spawn_unit_fragment(
