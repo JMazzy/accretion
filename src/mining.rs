@@ -1,5 +1,6 @@
 //! Ore pickup system: spawns ore drops when asteroids are destroyed; collected
-//! by the player on contact.
+//! by the player on contact.  Ore can also be spent on healing and missile
+//! restocking.
 //!
 //! ## Flow
 //!
@@ -11,6 +12,9 @@
 //!    player overlaps an ore sensor, the ore entity is despawned and
 //!    [`PlayerOre::count`] is incremented.
 //! 4. Ore entities older than [`ORE_LIFETIME_SECS`] are automatically despawned.
+//! 5. `ore_spend_system` processes player key presses each frame:
+//!    - **`H` / DPad Up**: spend 1 ore → restore `ore_heal_amount` HP (caps at max).
+//!    - **`M` / DPad Down**: spend 1 ore → restore 1 missile (caps at `missile_ammo_max`).
 //!
 //! ## Collision groups
 //!
@@ -25,7 +29,8 @@
 
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
-use crate::player::Player;
+use crate::player::{MissileAmmo, Player, PlayerHealth, PreferredGamepad};
+use bevy::input::gamepad::GamepadButton;
 use bevy::prelude::*;
 use bevy_asset::RenderAssetUsages;
 use bevy_mesh::{Indices, PrimitiveTopology};
@@ -76,6 +81,7 @@ impl Plugin for MiningPlugin {
                     attach_ore_mesh_system,
                     ore_lifetime_system,
                     ore_magnet_system,
+                    ore_spend_system,
                 )
                     .run_if(in_state(GameState::Playing)),
             )
@@ -173,6 +179,51 @@ fn ore_magnet_system(
         // without already triggering collection.
         let target_linvel = delta.normalize_or_zero() * config.ore_magnet_strength;
         vel.linvel = vel.linvel.lerp(target_linvel, alpha);
+    }
+}
+
+/// Spend ore to heal HP or restock missiles.
+///
+/// - **`H` key / DPad Up**: costs 1 ore, restores `ore_heal_amount` HP (capped at max).
+/// - **`M` key / DPad Down**: costs 1 ore, restores 1 missile (capped at `missile_ammo_max`).
+///
+/// Actions are gated by `just_pressed` so a single tap consumes exactly one ore unit.
+/// If the ship is at full HP / full missiles the ore is not spent.
+pub fn ore_spend_system(
+    keys: Res<ButtonInput<KeyCode>>,
+    preferred: Res<PreferredGamepad>,
+    gamepads: Query<&Gamepad>,
+    mut ore: ResMut<PlayerOre>,
+    mut q_health: Query<&mut PlayerHealth, With<Player>>,
+    mut ammo: ResMut<MissileAmmo>,
+    config: Res<PhysicsConfig>,
+) {
+    // ── Heal (H / DPad Up) ────────────────────────────────────────────────────
+    let mut gamepad_heal = false;
+    let mut gamepad_missile = false;
+    if let Some(gp_entity) = preferred.0 {
+        if let Ok(gp) = gamepads.get(gp_entity) {
+            gamepad_heal = gp.just_pressed(GamepadButton::DPadUp);
+            gamepad_missile = gp.just_pressed(GamepadButton::DPadDown);
+        }
+    }
+
+    if (keys.just_pressed(KeyCode::KeyH) || gamepad_heal) && ore.count > 0 {
+        if let Ok(mut health) = q_health.single_mut() {
+            if health.hp < health.max_hp {
+                health.hp = (health.hp + config.ore_heal_amount).min(health.max_hp);
+                ore.count -= 1;
+            }
+        }
+    }
+
+    // ── Missile restock (M / DPad Down) ───────────────────────────────────────
+    if (keys.just_pressed(KeyCode::KeyM) || gamepad_missile)
+        && ore.count > 0
+        && ammo.count < config.missile_ammo_max
+    {
+        ammo.count += 1;
+        ore.count -= 1;
     }
 }
 

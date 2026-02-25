@@ -152,7 +152,8 @@ ore_magnet_radius = 250.0
 
 # Speed (u/s) at which attracted ore lerps toward the player.
 ore_magnet_strength = 120.0
-
+# HP restored when the player spends one ore on healing (H key).
+ore_heal_amount = 30.0
 # ── Gamepad ───────────────────────────────────────────────────────────────────
 
 # Left-stick dead zone fraction (inputs below this are ignored).

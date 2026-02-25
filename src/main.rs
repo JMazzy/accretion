@@ -129,6 +129,9 @@ fn main() {
     } else {
         // World and player spawned only when transitioning from ScenarioSelect → Playing.
         // Using OnTransition (not OnEnter) prevents re-spawning on Paused → Playing resume.
+        // resume_physics is included here because returning to the menu from a paused game
+        // (Paused → MainMenu) leaves the pipeline disabled; it must be re-enabled for the
+        // new session to actually simulate.
         app.add_plugins(menu::MainMenuPlugin)
             .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin)
@@ -138,7 +141,7 @@ fn main() {
                     exited: GameState::ScenarioSelect,
                     entered: GameState::Playing,
                 },
-                (spawn_initial_world, player::spawn_player),
+                (spawn_initial_world, player::spawn_player, menu::resume_physics),
             )
             // GameOver → Playing: re-spawn the player ship with fresh lives.  Lives are reset
             // by game_over_button_system before this transition fires.

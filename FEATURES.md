@@ -73,11 +73,6 @@
 - The ship re-spawns at the **world origin** (simulation centre) with full HP.
 - A post-respawn **invincibility window** (`respawn_invincibility_secs`, default 4.0 s) protects the ship long enough to orient and escape any nearby asteroids.
 
-### Passive Healing
-
-- If the ship takes no damage for `passive_heal_delay_secs` (default 6.0 s), HP begins regenerating at `passive_heal_rate` HP/s (default 6.0).
-- Healing stops when HP reaches the maximum and resets its cooldown on the next hit.
-
 ### Game Over
 
 - When the final life is lost the simulation freezes and a **full-screen Game Over overlay** appears, showing the current score.
@@ -103,6 +98,19 @@
 - Ore outside the magnet radius drifts freely under its initial scatter velocity.
 - Both constants are runtime-tunable via `assets/physics.toml`.
 
+### Spending Ore
+
+Ore has two consumable uses, replacing the old passive regeneration systems:
+
+| Action | Key | Gamepad | Cost | Effect |
+|--------|-----|---------|------|--------|
+| Heal | `H` | DPad Up | 1 ore | Restore `ore_heal_amount` HP (default 30), capped at max HP |
+| Restock missile | `M` | DPad Down | 1 ore | +1 missile, capped at `missile_ammo_max` |
+
+- Ore is **not spent** if the corresponding stat is already full.
+- The ore HUD row shows `[H] heal  [M] ammo` hints whenever ore > 0, making the keys discoverable.
+- Passive HP regen and passive missile recharge have been **removed**; ore spending is the only way to replenish them.
+
 ## Visual Feedback
 
 ### Score HUD
@@ -121,7 +129,7 @@ Score: 42  (30 hits, 12 destroyed)
 
 **Hit-streak multiplier** — consecutive hits without missing build a streak; the multiplier increases at thresholds (×2 at 5, ×3 at 10, ×4 at 20, ×5 at 40). Missing a shot or dying resets the streak.
 
-**Missile ammo** — starts at 5; recharges 1 every 12 s automatically. HUD row 3 shows current ammo (`M M M - -`) with recharge countdown.
+**Missile ammo** — starts at 5; replenished by spending ore (`M` key / DPad Down, 1 ore = 1 missile). HUD row 3 shows current ammo (`M M M - -`).
 
 ### On-Screen Statistics Display
 

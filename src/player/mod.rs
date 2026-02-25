@@ -22,9 +22,8 @@ pub mod state;
 
 pub use combat::{
     despawn_old_missiles_system, despawn_old_projectiles_system, missile_asteroid_hit_system,
-    missile_fire_system, missile_recharge_system, player_collision_damage_system,
-    player_heal_system, player_respawn_system, projectile_asteroid_hit_system,
-    projectile_fire_system,
+    missile_fire_system, player_collision_damage_system, player_respawn_system,
+    projectile_asteroid_hit_system, projectile_fire_system,
 };
 pub use control::{
     aim_snap_system, apply_player_intent_system, gamepad_connection_system,

@@ -206,10 +206,6 @@ pub fn missile_fire_system(
 
     cooldown.timer = config.missile_cooldown;
     ammo.count -= 1;
-    // Start recharge timer if not already running
-    if ammo.count < config.missile_ammo_max && ammo.recharge_timer.is_none() {
-        ammo.recharge_timer = Some(config.missile_recharge_secs);
-    }
 
     let fire_dir = if aim.0.length_squared() > 0.01 {
         aim.0.normalize_or_zero()
@@ -254,30 +250,6 @@ pub fn despawn_old_missiles_system(
         if missile.age >= config.missile_lifetime || dist > config.missile_max_dist {
             commands.entity(entity).despawn();
         }
-    }
-}
-
-/// Tick the missile ammo recharge timer.
-///
-/// Recharges one missile per `missile_recharge_secs` until the ammo is full.
-pub fn missile_recharge_system(
-    mut ammo: ResMut<MissileAmmo>,
-    time: Res<Time>,
-    config: Res<PhysicsConfig>,
-) {
-    let Some(t) = ammo.recharge_timer else {
-        return;
-    };
-    let new_t = t - time.delta_secs();
-    if new_t > 0.0 {
-        ammo.recharge_timer = Some(new_t);
-        return;
-    }
-    // Timer elapsed: recharge one missile
-    ammo.recharge_timer = None;
-    ammo.count = (ammo.count + 1).min(config.missile_ammo_max);
-    if ammo.count < config.missile_ammo_max {
-        ammo.recharge_timer = Some(config.missile_recharge_secs);
     }
 }
 
@@ -598,29 +570,6 @@ pub fn player_respawn_system(
         Transform::from_translation(Vec3::ZERO),
         Visibility::default(),
     ));
-}
-
-// ── Passive healing ───────────────────────────────────────────────────────────
-
-/// Regenerate the player's HP slowly after `passive_heal_delay_secs` of no damage.
-///
-/// Healing is capped at `max_hp`.  The delay resets every time damage is taken,
-/// so combat interrupts healing immediately.
-pub fn player_heal_system(
-    mut q: Query<&mut PlayerHealth, With<Player>>,
-    time: Res<Time>,
-    config: Res<PhysicsConfig>,
-) {
-    let Ok(mut health) = q.single_mut() else {
-        return;
-    };
-    if health.hp >= health.max_hp {
-        return;
-    }
-    if health.time_since_damage < config.passive_heal_delay_secs {
-        return;
-    }
-    health.hp = (health.hp + config.passive_heal_rate * time.delta_secs()).min(health.max_hp);
 }
 
 // ── Projectile–Asteroid hit system ───────────────────────────────────────────

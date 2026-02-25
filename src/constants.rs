@@ -247,7 +247,17 @@ pub const RESPAWN_INVINCIBILITY_SECS: f32 = 4.0;
 pub const PASSIVE_HEAL_DELAY_SECS: f32 = 6.0;
 
 /// HP regenerated per second once the passive heal delay has elapsed.
+///
+/// NOTE: Passive healing is no longer used in the default game — ore-based
+/// healing replaces it.  This constant is retained so the PhysicsConfig field
+/// keeps a meaningful default should passive healing be re-enabled via TOML.
 pub const PASSIVE_HEAL_RATE: f32 = 6.0;
+
+/// HP restored when the player spends one ore unit on healing (`H` key).
+///
+/// Chosen as a meaningful chunk that rewards ore collection without trivialising
+/// combat: at 30 HP per ore a player with 5 ore can fully restore from near-zero.
+pub const ORE_HEAL_AMOUNT: f32 = 30.0;
 
 // ── Ore Magnet ────────────────────────────────────────────────────────────────
 

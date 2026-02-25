@@ -1,5 +1,46 @@
 # Accretion Changelog
 
+## Fix: Rapier BVH panic on scenario switch — February 25, 2026
+
+### `parry2d` "key not present" panic when returning to menu and starting a different scenario
+
+**Root cause**: `resume_physics` was registered on `OnExit(GameState::Paused)`, which fires for *all* exits from `Paused` — including the `Paused → MainMenu` path.  This re-enabled the Rapier physics pipeline immediately before `cleanup_game_world` queued its deferred `despawn()` calls.  On the next `FixedUpdate`, `step_simulation` ran with an active pipeline whose BVH still held stale handles for the entities scheduled for removal, triggering the panic in `parry2d-0.25/bvh_insert.rs:314`.
+
+**Fix** (three-part):
+1. **`src/menu.rs`** — `resume_physics` removed from `OnExit(Paused)`; added instead on `OnTransition { Paused → Playing }` so the pipeline is only re-enabled when genuinely resuming gameplay, not when returning to the menu.
+2. **`src/menu.rs`** — `cleanup_game_world` now explicitly sets `physics_pipeline_active = false` via a `Query<&mut RapierConfiguration>` as a belt-and-suspenders guard for any future code path that reaches `MainMenu` without having paused first.
+3. **`src/main.rs`** — `menu::resume_physics` added to the `OnTransition { ScenarioSelect → Playing }` tuple so the pipeline is reliably re-enabled when a new session begins (necessary because returning from the menu left the pipeline disabled).
+
+**Build**: `cargo check`, `cargo clippy -- -D warnings` — zero errors / warnings.
+
+---
+
+## Ore Usable for Healing & Missile Restock — February 24, 2026
+
+### Ore can now be spent to heal HP (`H`) and restock missiles (`M`)
+
+Passive HP regeneration and passive missile auto-recharge have been **removed** and replaced with an active ore-spending system.
+
+- **`H` key / DPad Up**: spend 1 ore → restore `ore_heal_amount` HP (default 30), capped at `player_max_hp`.
+- **`M` key / DPad Down**: spend 1 ore → +1 missile, capped at `missile_ammo_max`. Ore is not spent when the stat is already full.
+- The ore HUD now shows `Ore: N  [H] heal  [M] ammo` when ore > 0, making the controls discoverable.
+
+**Removed systems**: `player_heal_system` (passive HP regen) and `missile_recharge_system` (passive missile recharge) deleted from codebase. `recharge_timer` field removed from `MissileAmmo`.
+
+**Files changed**:
+- **`src/constants.rs`**: Added `ORE_HEAL_AMOUNT` (30 HP per ore).
+- **`src/config.rs`**: Added `ore_heal_amount` field; removed passive-recharge-dependent code paths.
+- **`assets/physics.toml`**: Added `ore_heal_amount = 30.0`.
+- **`src/mining.rs`**: Added `ore_spend_system` handling both `H` (heal) and `M` (missile) inputs; registered in `MiningPlugin`.
+- **`src/player/combat.rs`**: Removed `player_heal_system` and `missile_recharge_system`; cleaned up `missile_fire_system` (no longer starts a recharge timer).
+- **`src/player/state.rs`**: Removed `recharge_timer` field from `MissileAmmo`.
+- **`src/player/mod.rs`**: Removed stale re-exports.
+- **`src/rendering.rs`**: Updated `ore_hud_display_system` to show spending hints; removed recharge countdown from `missile_hud_display_system`.
+- **`src/simulation.rs`**: Removed `missile_recharge_system` and `player_heal_system` from system chain.
+- **`FEATURES.md`**: Removed "Passive Healing" section; added "Spending Ore" section with keybind table; updated missile ammo description.
+
+---
+
 ## Ore Magnet — February 24, 2026
 
 - **`src/constants.rs`**: Added `ORE_MAGNET_RADIUS` (250 u) and `ORE_MAGNET_STRENGTH` (120 u/s).

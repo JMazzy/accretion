@@ -386,12 +386,7 @@ pub fn missile_hud_display_system(
                 let max = config.missile_ammo_max as usize;
                 let count = ammo.count as usize;
                 let filled: String = "M ".repeat(count) + &"- ".repeat(max.saturating_sub(count));
-                let recharge_hint = if let Some(t) = ammo.recharge_timer {
-                    format!(" ({:.0}s)", t.ceil())
-                } else {
-                    String::new()
-                };
-                *text = Text::new(format!("Missiles: {}{}", filled.trim_end(), recharge_hint));
+                *text = Text::new(format!("Missiles: {}", filled.trim_end()));
             }
         }
     }
@@ -423,6 +418,9 @@ pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
 }
 
 /// Refresh the ore-count HUD each frame.
+///
+/// When ore > 0 the text includes key-binding hints for spending it so players
+/// can discover the mechanic passively.
 pub fn ore_hud_display_system(
     ore: Res<PlayerOre>,
     parent_query: Query<&Children, With<OreHudDisplay>>,
@@ -431,10 +429,15 @@ pub fn ore_hud_display_system(
     if !ore.is_changed() {
         return;
     }
+    let display = if ore.count > 0 {
+        format!("Ore: {}  [H] heal  [M] ammo", ore.count)
+    } else {
+        "Ore: 0".to_string()
+    };
     for children in parent_query.iter() {
         for child in children.iter() {
             if let Ok(mut text) = text_query.get_mut(child) {
-                *text = Text::new(format!("Ore: {}", ore.count));
+                *text = Text::new(display.clone());
             }
         }
     }

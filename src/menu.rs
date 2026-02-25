@@ -177,7 +177,19 @@ impl Plugin for MainMenuPlugin {
             )
             .add_systems(
                 OnExit(GameState::Paused),
-                (cleanup_pause_menu, resume_physics),
+                cleanup_pause_menu,
+            )
+            // resume_physics only on Paused → Playing (not Paused → MainMenu).
+            // Keeping the pipeline disabled when returning to the menu prevents
+            // parry2d BVH "key not present" panics that occur when step_simulation
+            // runs with a re-enabled pipeline before despawned entity handles are
+            // flushed from Rapier's internal data structures.
+            .add_systems(
+                OnTransition {
+                    exited: GameState::Paused,
+                    entered: GameState::Playing,
+                },
+                resume_physics,
             )
             .add_systems(
                 Update,
@@ -1134,6 +1146,12 @@ pub fn cleanup_pause_menu(mut commands: Commands, query: Query<Entity, With<Paus
 ///
 /// Runs on `OnTransition { Paused → MainMenu }` (after `OnExit(Paused)` has
 /// already removed the pause overlay).
+///
+/// The Rapier physics pipeline is explicitly disabled here as a safeguard
+/// against parry2d BVH "key not present" panics: `step_simulation` must not
+/// run with a live pipeline while entity handles are being flushed from
+/// Rapier's internal data structures.  `resume_physics` is called again on
+/// the `ScenarioSelect → Playing` transition when a new session begins.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn cleanup_game_world(
     mut commands: Commands,
@@ -1166,6 +1184,7 @@ pub fn cleanup_game_world(
     mut lives: ResMut<PlayerLives>,
     mut overlay: ResMut<crate::rendering::OverlayState>,
     mut sim_stats: ResMut<crate::simulation::SimulationStats>,
+    mut rapier_config: Query<&mut RapierConfiguration>,
 ) {
     for e in asteroids
         .iter()
@@ -1183,6 +1202,11 @@ pub fn cleanup_game_world(
     lives.reset();
     *overlay = crate::rendering::OverlayState::default();
     *sim_stats = crate::simulation::SimulationStats::default();
+    // Keep the physics pipeline disabled until a new session begins.
+    // resume_physics is called on OnTransition { ScenarioSelect → Playing }.
+    for mut cfg in rapier_config.iter_mut() {
+        cfg.physics_pipeline_active = false;
+    }
 }
 
 // ── Update (Paused only): button interaction ──────────────────────────────────

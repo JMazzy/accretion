@@ -116,6 +116,8 @@ pub struct PhysicsConfig {
     // ── Ore Magnet ────────────────────────────────────────────────────────────
     pub ore_magnet_radius: f32,
     pub ore_magnet_strength: f32,
+    /// HP restored per ore unit spent on healing (`H` key).
+    pub ore_heal_amount: f32,
 
     // ── Gamepad ───────────────────────────────────────────────────────────────
     pub gamepad_left_deadzone: f32,
@@ -223,6 +225,7 @@ impl Default for PhysicsConfig {
             // Ore Magnet
             ore_magnet_radius: ORE_MAGNET_RADIUS,
             ore_magnet_strength: ORE_MAGNET_STRENGTH,
+            ore_heal_amount: ORE_HEAL_AMOUNT,
             // Gamepad
             gamepad_left_deadzone: GAMEPAD_LEFT_DEADZONE,
             gamepad_brake_damping: GAMEPAD_BRAKE_DAMPING,

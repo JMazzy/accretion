@@ -5,7 +5,6 @@ Planned features, improvements, and known limitations. Completed items are remov
 ## Essential Features
 
 - [ ] **Save/load system** — Save/load persistent game files
-- [ ] **Ore is usable for healing** — Replenish health (replaces current slow auto-heal), replenish missiles (replaces current slow auto-missile). Add UI which allows for this (will be used for upgrade as well)
 - [ ] **Ore is usable for upgrades** — Increase primary weapon power, increase missile power, magnet pulls in ore faster and from further distances
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex; concave craters approximated by hull; track per-vertex damage; move vertices inward and recompute hull
 - [ ] **Enemy ships** — Computer-controlled enemies which fire their own weapon and take damage from player weapons and asteroid collisions.

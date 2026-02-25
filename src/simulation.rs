@@ -17,12 +17,12 @@ use crate::player::{
     camera_follow_system, cleanup_player_ui_system, despawn_old_missiles_system,
     despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
     keyboard_to_intent_system, missile_asteroid_hit_system, missile_fire_system,
-    missile_recharge_system, player_collision_damage_system, player_gizmo_system,
-    player_heal_system, player_intent_clear_system, player_oob_damping_system,
-    player_respawn_system, projectile_asteroid_hit_system, projectile_fire_system,
-    sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
-    sync_player_health_bar_system, AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown,
-    PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad,
+    player_collision_damage_system, player_gizmo_system, player_intent_clear_system,
+    player_oob_damping_system, player_respawn_system, projectile_asteroid_hit_system,
+    projectile_fire_system, sync_aim_indicator_system,
+    sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system, AimDirection,
+    AimIdleTimer, MissileAmmo, MissileCooldown, PlayerIntent, PlayerLives, PlayerScore,
+    PlayerUiEntities, PreferredGamepad,
 };
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
@@ -107,7 +107,6 @@ impl Plugin for SimulationPlugin {
                         aim_snap_system,                  // Snap aim after idle timeout
                         despawn_old_projectiles_system,   // Expire old projectiles
                         despawn_old_missiles_system,      // Expire old missiles
-                        missile_recharge_system,          // Recharge missile ammo over time
                         user_input_system,                // Mouse wheel zoom
                         camera_follow_system,             // Camera tracks player
                         camera_zoom_system,               // Apply zoom scale
@@ -135,7 +134,6 @@ impl Plugin for SimulationPlugin {
                         stats_display_system, // Render stats overlay text
                         player_oob_damping_system, // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
-                        player_heal_system,  // Passive HP regeneration after combat gap
                         player_respawn_system, // Re-spawn ship after countdown
                         cleanup_player_ui_system, // Despawn UI on player death
                     )

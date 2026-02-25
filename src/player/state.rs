@@ -63,20 +63,17 @@ pub struct Missile {
 
 // ── Resources ──────────────────────────────────────────────────────────────────
 
-/// Tracks available missile ammo and recharge state.
+/// Tracks available missile ammo.
 #[derive(Resource, Debug, Clone)]
 pub struct MissileAmmo {
     /// Missiles currently available to fire.
     pub count: u32,
-    /// Seconds until the next missile recharges; `None` when full.
-    pub recharge_timer: Option<f32>,
 }
 
 impl Default for MissileAmmo {
     fn default() -> Self {
         Self {
             count: MISSILE_AMMO_MAX,
-            recharge_timer: None,
         }
     }
 }
