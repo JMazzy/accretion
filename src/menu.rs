@@ -1160,6 +1160,7 @@ pub fn cleanup_game_world(
     projectiles: Query<Entity, With<crate::player::state::Projectile>>,
     missiles: Query<Entity, With<crate::player::state::Missile>>,
     particles: Query<Entity, With<crate::particles::Particle>>,
+    ore_pickups: Query<Entity, With<crate::mining::OrePickup>>,
     hud: Query<
         Entity,
         Or<(
@@ -1184,6 +1185,7 @@ pub fn cleanup_game_world(
     mut lives: ResMut<PlayerLives>,
     mut overlay: ResMut<crate::rendering::OverlayState>,
     mut sim_stats: ResMut<crate::simulation::SimulationStats>,
+    mut ore: ResMut<crate::mining::PlayerOre>,
     mut rapier_config: Query<&mut RapierConfiguration>,
 ) {
     for e in asteroids
@@ -1192,6 +1194,7 @@ pub fn cleanup_game_world(
         .chain(projectiles.iter())
         .chain(missiles.iter())
         .chain(particles.iter())
+        .chain(ore_pickups.iter())
         .chain(hud.iter())
         .chain(player_ui.iter())
     {
@@ -1202,6 +1205,7 @@ pub fn cleanup_game_world(
     lives.reset();
     *overlay = crate::rendering::OverlayState::default();
     *sim_stats = crate::simulation::SimulationStats::default();
+    *ore = crate::mining::PlayerOre::default();
     // Keep the physics pipeline disabled until a new session begins.
     // resume_physics is called on OnTransition { ScenarioSelect → Playing }.
     for mut cfg in rapier_config.iter_mut() {
