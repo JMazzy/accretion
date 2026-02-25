@@ -108,8 +108,25 @@ Ore has two consumable uses, replacing the old passive regeneration systems:
 | Restock missile | `M` | DPad Down | 1 ore | +1 missile, capped at `missile_ammo_max` |
 
 - Ore is **not spent** if the corresponding stat is already full.
-- The ore HUD row shows `[H] heal  [M] ammo` hints whenever ore > 0, making the keys discoverable.
+- The ore HUD row shows `[H] heal  [M] ammo  | Wpn: Lv.N` so current weapon level and spending hints are always visible.
 - Passive HP regen and passive missile recharge have been **removed**; ore spending is the only way to replenish them.
+
+### Primary Weapon Upgrades
+
+The primary projectile weapon can be upgraded up to **Level 10** using ore, accessed from the **pause menu → UPGRADES**.
+
+| Level | Fully destroys size… | Ore cost to reach |
+|-------|---------------------|-------------------|
+| 1 (default) | ≤ 1 | — |
+| 2 | ≤ 2 | 10 |
+| 3 | ≤ 3 | 15 |
+| … | … | … |
+| 10 | ≤ 10 | 55 |
+
+- **Above threshold**: any asteroid larger than the current destroy-size is *chipped* — one vertex is removed and a size-1 fragment is ejected. No single hit can destroy more than half the target.
+- **Ore reward scaling**: fully-destroying a size-N asteroid drops N ore (vs. 1 before), so higher-level play generates proportionally more upgrade fuel.
+- **Shop UI**: opened from pause menu → UPGRADES. Shows current level, size range, ore balance, and upgrade cost. The buy button greys out when unaffordable or at max level.
+- **Session-only**: upgrades reset when returning to the main menu (saves are not yet implemented).
 
 ## Visual Feedback
 

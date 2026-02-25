@@ -5,7 +5,6 @@ Planned features, improvements, and known limitations. Completed items are remov
 ## Essential Features
 
 - [ ] **Save/load system** — Save/load persistent game files
-- [ ] **Primary Weapon Upgrades** — Uses ore. Increases primary weapon power. Power scale should be based on "maximum chipping size". The primary weapon's initial power should change to be weaker than now - it should always chip off size=1 asteroids. Level 2 should chip off asteroids sized 1-2. Level 3 should chip off asteroids sized 1-3. And so on. However - one additional rule should be that no hit from the primary weapon should break off more than half of the target asteroid (i.e. splitting in half is the ceiling of primary weapon power). Needs UI element added.
 - [ ] **Secondary Weapon Upgrades** — Increase missile power. Start on level 1 (which is the same as now). Each level chips off a larger number of size=1 asteroid fragments.
 - [ ] **Ore magnet upgrades** - With each increased level, the magnet pulls in ore faster and from further distances. Significantly "nerf" the starting magnet strength so it starts off very weak and needs to be upgraded to pull in ore from further away.
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex; concave craters approximated by hull; track per-vertex damage; move vertices inward and recompute hull

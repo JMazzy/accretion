@@ -370,3 +370,17 @@ pub const ASTEROID_INITIAL_VELOCITY_RANGE: f32 = 15.0;
 
 /// Initial angular velocity range (rad/s) assigned to each spawned asteroid.
 pub const ASTEROID_INITIAL_ANGVEL_RANGE: f32 = 5.0;
+
+// ── Primary Weapon Upgrades ───────────────────────────────────────────────────
+
+/// Maximum level the primary weapon can be upgraded to (1-indexed display; 0 = base).
+///
+/// At level N the weapon fully destroys asteroids of size ≤ N.
+/// Sizes above N are always chipped (1 vertex removed, 1-unit fragment spawned).
+pub const PRIMARY_WEAPON_MAX_LEVEL: u32 = 10;
+
+/// Ore cost for the next upgrade = `WEAPON_UPGRADE_BASE_COST * next_level`.
+///
+/// Level 1 costs 5, Level 2 costs 10, …, Level 10 costs 50.
+/// Total to max-level: 5 + 10 + … + 50 = 275 ore.
+pub const WEAPON_UPGRADE_BASE_COST: u32 = 5;

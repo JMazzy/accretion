@@ -89,6 +89,7 @@ fn main() {
     // ExternalForce to produce runaway acceleration at the same numeric values.
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
     .insert_resource(player::PlayerFireCooldown::default())
+    .insert_resource(player::PrimaryWeaponLevel::default())
     // Global startup: config + camera + physics settings (needed by both menu and gameplay).
     .add_systems(
         Startup,
@@ -141,7 +142,11 @@ fn main() {
                     exited: GameState::ScenarioSelect,
                     entered: GameState::Playing,
                 },
-                (spawn_initial_world, player::spawn_player, menu::resume_physics),
+                (
+                    spawn_initial_world,
+                    player::spawn_player,
+                    menu::resume_physics,
+                ),
             )
             // GameOver → Playing: re-spawn the player ship with fresh lives.  Lives are reset
             // by game_over_button_system before this transition fires.

@@ -39,7 +39,7 @@ pub use rendering::{
 };
 pub use state::{
     AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
-    PlayerHealth, PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad,
+    PlayerHealth, PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

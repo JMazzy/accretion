@@ -8,7 +8,13 @@
 //! | 0–1 | Immediate destroy |
 //! | 2–3 | Scatter into N unit fragments (each mass 1 = triangle) |
 //! | 4–8 | Split roughly in half along impact axis |
-//! | ≥ 9 | Chip: remove closest vertex, spawn one unit fragment |
+//! | ≥ 9 | Chip: remove closest vertex, spawn a chip fragment |
+//!
+//! ## Chip fragment size (primary weapon only)
+//!
+//! A level-L primary weapon can chip off a fragment of size 1 through L on each
+//! hit.  The actual size is chosen uniformly at random in `[1, min(L, floor(n/2))]`
+//! so a chip can never remove more than half the target's mass.
 //!
 //! ## Mass → shape rules for split/chip fragments
 //!
@@ -24,7 +30,7 @@
 
 use super::state::{
     AimDirection, AimIdleTimer, Missile, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
-    PlayerHealth, PlayerLives, PlayerScore, PreferredGamepad, Projectile,
+    PlayerHealth, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel, Projectile,
 };
 use crate::asteroid::{
     canonical_vertices_for_mass, compute_convex_hull_from_points, rescale_vertices_to_area,
@@ -397,14 +403,18 @@ pub fn missile_asteroid_hit_system(
                             let diff = a - pos;
                             let t = (diff.x * edge.y - diff.y * edge.x) / denom;
                             let s = (diff.x * dir.y - diff.y * dir.x) / denom;
-                            if t > 0.0 && s >= 0.0 && s <= 1.0 && t < best_t {
+                            if t > 0.0 && (0.0..=1.0).contains(&s) && t < best_t {
                                 best_t = t;
                             }
                         }
                         if best_t < f32::MAX {
                             pos + dir * best_t
                         } else {
-                            let outer = vertices.0.iter().map(|v| v.length()).fold(0.0_f32, f32::max);
+                            let outer = vertices
+                                .0
+                                .iter()
+                                .map(|v| v.length())
+                                .fold(0.0_f32, f32::max);
                             pos + dir * outer
                         }
                     } else {
@@ -638,6 +648,7 @@ pub fn player_respawn_system(
 /// Matches `CollisionEvent::Started` pairs; ignores `Stopped`.
 /// Uses two `HashSet`s to ensure each projectile and each asteroid is processed at
 /// most once per frame even if they appear in multiple cascade events.
+#[allow(clippy::too_many_arguments)]
 pub fn projectile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
@@ -646,6 +657,7 @@ pub fn projectile_asteroid_hit_system(
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
     config: Res<PhysicsConfig>,
+    weapon_level: Res<PrimaryWeaponLevel>,
 ) {
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
     let mut processed_projectiles: std::collections::HashSet<Entity> = Default::default();
@@ -712,213 +724,140 @@ pub fn projectile_asteroid_hit_system(
         // Unified impact direction for particle effects (projectile → asteroid).
         let impact_dir = (pos - proj_pos).normalize_or_zero();
 
-        match n {
-            // ── Destroy ───────────────────────────────────────────────────────
-            0 | 1 => {
-                commands.entity(asteroid_entity).despawn();
-                stats.destroyed_total += 1;
-                score.destroyed += 1;
-                score.points += 5 * multiplier; // bonus for full destroy
-                spawn_ore_drop(&mut commands, pos, vel);
-                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
-                spawn_debris_particles(&mut commands, pos, vel, 1);
+        let destroy_threshold = weapon_level.max_destroy_size();
+
+        // ── Level-gated full destroy ──────────────────────────────────────────
+        // The primary weapon fully eliminates asteroids up to `max_destroy_size`.
+        // Anything larger is always chipped (1 vertex removed, 1-unit fragment
+        // ejected) regardless of level, so no hit ever removes more than half the
+        // target.
+        if n <= destroy_threshold {
+            commands.entity(asteroid_entity).despawn();
+            stats.destroyed_total += 1;
+            score.destroyed += 1;
+            score.points += 5 * multiplier; // bonus for full destroy
+                                            // Scatter one ore drop per mass unit so larger destroys yield more ore.
+            let drop_count = n.max(1);
+            for i in 0..drop_count {
+                let angle = std::f32::consts::TAU * (i as f32 / drop_count as f32);
+                let offset = Vec2::new(angle.cos(), angle.sin()) * 6.0;
+                spawn_ore_drop(&mut commands, pos + offset, vel);
             }
-
-            // ── Scatter into unit fragments ───────────────────────────────────
-            2..=3 => {
-                commands.entity(asteroid_entity).despawn();
-                stats.split_total += 1;
-                let mut rng = rand::thread_rng();
-                for i in 0..n {
-                    let angle = std::f32::consts::TAU * (i as f32 / n as f32);
-                    let scatter_offset = Vec2::new(angle.cos(), angle.sin()) * 8.0;
-                    let scatter_vel =
-                        vel + Vec2::new(rng.gen_range(-30.0..30.0), rng.gen_range(-30.0..30.0));
-                    spawn_unit_fragment(
-                        &mut commands,
-                        pos + scatter_offset,
-                        scatter_vel,
-                        ang_vel,
-                        config.asteroid_density,
-                    );
-                }
-                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
-                spawn_debris_particles(&mut commands, pos, vel, n);
-            }
-
-            // ── Split in half along impact axis ───────────────────────────────
-            4..=8 => {
-                let split_axis = impact_dir;
-                let (front_world, back_world) = split_convex_polygon(&world_verts, pos, split_axis);
-
-                commands.entity(asteroid_entity).despawn();
-                stats.split_total += 1;
-
-                let size_a = n / 2;
-                let size_b = n - size_a;
-                let mut rng = rand::thread_rng();
-
-                for (half_verts, half_size) in [(&front_world, size_a), (&back_world, size_b)] {
-                    if half_verts.len() < 3 {
-                        continue;
-                    }
-                    let hull = match compute_convex_hull_from_points(half_verts) {
-                        Some(h) if h.len() >= 3 => h,
-                        _ => continue,
-                    };
-                    let centroid: Vec2 = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
-                    let final_mass = half_size.max(1);
-                    // Use the actual split hull — no canonical substitution.
-                    // Visual identity (number of sides, shape) is preserved;
-                    // density rescaling ensures the size is correct for the mass.
-                    let local: Vec<Vec2> = hull.iter().map(|v| *v - centroid).collect();
-                    // Scale to density-consistent area so split fragments look
-                    // proportional to their mass regardless of pre-split visual size.
-                    let target_area = final_mass as f32 / config.asteroid_density;
-                    let local = rescale_vertices_to_area(&local, target_area);
-                    let grey = 0.4 + rand::random::<f32>() * 0.3;
-                    let push_sign = if (centroid - pos).dot(impact_dir) >= 0.0 {
-                        1.0
-                    } else {
-                        -1.0
-                    };
-                    let split_vel = vel
-                        + impact_dir * push_sign * 25.0
-                        + Vec2::new(rng.gen_range(-10.0..10.0), rng.gen_range(-10.0..10.0));
-                    let new_ent = spawn_asteroid_with_vertices(
-                        &mut commands,
-                        centroid,
-                        &local,
-                        Color::srgb(grey, grey, grey),
-                        final_mass,
-                    );
-                    commands.entity(new_ent).insert(Velocity {
-                        linvel: split_vel,
-                        angvel: ang_vel,
-                    });
-                }
-                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
-            }
-
+            spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
+            spawn_debris_particles(&mut commands, pos, vel, n.max(1));
+        } else {
             // ── Chip: cut a flat facet at the impact vertex ───────────────────
-            _ => {
-                spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
-                let closest_idx = world_verts
-                    .iter()
-                    .enumerate()
-                    .min_by(|(_, a), (_, b)| {
-                        a.distance(proj_pos)
-                            .partial_cmp(&b.distance(proj_pos))
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
+            spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
+            let closest_idx = world_verts
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| {
+                    a.distance(proj_pos)
+                        .partial_cmp(&b.distance(proj_pos))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i)
+                .unwrap_or(0);
 
-                let chip_pos = world_verts[closest_idx];
-                let chip_dir = (chip_pos - pos).normalize_or_zero();
-                let mut rng = rand::thread_rng();
-                let chip_vel = vel
-                    + chip_dir * 40.0
-                    + Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
-                spawn_unit_fragment(
-                    &mut commands,
-                    chip_pos,
-                    chip_vel,
-                    0.0,
-                    config.asteroid_density,
-                );
+            let chip_pos = world_verts[closest_idx];
+            let chip_dir = (chip_pos - pos).normalize_or_zero();
+            let mut rng = rand::thread_rng();
 
-                // Cut a flat facet at the impact vertex: replace the tip with two
-                // cut points ~30% along each adjacent edge.
-                // Triangle hit at a corner → quadrilateral; octagon → 9-gon with
-                // a flat face; etc.
-                let n_verts = world_verts.len();
-                let prev_idx = (closest_idx + n_verts - 1) % n_verts;
-                let next_idx = (closest_idx + 1) % n_verts;
-                let tip = world_verts[closest_idx];
-                let cut_a = tip + (world_verts[prev_idx] - tip) * 0.30;
-                let cut_b = tip + (world_verts[next_idx] - tip) * 0.30;
-                let mut new_world_verts: Vec<Vec2> = Vec::with_capacity(n_verts + 1);
-                for (i, &v) in world_verts.iter().enumerate() {
-                    if i == closest_idx {
-                        new_world_verts.push(cut_a);
-                        new_world_verts.push(cut_b);
-                    } else {
-                        new_world_verts.push(v);
-                    }
+            // Chip size scales with weapon level: level L can chip 1..=min(L, n/2).
+            let max_chip_size = weapon_level.display_level().min(n / 2).max(1);
+            let chip_size = if max_chip_size <= 1 {
+                1u32
+            } else {
+                rng.gen_range(1u32..=max_chip_size)
+            };
+
+            let chip_vel = vel
+                + chip_dir * 40.0
+                + Vec2::new(rng.gen_range(-15.0..15.0), rng.gen_range(-15.0..15.0));
+            spawn_fragment_of_mass(
+                &mut commands,
+                chip_pos,
+                chip_vel,
+                0.0,
+                config.asteroid_density,
+                chip_size,
+            );
+
+            let n_verts = world_verts.len();
+            let prev_idx = (closest_idx + n_verts - 1) % n_verts;
+            let next_idx = (closest_idx + 1) % n_verts;
+            let tip = world_verts[closest_idx];
+            let cut_a = tip + (world_verts[prev_idx] - tip) * 0.30;
+            let cut_b = tip + (world_verts[next_idx] - tip) * 0.30;
+            let mut new_world_verts: Vec<Vec2> = Vec::with_capacity(n_verts + 1);
+            for (i, &v) in world_verts.iter().enumerate() {
+                if i == closest_idx {
+                    new_world_verts.push(cut_a);
+                    new_world_verts.push(cut_b);
+                } else {
+                    new_world_verts.push(v);
                 }
-
-                let hull_world =
-                    compute_convex_hull_from_points(&new_world_verts).unwrap_or(new_world_verts);
-                let hull_centroid: Vec2 =
-                    hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
-                let new_mass = (n - 1).max(1);
-                let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - hull_centroid).collect();
-                let target_area = new_mass as f32 / config.asteroid_density;
-                let new_local = rescale_vertices_to_area(&new_local, target_area);
-
-                commands.entity(asteroid_entity).despawn();
-
-                let grey = 0.4 + rand::random::<f32>() * 0.3;
-                let new_ent = spawn_asteroid_with_vertices(
-                    &mut commands,
-                    hull_centroid,
-                    &new_local,
-                    Color::srgb(grey, grey, grey),
-                    new_mass,
-                );
-                commands.entity(new_ent).insert(Velocity {
-                    linvel: vel,
-                    angvel: ang_vel,
-                });
             }
+
+            let hull_world =
+                compute_convex_hull_from_points(&new_world_verts).unwrap_or(new_world_verts);
+            let hull_centroid: Vec2 =
+                hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
+            let new_mass = (n - chip_size).max(1);
+            let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - hull_centroid).collect();
+            let target_area = new_mass as f32 / config.asteroid_density;
+            let new_local = rescale_vertices_to_area(&new_local, target_area);
+
+            commands.entity(asteroid_entity).despawn();
+
+            let grey = 0.4 + rand::random::<f32>() * 0.3;
+            let new_ent = spawn_asteroid_with_vertices(
+                &mut commands,
+                hull_centroid,
+                &new_local,
+                Color::srgb(grey, grey, grey),
+                new_mass,
+            );
+            commands.entity(new_ent).insert(Velocity {
+                linvel: vel,
+                angvel: ang_vel,
+            });
         }
     }
 }
 
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 
-/// Split a convex polygon (world-space vertices) with a plane through `origin`
-/// whose normal is `axis`.
-///
-/// Returns `(front, back)` where:
-/// - `front` contains vertices where `dot(v − origin, axis) ≥ 0`
-/// - `back` contains the rest
-///
-/// Both halves include the two edge-intersection points so each remains a closed polygon.
-fn split_convex_polygon(verts: &[Vec2], origin: Vec2, axis: Vec2) -> (Vec<Vec2>, Vec<Vec2>) {
-    let mut front: Vec<Vec2> = Vec::new();
-    let mut back: Vec<Vec2> = Vec::new();
-    let n = verts.len();
-
-    for i in 0..n {
-        let a = verts[i];
-        let b = verts[(i + 1) % n];
-        let da = (a - origin).dot(axis);
-        let db = (b - origin).dot(axis);
-
-        if da >= 0.0 {
-            front.push(a);
-        } else {
-            back.push(a);
-        }
-
-        if (da > 0.0 && db < 0.0) || (da < 0.0 && db > 0.0) {
-            let t = da / (da - db);
-            let intersect = a + (b - a) * t;
-            front.push(intersect);
-            back.push(intersect);
-        }
-    }
-
-    (front, back)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // ── split_convex_polygon ──────────────────────────────────────────────────
+
+    /// Split a convex polygon (world-space vertices) with a plane through `origin`
+    /// whose normal is `axis`.
+    fn split_convex_polygon(verts: &[Vec2], origin: Vec2, axis: Vec2) -> (Vec<Vec2>, Vec<Vec2>) {
+        let mut front: Vec<Vec2> = Vec::new();
+        let mut back: Vec<Vec2> = Vec::new();
+        let n = verts.len();
+        for i in 0..n {
+            let a = verts[i];
+            let b = verts[(i + 1) % n];
+            let da = (a - origin).dot(axis);
+            let db = (b - origin).dot(axis);
+            if da >= 0.0 {
+                front.push(a);
+            } else {
+                back.push(a);
+            }
+            if (da > 0.0 && db < 0.0) || (da < 0.0 && db > 0.0) {
+                let t = da / (da - db);
+                front.push(a + (b - a) * t);
+                back.push(a + (b - a) * t);
+            }
+        }
+        (front, back)
+    }
 
     #[test]
     fn split_square_along_vertical_axis_both_halves_have_correct_signs() {
@@ -1429,9 +1368,26 @@ fn spawn_unit_fragment(
     angvel: f32,
     density: f32,
 ) {
+    spawn_fragment_of_mass(commands, pos, velocity, angvel, density, 1);
+}
+
+/// Spawn an asteroid fragment of arbitrary `mass` at `pos` with the given velocity.
+///
+/// Fragment shape is determined by [`canonical_vertices_for_mass`] and scaled to
+/// the correct area for the requested mass.  Used by the chip path when a higher
+/// weapon level chips off more than one mass unit.
+fn spawn_fragment_of_mass(
+    commands: &mut Commands,
+    pos: Vec2,
+    velocity: Vec2,
+    angvel: f32,
+    density: f32,
+    mass: u32,
+) {
     let grey = 0.4 + rand::random::<f32>() * 0.4;
-    let verts = rescale_vertices_to_area(&canonical_vertices_for_mass(1), 1.0 / density);
-    let ent = spawn_asteroid_with_vertices(commands, pos, &verts, Color::srgb(grey, grey, grey), 1);
+    let verts = rescale_vertices_to_area(&canonical_vertices_for_mass(mass), mass as f32 / density);
+    let ent =
+        spawn_asteroid_with_vertices(commands, pos, &verts, Color::srgb(grey, grey, grey), mass);
     commands.entity(ent).insert(Velocity {
         linvel: velocity,
         angvel,

@@ -6,7 +6,10 @@
 //! - [`super::combat`] — projectile firing + damage
 //! - [`super::rendering`] — gizmo drawing + camera
 
-use crate::constants::{INVINCIBILITY_DURATION, MISSILE_AMMO_MAX, PLAYER_LIVES, PLAYER_MAX_HP};
+use crate::constants::{
+    INVINCIBILITY_DURATION, MISSILE_AMMO_MAX, PLAYER_LIVES, PLAYER_MAX_HP,
+    PRIMARY_WEAPON_MAX_LEVEL, WEAPON_UPGRADE_BASE_COST,
+};
 use bevy::prelude::*;
 
 // ── Components ─────────────────────────────────────────────────────────────────
@@ -204,6 +207,77 @@ impl PlayerLives {
     pub fn reset(&mut self) {
         self.remaining = PLAYER_LIVES;
         self.respawn_timer = None;
+    }
+}
+
+// ── Primary Weapon Upgrade ─────────────────────────────────────────────────────
+
+/// Tracks the player's primary weapon upgrade level.
+///
+/// At level 0 (display: Level 1) the weapon fully destroys asteroids of size ≤ 1
+/// and chips a single vertex off any larger target.  Each additional upgrade level
+/// raises the "full-destroy threshold" by 1.  A level-10 weapon destroys size ≤ 10.
+///
+/// The "no more than half" design constraint is enforced implicitly: since the max
+/// level is 10, full-destroy only applies to asteroids small enough to disappear
+/// without leaving a sizable remnant.  Anything above the threshold always takes
+/// exactly the chip path (1-unit fragment removed, asteroid shrinks by 1).
+#[derive(Resource, Debug, Clone, Default)]
+pub struct PrimaryWeaponLevel {
+    /// Internal 0-indexed level (0 = Level 1 / base, 9 = Level 10 / max).
+    pub level: u32,
+}
+
+impl PrimaryWeaponLevel {
+    /// Maximum internal level value (inclusive).
+    pub const MAX: u32 = PRIMARY_WEAPON_MAX_LEVEL - 1;
+
+    /// Human-readable display level (1-indexed).
+    #[inline]
+    pub fn display_level(&self) -> u32 {
+        self.level + 1
+    }
+
+    /// Largest asteroid size that this weapon fully destroys in one hit.
+    #[inline]
+    pub fn max_destroy_size(&self) -> u32 {
+        self.level + 1
+    }
+
+    /// Whether the weapon can be upgraded further.
+    #[inline]
+    pub fn is_maxed(&self) -> bool {
+        self.level >= Self::MAX
+    }
+
+    /// Ore cost to buy the next upgrade level.
+    /// Returns `None` when already at max level.
+    #[inline]
+    pub fn cost_for_next_level(&self) -> Option<u32> {
+        if self.is_maxed() {
+            None
+        } else {
+            // next_level (1-indexed) × base cost: 5, 10, 15, …, 50
+            Some(WEAPON_UPGRADE_BASE_COST * (self.level + 2))
+        }
+    }
+
+    /// Returns `true` when the player has enough ore to afford the next upgrade.
+    #[inline]
+    pub fn can_afford_next(&self, ore: u32) -> bool {
+        self.cost_for_next_level().is_some_and(|cost| ore >= cost)
+    }
+
+    /// Spend ore and increment the level.  Returns the amount spent, or `None`
+    /// if maxed-out or the player cannot afford it.
+    pub fn try_upgrade(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.level += 1;
+        Some(cost)
     }
 }
 

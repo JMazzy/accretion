@@ -23,11 +23,18 @@
 //! | `pause_menu_button_system`| `Update / in Paused`          | Handle Resume / Debug / Quit clicks|
 //! | `toggle_pause_system`     | `Update / in Playing`         | ESC → transition to Paused         |
 //! | `pause_resume_input_system`| `Update / in Paused`         | ESC → transition back to Playing   |
+//! | `toggle_ore_shop_system`  | `Update / in Playing`         | Tab → transition to OreShop        |
+//! | `ore_shop_button_system`  | `Update / in OreShop`         | Handle ore shop button presses     |
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::RapierConfiguration;
 
-use crate::player::{PlayerLives, PlayerScore};
+use crate::config::PhysicsConfig;
+use crate::mining::PlayerOre;
+use crate::player::{
+    state::{MissileAmmo, PlayerHealth},
+    Player, PlayerLives, PlayerScore, PrimaryWeaponLevel,
+};
 
 // ── Game state ────────────────────────────────────────────────────────────────
 
@@ -47,11 +54,25 @@ pub enum GameState {
     Playing,
     /// Simulation frozen; in-game pause overlay is visible.
     Paused,
+    /// Ore shop open; simulation frozen, consumable upgrades available.
+    OreShop,
     /// Player has exhausted all lives; game-over overlay shown.
     GameOver,
 }
 
 // ── Scenario selection ────────────────────────────────────────────────────────
+
+/// Tracks which state to return to when the ore shop is closed.
+///
+/// The ore shop can be opened from `Playing` (Tab key) or from `Paused`
+/// (button press).  This resource lets the close handler return to the
+/// correct state without hard-coding the originating state.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShopReturnState {
+    #[default]
+    Playing,
+    Paused,
+}
 
 /// Which scenario the player has chosen to play.
 ///
@@ -133,6 +154,40 @@ pub struct PauseDebugButton;
 #[derive(Component)]
 pub struct PauseMainMenuButton;
 
+// ── Ore shop component markers ────────────────────────────────────────────────
+
+/// Root node of the ore shop overlay; despawned when the shop is closed.
+#[derive(Component)]
+pub struct OreShopRoot;
+
+/// Tags the "BUY HEALTH" button inside the ore shop.
+#[derive(Component)]
+pub struct OreShopHealButton;
+
+/// Tags the "BUY MISSILE" button inside the ore shop.
+#[derive(Component)]
+pub struct OreShopMissileButton;
+
+/// Tags the "CLOSE" button inside the ore shop.
+#[derive(Component)]
+pub struct OreShopCloseButton;
+
+/// Tags the ore count text in the ore shop.
+#[derive(Component)]
+pub struct OreShopOreText;
+
+/// Tags the health row status text.
+#[derive(Component)]
+pub struct OreShopHealText;
+
+/// Tags the missile row status text.
+#[derive(Component)]
+pub struct OreShopMissileText;
+
+/// Tags the "BUY UPGRADE" button inside the unified ore shop.
+#[derive(Component)]
+pub struct OreShopUpgradeButton;
+
 // ── Game-Over component markers ──────────────────────────────────────────────
 
 /// Root node of the game-over overlay; despawned on `OnExit(GameOver)`.
@@ -156,6 +211,7 @@ impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<GameState>()
             .init_resource::<SelectedScenario>()
+            .init_resource::<ShopReturnState>()
             // ── Main menu ─────────────────────────────────────────────────────
             .add_systems(OnEnter(GameState::MainMenu), setup_main_menu)
             .add_systems(OnExit(GameState::MainMenu), cleanup_main_menu)
@@ -175,10 +231,7 @@ impl Plugin for MainMenuPlugin {
                 OnEnter(GameState::Paused),
                 (setup_pause_menu, pause_physics),
             )
-            .add_systems(
-                OnExit(GameState::Paused),
-                cleanup_pause_menu,
-            )
+            .add_systems(OnExit(GameState::Paused), cleanup_pause_menu)
             // resume_physics only on Paused → Playing (not Paused → MainMenu).
             // Keeping the pipeline disabled when returning to the menu prevents
             // parry2d BVH "key not present" panics that occur when step_simulation
@@ -193,12 +246,32 @@ impl Plugin for MainMenuPlugin {
             )
             .add_systems(
                 Update,
-                (pause_menu_button_system, pause_resume_input_system)
+                (
+                    pause_menu_button_system,
+                    pause_resume_input_system,
+                    toggle_ore_shop_system,
+                )
                     .run_if(in_state(GameState::Paused)),
             )
             .add_systems(
                 Update,
-                toggle_pause_system.run_if(in_state(GameState::Playing)),
+                (toggle_pause_system, toggle_ore_shop_system).run_if(in_state(GameState::Playing)),
+            )
+            // ── Ore shop ──────────────────────────────────────────────────────
+            .add_systems(OnEnter(GameState::OreShop), (setup_ore_shop, pause_physics))
+            .add_systems(OnExit(GameState::OreShop), cleanup_ore_shop)
+            // Resume physics only when returning to Playing, not when returning
+            // to Paused (physics were already paused in that case).
+            .add_systems(
+                OnTransition {
+                    exited: GameState::OreShop,
+                    entered: GameState::Playing,
+                },
+                resume_physics,
+            )
+            .add_systems(
+                Update,
+                ore_shop_button_system.run_if(in_state(GameState::OreShop)),
             )
             // ── Game Over ─────────────────────────────────────────────────────
             .add_systems(OnEnter(GameState::GameOver), setup_game_over)
@@ -944,6 +1017,23 @@ pub fn pause_resume_input_system(
     }
 }
 
+/// Tab while in `Playing` → open the ore shop (freeze simulation).
+pub fn toggle_ore_shop_system(
+    keys: Res<ButtonInput<KeyCode>>,
+    current_state: Res<State<GameState>>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut return_state: ResMut<ShopReturnState>,
+) {
+    if keys.just_pressed(KeyCode::Tab) {
+        *return_state = if *current_state == GameState::Paused {
+            ShopReturnState::Paused
+        } else {
+            ShopReturnState::Playing
+        };
+        next_state.set(GameState::OreShop);
+    }
+}
+
 // ── Pause menu colour helpers ─────────────────────────────────────────────────
 
 fn pause_resume_bg() -> Color {
@@ -963,6 +1053,39 @@ fn pause_debug_border() -> Color {
 }
 fn pause_debug_text() -> Color {
     Color::srgb(0.65, 0.80, 1.0)
+}
+fn shop_buy_bg() -> Color {
+    Color::srgb(0.06, 0.22, 0.06)
+}
+fn shop_buy_border() -> Color {
+    Color::srgb(0.18, 0.56, 0.18)
+}
+fn shop_buy_text() -> Color {
+    Color::srgb(0.55, 1.0, 0.55)
+}
+fn shop_close_bg() -> Color {
+    Color::srgb(0.14, 0.14, 0.20)
+}
+fn shop_close_border() -> Color {
+    Color::srgb(0.30, 0.30, 0.46)
+}
+fn shop_close_text() -> Color {
+    Color::srgb(0.65, 0.65, 0.80)
+}
+fn ore_shop_btn_border() -> Color {
+    Color::srgb(0.62, 0.44, 0.12)
+}
+fn ore_shop_btn_text() -> Color {
+    Color::srgb(1.0, 0.80, 0.30)
+}
+fn ore_shop_item_bg() -> Color {
+    Color::srgb(0.08, 0.10, 0.06)
+}
+fn ore_shop_item_border() -> Color {
+    Color::srgb(0.30, 0.40, 0.18)
+}
+fn ore_shop_item_text() -> Color {
+    Color::srgb(0.75, 0.90, 0.55)
 }
 
 // ── OnEnter(Paused): spawn pause overlay ─────────────────────────────────────
@@ -1081,6 +1204,8 @@ pub fn setup_pause_menu(mut commands: Commands) {
                         ));
                     });
 
+                    // Upgrades / Shop button removed — use Tab to open Ore Shop directly.
+
                     // Main Menu button
                     card.spawn((
                         Button,
@@ -1111,7 +1236,7 @@ pub fn setup_pause_menu(mut commands: Commands) {
 
                     // Hint text
                     card.spawn((
-                        Text::new("Press ESC to resume"),
+                        Text::new("ESC → resume  ·  Tab → ore shop"),
                         TextFont {
                             font_size: 12.0,
                             ..default()
@@ -1133,9 +1258,502 @@ fn pause_spacer(parent: &mut ChildSpawnerCommands<'_>, px: f32) {
 // ── OnExit(Paused): despawn pause overlay ────────────────────────────────────
 
 /// Recursively despawn all pause-menu entities.
-pub fn cleanup_pause_menu(mut commands: Commands, query: Query<Entity, With<PauseMenuRoot>>) {
+pub fn cleanup_pause_menu(mut commands: Commands, pause_query: Query<Entity, With<PauseMenuRoot>>) {
+    for entity in pause_query.iter() {
+        commands.entity(entity).despawn();
+    }
+}
+
+// ── Ore shop ──────────────────────────────────────────────────────────────────
+
+/// Spawn the ore shop UI overlay.
+///
+/// Called by [`setup_ore_shop`] (the `OnEnter(OreShop)` system) and by the
+/// button system after a purchase so the labels refresh in place.
+#[allow(clippy::too_many_arguments)]
+fn spawn_ore_shop_overlay(
+    commands: &mut Commands,
+    ore: u32,
+    hp: f32,
+    max_hp: f32,
+    heal_amount: f32,
+    ammo: u32,
+    ammo_max: u32,
+    weapon_level: &PrimaryWeaponLevel,
+) {
+    let ore_text = format!("Ore available: {ore}");
+
+    let can_heal = ore > 0 && hp < max_hp;
+    let heal_btn_bg = if can_heal {
+        ore_shop_item_bg()
+    } else {
+        Color::srgb(0.10, 0.10, 0.10)
+    };
+    let heal_btn_border = if can_heal {
+        ore_shop_item_border()
+    } else {
+        Color::srgb(0.22, 0.22, 0.22)
+    };
+    let heal_btn_text_color = if can_heal {
+        ore_shop_item_text()
+    } else {
+        Color::srgb(0.38, 0.38, 0.38)
+    };
+    let heal_label = format!(
+        "HEAL  (HP: {:.0} / {:.0})  —  1 ore → +{:.0} HP",
+        hp, max_hp, heal_amount
+    );
+
+    let can_missile = ore > 0 && ammo < ammo_max;
+    let missile_btn_bg = if can_missile {
+        ore_shop_item_bg()
+    } else {
+        Color::srgb(0.10, 0.10, 0.10)
+    };
+    let missile_btn_border = if can_missile {
+        ore_shop_item_border()
+    } else {
+        Color::srgb(0.22, 0.22, 0.22)
+    };
+    let missile_btn_text_color = if can_missile {
+        ore_shop_item_text()
+    } else {
+        Color::srgb(0.38, 0.38, 0.38)
+    };
+    let missile_label = format!("MISSILE  ({ammo} / {ammo_max})  —  1 ore → +1 missile",);
+
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                position_type: PositionType::Absolute,
+                left: Val::Px(0.0),
+                top: Val::Px(0.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.70)),
+            ZIndex(300),
+            OreShopRoot,
+        ))
+        .with_children(|overlay| {
+            overlay
+                .spawn((
+                    Node {
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::all(Val::Px(36.0)),
+                        row_gap: Val::Px(16.0),
+                        border: UiRect::all(Val::Px(2.0)),
+                        min_width: Val::Px(400.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.05, 0.05, 0.03)),
+                    BorderColor::all(ore_shop_btn_border()),
+                ))
+                .with_children(|card| {
+                    // Title
+                    card.spawn((
+                        Text::new("⬡  ORE SHOP"),
+                        TextFont {
+                            font_size: 32.0,
+                            ..default()
+                        },
+                        TextColor(ore_shop_btn_text()),
+                    ));
+
+                    card.spawn(Node {
+                        height: Val::Px(4.0),
+                        ..default()
+                    });
+
+                    // Ore counter
+                    card.spawn((
+                        Text::new(ore_text),
+                        TextFont {
+                            font_size: 16.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.25, 0.95, 0.50)),
+                        OreShopOreText,
+                    ));
+
+                    card.spawn(Node {
+                        height: Val::Px(4.0),
+                        ..default()
+                    });
+
+                    // ── Heal button ───────────────────────────────────────────
+                    card.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(340.0),
+                            height: Val::Px(52.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(heal_btn_bg),
+                        BorderColor::all(heal_btn_border),
+                        OreShopHealButton,
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new(heal_label),
+                            TextFont {
+                                font_size: 15.0,
+                                ..default()
+                            },
+                            TextColor(heal_btn_text_color),
+                            OreShopHealText,
+                        ));
+                    });
+
+                    // ── Missile button ────────────────────────────────────────
+                    card.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(340.0),
+                            height: Val::Px(52.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(missile_btn_bg),
+                        BorderColor::all(missile_btn_border),
+                        OreShopMissileButton,
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new(missile_label),
+                            TextFont {
+                                font_size: 15.0,
+                                ..default()
+                            },
+                            TextColor(missile_btn_text_color),
+                            OreShopMissileText,
+                        ));
+                    });
+
+                    card.spawn(Node {
+                        height: Val::Px(8.0),
+                        ..default()
+                    });
+
+                    // ── Weapon upgrade ────────────────────────────────────────
+                    {
+                        let can_upgrade =
+                            !weapon_level.is_maxed() && weapon_level.can_afford_next(ore);
+                        let upg_btn_bg = if can_upgrade {
+                            shop_buy_bg()
+                        } else {
+                            Color::srgb(0.14, 0.14, 0.14)
+                        };
+                        let upg_btn_border = if can_upgrade {
+                            shop_buy_border()
+                        } else {
+                            Color::srgb(0.28, 0.28, 0.28)
+                        };
+                        let upg_btn_text_color = if can_upgrade {
+                            shop_buy_text()
+                        } else {
+                            Color::srgb(0.40, 0.40, 0.40)
+                        };
+                        let upg_label = if weapon_level.is_maxed() {
+                            "— MAX LEVEL —".to_string()
+                        } else {
+                            let cost = weapon_level.cost_for_next_level().unwrap_or(0);
+                            format!("UPGRADE WEAPON  ({cost} ore)")
+                        };
+                        let cost_status = if weapon_level.is_maxed() {
+                            "MAX LEVEL REACHED".to_string()
+                        } else {
+                            let cost = weapon_level.cost_for_next_level().unwrap_or(0);
+                            if can_upgrade {
+                                format!("Upgrade costs: {cost} ore")
+                            } else {
+                                format!("Need {cost} ore to upgrade")
+                            }
+                        };
+                        let level_text = format!(
+                            "Primary Weapon: Level {} / {}",
+                            weapon_level.display_level(),
+                            crate::constants::PRIMARY_WEAPON_MAX_LEVEL
+                        );
+                        let range_text = if weapon_level.is_maxed() {
+                            format!("Destroys up to size {}", weapon_level.max_destroy_size())
+                        } else {
+                            format!(
+                                "Destroys up to size {} → {}",
+                                weapon_level.max_destroy_size(),
+                                weapon_level.max_destroy_size() + 1
+                            )
+                        };
+
+                        card.spawn((
+                            Text::new("── WEAPON ──"),
+                            TextFont {
+                                font_size: 13.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.45, 0.45, 0.45)),
+                        ));
+                        card.spawn((
+                            Text::new(level_text),
+                            TextFont {
+                                font_size: 15.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.85, 0.85, 0.85)),
+                        ));
+                        card.spawn((
+                            Text::new(range_text),
+                            TextFont {
+                                font_size: 12.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.55, 0.65, 0.60)),
+                        ));
+                        card.spawn((
+                            Text::new(cost_status),
+                            TextFont {
+                                font_size: 13.0,
+                                ..default()
+                            },
+                            TextColor(if weapon_level.is_maxed() {
+                                Color::srgb(0.90, 0.80, 0.30)
+                            } else if can_upgrade {
+                                Color::srgb(0.75, 0.90, 0.75)
+                            } else {
+                                Color::srgb(0.75, 0.40, 0.40)
+                            }),
+                        ));
+                        card.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(340.0),
+                                height: Val::Px(48.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                border: UiRect::all(Val::Px(2.0)),
+                                ..default()
+                            },
+                            BackgroundColor(upg_btn_bg),
+                            BorderColor::all(upg_btn_border),
+                            OreShopUpgradeButton,
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new(upg_label),
+                                TextFont {
+                                    font_size: 15.0,
+                                    ..default()
+                                },
+                                TextColor(upg_btn_text_color),
+                            ));
+                        });
+                    }
+
+                    card.spawn(Node {
+                        height: Val::Px(4.0),
+                        ..default()
+                    });
+
+                    // ── Close button ──────────────────────────────────────────
+                    card.spawn((
+                        Button,
+                        Node {
+                            width: Val::Px(220.0),
+                            height: Val::Px(44.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            border: UiRect::all(Val::Px(2.0)),
+                            ..default()
+                        },
+                        BackgroundColor(shop_close_bg()),
+                        BorderColor::all(shop_close_border()),
+                        OreShopCloseButton,
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new("CLOSE"),
+                            TextFont {
+                                font_size: 16.0,
+                                ..default()
+                            },
+                            TextColor(shop_close_text()),
+                        ));
+                    });
+
+                    card.spawn((
+                        Text::new("Press Tab or ESC to close"),
+                        TextFont {
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(hint_color()),
+                    ));
+                });
+        });
+}
+
+/// Spawn the ore shop overlay when entering [`GameState::OreShop`].
+pub fn setup_ore_shop(
+    mut commands: Commands,
+    ore: Res<PlayerOre>,
+    q_health: Query<&PlayerHealth, With<Player>>,
+    ammo: Res<MissileAmmo>,
+    config: Res<PhysicsConfig>,
+    weapon_level: Res<PrimaryWeaponLevel>,
+) {
+    let (hp, max_hp) = q_health
+        .single()
+        .map(|h| (h.hp, h.max_hp))
+        .unwrap_or((config.player_max_hp, config.player_max_hp));
+    spawn_ore_shop_overlay(
+        &mut commands,
+        ore.count,
+        hp,
+        max_hp,
+        config.ore_heal_amount,
+        ammo.count,
+        config.missile_ammo_max,
+        &weapon_level,
+    );
+}
+
+/// Despawn the ore shop overlay when exiting [`GameState::OreShop`].
+pub fn cleanup_ore_shop(mut commands: Commands, query: Query<Entity, With<OreShopRoot>>) {
     for entity in query.iter() {
         commands.entity(entity).despawn();
+    }
+}
+
+/// Handle button and keyboard interactions in the ore shop.
+///
+/// - **HEAL** button: spend 1 ore, restore `ore_heal_amount` HP (capped at max).
+/// - **MISSILE** button: spend 1 ore, restore 1 missile (capped at `missile_ammo_max`).
+/// - **UPGRADE WEAPON** button: spend ore to increase weapon level.
+/// - **CLOSE** button / **ESC** / **Tab**: return to the originating state.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn ore_shop_button_system(
+    mut commands: Commands,
+    keys: Res<ButtonInput<KeyCode>>,
+    heal_query: Query<&Interaction, (Changed<Interaction>, With<OreShopHealButton>)>,
+    missile_query: Query<&Interaction, (Changed<Interaction>, With<OreShopMissileButton>)>,
+    upgrade_query: Query<&Interaction, (Changed<Interaction>, With<OreShopUpgradeButton>)>,
+    close_query: Query<&Interaction, (Changed<Interaction>, With<OreShopCloseButton>)>,
+    shop_root_query: Query<Entity, With<OreShopRoot>>,
+    mut ore: ResMut<PlayerOre>,
+    mut q_health: Query<&mut PlayerHealth, With<Player>>,
+    mut ammo: ResMut<MissileAmmo>,
+    config: Res<PhysicsConfig>,
+    mut weapon_level: ResMut<PrimaryWeaponLevel>,
+    mut next_state: ResMut<NextState<GameState>>,
+    return_state: Res<ShopReturnState>,
+) {
+    // ── Close (ESC / Tab / button) ────────────────────────────────────────────
+    let wants_close = keys.just_pressed(KeyCode::Escape)
+        || keys.just_pressed(KeyCode::Tab)
+        || close_query.iter().any(|i| *i == Interaction::Pressed);
+
+    if wants_close {
+        let target = match *return_state {
+            ShopReturnState::Playing => GameState::Playing,
+            ShopReturnState::Paused => GameState::Paused,
+        };
+        next_state.set(target);
+        return;
+    }
+
+    // ── Heal ──────────────────────────────────────────────────────────────────
+    let heal_pressed = heal_query.iter().any(|i| *i == Interaction::Pressed);
+    if heal_pressed && ore.count > 0 {
+        if let Ok(mut health) = q_health.single_mut() {
+            if health.hp < health.max_hp {
+                health.hp = (health.hp + config.ore_heal_amount).min(health.max_hp);
+                ore.count -= 1;
+                let (hp, max_hp) = (health.hp, health.max_hp);
+                let ore_count = ore.count;
+                let ammo_count = ammo.count;
+                let heal_amount = config.ore_heal_amount;
+                let ammo_max = config.missile_ammo_max;
+                for entity in shop_root_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+                spawn_ore_shop_overlay(
+                    &mut commands,
+                    ore_count,
+                    hp,
+                    max_hp,
+                    heal_amount,
+                    ammo_count,
+                    ammo_max,
+                    &weapon_level,
+                );
+                return;
+            }
+        }
+    }
+
+    // ── Missile restock ───────────────────────────────────────────────────────
+    let missile_pressed = missile_query.iter().any(|i| *i == Interaction::Pressed);
+    if missile_pressed && ore.count > 0 && ammo.count < config.missile_ammo_max {
+        ammo.count += 1;
+        ore.count -= 1;
+        let (hp, max_hp) = q_health
+            .single()
+            .map(|h| (h.hp, h.max_hp))
+            .unwrap_or((config.player_max_hp, config.player_max_hp));
+        let ore_count = ore.count;
+        let ammo_count = ammo.count;
+        let heal_amount = config.ore_heal_amount;
+        let ammo_max = config.missile_ammo_max;
+        for entity in shop_root_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        spawn_ore_shop_overlay(
+            &mut commands,
+            ore_count,
+            hp,
+            max_hp,
+            heal_amount,
+            ammo_count,
+            ammo_max,
+            &weapon_level,
+        );
+        return;
+    }
+
+    // ── Weapon upgrade ────────────────────────────────────────────────────────
+    let upgrade_pressed = upgrade_query.iter().any(|i| *i == Interaction::Pressed);
+    if upgrade_pressed {
+        weapon_level.try_upgrade(&mut ore.count);
+        let (hp, max_hp) = q_health
+            .single()
+            .map(|h| (h.hp, h.max_hp))
+            .unwrap_or((config.player_max_hp, config.player_max_hp));
+        let ore_count = ore.count;
+        let ammo_count = ammo.count;
+        let heal_amount = config.ore_heal_amount;
+        let ammo_max = config.missile_ammo_max;
+        for entity in shop_root_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        spawn_ore_shop_overlay(
+            &mut commands,
+            ore_count,
+            hp,
+            max_hp,
+            heal_amount,
+            ammo_count,
+            ammo_max,
+            &weapon_level,
+        );
     }
 }
 
@@ -1207,6 +1825,8 @@ pub fn cleanup_game_world(
     *overlay = crate::rendering::OverlayState::default();
     *sim_stats = crate::simulation::SimulationStats::default();
     *ore = crate::mining::PlayerOre::default();
+    // Reset weapon upgrades so a new session starts fresh.
+    commands.insert_resource(PrimaryWeaponLevel::default());
     // Keep the physics pipeline disabled until a new session begins.
     // resume_physics is called on OnTransition { ScenarioSelect → Playing }.
     for mut cfg in rapier_config.iter_mut() {
@@ -1221,6 +1841,7 @@ pub fn cleanup_game_world(
 /// - **Resume** → transitions back to [`GameState::Playing`].
 /// - **Debug Overlays** → opens / closes the floating debug overlay panel.
 /// - **Main Menu** → cleans up the game world and returns to [`GameState::MainMenu`].
+/// - (Ore shop opened via Tab key; see [`toggle_ore_shop_system`].)
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn pause_menu_button_system(
     resume_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<PauseResumeButton>)>,
@@ -1256,7 +1877,6 @@ pub fn pause_menu_button_system(
     for (interaction, children) in debug_query.iter() {
         match interaction {
             Interaction::Pressed => {
-                // Toggle the floating debug panel open / closed.
                 overlay.menu_open = !overlay.menu_open;
                 let vis = if overlay.menu_open {
                     Visibility::Visible

@@ -41,7 +41,7 @@ use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
 use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
-use crate::player::{PlayerLives, PlayerScore};
+use crate::player::{PlayerLives, PlayerScore, PrimaryWeaponLevel};
 use crate::simulation::SimulationStats;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
@@ -420,19 +420,26 @@ pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
 /// Refresh the ore-count HUD each frame.
 ///
 /// When ore > 0 the text includes key-binding hints for spending it so players
-/// can discover the mechanic passively.
+/// can discover the mechanic passively.  The primary weapon upgrade level is
+/// shown inline so players always know their current tier.
 pub fn ore_hud_display_system(
     ore: Res<PlayerOre>,
+    weapon_level: Res<PrimaryWeaponLevel>,
     parent_query: Query<&Children, With<OreHudDisplay>>,
     mut text_query: Query<&mut Text>,
 ) {
-    if !ore.is_changed() {
+    if !ore.is_changed() && !weapon_level.is_changed() {
         return;
     }
-    let display = if ore.count > 0 {
-        format!("Ore: {}  [H] heal  [M] ammo", ore.count)
+    let level_str = if weapon_level.is_maxed() {
+        " | Wpn: MAX".to_string()
     } else {
-        "Ore: 0".to_string()
+        format!(" | Wpn: Lv.{}", weapon_level.display_level())
+    };
+    let display = if ore.count > 0 {
+        format!("Ore: {}{}", ore.count, level_str)
+    } else {
+        format!("Ore: 0{}", level_str)
     };
     for children in parent_query.iter() {
         for child in children.iter() {

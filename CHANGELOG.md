@@ -1,5 +1,40 @@
 # Accretion Changelog
 
+## Primary Weapon Upgrades — February 25, 2026
+
+### Ore-based upgrade system for the primary projectile weapon
+
+Added a 10-level upgrade system giving the primary weapon increasing destructive power, purchased with ore from the in-game upgrade shop.
+
+**Behaviour change** — damage logic replaced in `projectile_asteroid_hit_system`:
+- **Before**: fixed tiers (destroy ≤1, scatter 2-3, split 4-8, chip ≥9).
+- **After**: level-gated. Each level raises the "full-destroy threshold" by 1. Anything above the threshold is always *chipped* (1 vertex removed, 1-unit fragment ejected). The old scatter/split paths are removed; no single projectile hit can remove more than one unit from a large asteroid.
+  - Level 1 (default): fully destroys asteroids of size ≤ 1.
+  - Level 2: fully destroys ≤ 2, chips the rest.
+  - …Level 10: fully destroys ≤ 10, chips the rest.
+
+**Ore reward** — destroying a size-N asteroid (full-destroy path) now yields N ore drops instead of one, rewarding upgrades with proportional returns.
+
+**New resource** — `PrimaryWeaponLevel` (`src/player/state.rs`):
+- 0-indexed internally; displayed as 1-10.
+- Methods: `max_destroy_size()`, `cost_for_next_level()` (scaling: 10, 15, 20 … 55 ore), `try_upgrade(&mut ore)`.
+- Reset to default when returning to the main menu (`cleanup_game_world`).
+
+**New constants** (`src/constants.rs`): `PRIMARY_WEAPON_MAX_LEVEL = 10`, `WEAPON_UPGRADE_BASE_COST = 5`.
+
+**Upgrade shop UI** — weapon upgrades are integrated into the unified ore shop (Tab key, accessible from gameplay and the pause screen):
+- Weapon upgrade section displays: current level, destroy-range description (current → next), ore count, and upgrade cost.
+- "UPGRADE WEAPON" button is disabled (greyed) when maxed or unaffordable; buying re-renders the shop in-place.
+- Handled by `ore_shop_button_system` alongside the heal/missile buttons.
+
+**HUD update** — ore HUD (`ore_hud_display_system` in `src/rendering.rs`) now appends `| Wpn: Lv.N` so the current tier is always visible without opening the shop.
+
+**Files changed**: `src/constants.rs`, `src/player/state.rs`, `src/player/mod.rs`, `src/player/combat.rs`, `src/menu.rs`, `src/rendering.rs`, `src/main.rs`.
+
+**Build**: `cargo check`, `cargo clippy -- -D warnings`, `cargo build --release`, `cargo test --lib` — all pass, zero warnings.
+
+---
+
 ## Fix: Rapier BVH panic on scenario switch — February 25, 2026
 
 ### `parry2d` "key not present" panic when returning to menu and starting a different scenario
@@ -17,13 +52,9 @@
 
 ## Ore Usable for Healing & Missile Restock — February 24, 2026
 
-### Ore can now be spent to heal HP (`H`) and restock missiles (`M`)
+### Ore can now be spent to heal HP and restock missiles
 
-Passive HP regeneration and passive missile auto-recharge have been **removed** and replaced with an active ore-spending system.
-
-- **`H` key / DPad Up**: spend 1 ore → restore `ore_heal_amount` HP (default 30), capped at `player_max_hp`.
-- **`M` key / DPad Down**: spend 1 ore → +1 missile, capped at `missile_ammo_max`. Ore is not spent when the stat is already full.
-- The ore HUD now shows `Ore: N  [H] heal  [M] ammo` when ore > 0, making the controls discoverable.
+Passive HP regeneration and passive missile auto-recharge have been **removed** and replaced with an active ore-spending system via the ore shop (Tab key).
 
 **Removed systems**: `player_heal_system` (passive HP regen) and `missile_recharge_system` (passive missile recharge) deleted from codebase. `recharge_timer` field removed from `MissileAmmo`.
 
@@ -31,11 +62,10 @@ Passive HP regeneration and passive missile auto-recharge have been **removed** 
 - **`src/constants.rs`**: Added `ORE_HEAL_AMOUNT` (30 HP per ore).
 - **`src/config.rs`**: Added `ore_heal_amount` field; removed passive-recharge-dependent code paths.
 - **`assets/physics.toml`**: Added `ore_heal_amount = 30.0`.
-- **`src/mining.rs`**: Added `ore_spend_system` handling both `H` (heal) and `M` (missile) inputs; registered in `MiningPlugin`.
 - **`src/player/combat.rs`**: Removed `player_heal_system` and `missile_recharge_system`; cleaned up `missile_fire_system` (no longer starts a recharge timer).
 - **`src/player/state.rs`**: Removed `recharge_timer` field from `MissileAmmo`.
 - **`src/player/mod.rs`**: Removed stale re-exports.
-- **`src/rendering.rs`**: Updated `ore_hud_display_system` to show spending hints; removed recharge countdown from `missile_hud_display_system`.
+- **`src/rendering.rs`**: Removed recharge countdown from `missile_hud_display_system`.
 - **`src/simulation.rs`**: Removed `missile_recharge_system` and `player_heal_system` from system chain.
 - **`FEATURES.md`**: Removed "Passive Healing" section; added "Spending Ore" section with keybind table; updated missile ammo description.
 
