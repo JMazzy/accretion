@@ -18,6 +18,7 @@ use crate::rendering::OverlayState;
 use bevy::prelude::*;
 use bevy_asset::RenderAssetUsages;
 use bevy_mesh::{Indices, PrimitiveTopology};
+use bevy_rapier2d::prelude::Velocity;
 
 // ── Player UI entity registry ─────────────────────────────────────────────────
 
@@ -121,6 +122,33 @@ fn disc_mesh(radius: f32, segments: usize) -> Mesh {
     filled_polygon_mesh(&verts)
 }
 
+/// Creates an elongated capsule mesh oriented along local +Y (upward).
+///
+/// The capsule is `length` units tall with rounded ends of `radius`.
+/// Apply rotation via [`Transform`] to orient it in any direction.
+fn elongated_projectile_mesh(radius: f32, length: f32, segments: usize) -> Mesh {
+    let half_segments = segments / 2;
+    let mut verts = Vec::new();
+    
+    // Top semicircle (angles from 0 to π)
+    for i in 0..=half_segments {
+        let angle = (i as f32) * std::f32::consts::PI / (half_segments as f32);
+        let x = angle.cos() * radius;
+        let y = angle.sin() * radius + length / 2.0;
+        verts.push(Vec2::new(x, y));
+    }
+    
+    // Bottom semicircle (angles from π to 2π)
+    for i in 0..=half_segments {
+        let angle = std::f32::consts::PI + (i as f32) * std::f32::consts::PI / (half_segments as f32);
+        let x = angle.cos() * radius;
+        let y = angle.sin() * radius - length / 2.0;
+        verts.push(Vec2::new(x, y));
+    }
+    
+    filled_polygon_mesh(&verts)
+}
+
 // ── Spawn-time mesh attachment ────────────────────────────────────────────────
 
 /// Attach a filled `Mesh2d` polygon to the player ship on spawn.
@@ -151,30 +179,38 @@ pub fn attach_player_ship_mesh_system(
     }
 }
 
-/// Attach a filled disc `Mesh2d` to every newly-fired projectile.
+/// Attach a filled elongated `Mesh2d` to every newly-fired projectile.
 ///
 /// Runs once per projectile entity (via [`Added<Projectile>`]).
+/// The mesh is oriented along +Y; a separate system rotates it to match velocity.
 pub fn attach_projectile_mesh_system(
     mut commands: Commands,
-    query: Query<Entity, Added<Projectile>>,
+    query: Query<(Entity, &Velocity), Added<Projectile>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     overlay: Res<OverlayState>,
 ) {
-    // Visual radius matches the gizmo circle used previously.
-    const PROJ_RADIUS: f32 = 3.0;
+    const PROJ_RADIUS: f32 = 2.0;
+    const PROJ_LENGTH: f32 = 10.0;
     let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.85, 0.1)));
-    for entity in query.iter() {
-        let mesh_handle = meshes.add(disc_mesh(PROJ_RADIUS, 12));
+    for (entity, velocity) in query.iter() {
+        let mesh_handle = meshes.add(elongated_projectile_mesh(PROJ_RADIUS, PROJ_LENGTH, 16));
         let visibility = if overlay.wireframe_only {
             Visibility::Hidden
         } else {
             Visibility::Visible
         };
+        
+        // Orient the projectile mesh in the direction of travel
+        let direction = velocity.linvel.normalize_or_zero();
+        let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
+        let rotation = Quat::from_rotation_z(angle);
+        
         commands.entity(entity).insert((
             Mesh2d(mesh_handle),
             MeshMaterial2d(mat_handle.clone()),
             visibility,
+            Transform::from_rotation(rotation),
         ));
     }
 }
@@ -373,6 +409,23 @@ pub fn cleanup_player_ui_system(
         }
     }
 }
+
+/// Update projectile mesh rotation to match velocity direction.
+///
+/// Projectiles are elongated along their local +Y axis; this system rotates
+/// each projectile so +Y points in the direction of travel.
+pub fn sync_projectile_rotation_system(
+    mut query: Query<(&Velocity, &mut Transform), With<Projectile>>,
+) {
+    for (velocity, mut transform) in query.iter_mut() {
+        if velocity.linvel.length_squared() > 0.01 {
+            let direction = velocity.linvel.normalize();
+            let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
+            transform.rotation = Quat::from_rotation_z(angle);
+        }
+    }
+}
+
 /// Propagate the `wireframe_only` flag to all live ship, projectile, and missile meshes.
 ///
 /// Only runs when [`OverlayState`] changes, so the per-frame cost is negligible.
