@@ -1,4 +1,4 @@
-//! Particle effects: impact sparks, debris dust, and merge glows.
+//! Particle effects: impact sparks, missile trails, debris dust, and merge glows.
 //!
 //! ## Design
 //!
@@ -12,7 +12,7 @@
 //! | `particle_update_system`   | Update   | Move, fade, and despawn expired particles  |
 //!
 //! Particle entities are spawned by free functions (`spawn_impact_particles`,
-//! `spawn_debris_particles`, `spawn_merge_particles`) that take only
+//! `spawn_missile_trail_particles`, `spawn_debris_particles`, `spawn_merge_particles`) that take only
 //! `&mut Commands` — no `Assets` access needed at spawn time.  The
 //! `attach_particle_mesh_system` supplies the Mesh2d one frame later, which is
 //! imperceptible at 60 Hz.
@@ -179,6 +179,54 @@ pub fn spawn_impact_particles(
                 material: None,
             },
             Transform::from_translation((pos + offset).extend(0.9)),
+            Visibility::default(),
+        ));
+    }
+}
+
+/// Spawn a short missile exhaust burst opposite to the missile's movement.
+///
+/// `reverse_dir` is expected to point opposite the missile velocity direction.
+pub fn spawn_missile_trail_particles(
+    commands: &mut Commands,
+    pos: Vec2,
+    reverse_dir: Vec2,
+    missile_vel: Vec2,
+) {
+    let mut rng = rand::thread_rng();
+    let count = 2_u32;
+
+    let base = if reverse_dir.length_squared() > 1e-6 {
+        reverse_dir.normalize()
+    } else {
+        Vec2::NEG_Y
+    };
+    let base_angle = base.y.atan2(base.x);
+
+    for _ in 0..count {
+        let angle = base_angle + rng.gen_range(-0.35_f32..0.35_f32);
+        let speed = rng.gen_range(20.0_f32..65.0_f32);
+        let velocity = Vec2::new(angle.cos(), angle.sin()) * speed + missile_vel * 0.10;
+
+        let r = rng.gen_range(0.95_f32..1.0_f32);
+        let g = rng.gen_range(0.45_f32..0.68_f32);
+        let b = rng.gen_range(0.05_f32..0.20_f32);
+
+        let lifetime = rng.gen_range(0.10_f32..0.22_f32);
+        let lateral = Vec2::new(-base.y, base.x) * rng.gen_range(-1.1_f32..1.1_f32);
+        let back_offset = base * rng.gen_range(0.0_f32..2.5_f32);
+
+        commands.spawn((
+            Particle {
+                velocity,
+                age: 0.0,
+                lifetime,
+                r,
+                g,
+                b,
+                material: None,
+            },
+            Transform::from_translation((pos + lateral + back_offset).extend(0.9)),
             Visibility::default(),
         ));
     }

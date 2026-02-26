@@ -1,5 +1,58 @@
 # Accretion Changelog
 
+## Missile Movement: Slow Start + Acceleration — February 26, 2026
+
+### Missiles now launch slower and accelerate in-flight until max speed
+
+Implemented the backlog **Missile Movement** enhancement.
+
+**What changed**:
+- Added new missile tuning constants in `src/constants.rs`:
+  - `MISSILE_INITIAL_SPEED`
+  - `MISSILE_ACCELERATION`
+- Exposed both values in runtime config (`PhysicsConfig`) and defaults in `src/config.rs`.
+- Added matching runtime keys in `assets/physics.toml` under a new **Player: Missiles** section.
+- Updated `missile_fire_system` in `src/player/combat.rs` to spawn missiles at `missile_initial_speed`.
+- Added `missile_acceleration_system` in `src/player/combat.rs` to increase speed each frame toward `missile_speed` (clamped).
+- Wired system into the `Update` schedule in `src/simulation.rs` before missile trail emission.
+
+**Backlog update**:
+- Removed **Missile Movement** from pending `BACKLOG.md`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
+## Missile Trail Particles — February 26, 2026
+
+### Missiles now emit exhaust particles opposite their direction of travel
+
+Implemented the backlog **Missile Particles** enhancement.
+
+**What changed**:
+- Added `spawn_missile_trail_particles(...)` in `src/particles.rs` for short-lived orange exhaust bursts.
+- Added `missile_trail_particles_system` in `src/player/combat.rs`:
+  - Runs every frame for active missiles
+  - Emits particles at fixed cadence (`TRAIL_INTERVAL_SECS`) per missile
+  - Spawns from a tail/nozzle offset and ejects opposite current missile velocity
+- Wired system into the main `Update` chain in `src/simulation.rs` (after missile firing).
+- Re-exported the system from `src/player/mod.rs`.
+
+**Backlog update**:
+- Removed **Missile Particles** from `BACKLOG.md` pending items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
 ## Save/Load System (Slot-Based, TOML) — February 25, 2026
 
 ### Added persistent save/load with three manual slots

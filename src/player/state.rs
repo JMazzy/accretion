@@ -63,6 +63,8 @@ pub struct Projectile {
 pub struct Missile {
     /// Seconds since this missile was spawned.
     pub age: f32,
+    /// Time accumulator used by the trail emission system.
+    pub trail_emit_timer: f32,
 }
 
 // ── Resources ──────────────────────────────────────────────────────────────────

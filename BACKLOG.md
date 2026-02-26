@@ -14,8 +14,6 @@ Last updated: February 25, 2026.
 ## Enhancements
 
 - [ ] **Remove Gizmos** — Remove remaining usage of Gizmos in favor of `Mesh2d` for everything
-- [ ] **Missile Particles** - Missiles shoot particles in the opposite direction of movement.
-- [ ] **Missile Movement** - Missiles start slow and accelerate until impact
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex; track per-vertex damage; move vertices inward and recompute hull
 - [ ] **Planets** — A new object type with the same gravity system as asteroids, but otherwise very different. Important differences: larger, higher mass, nearly circular, no merging or splitting, shooting does not increase score, fixed in place relative to the simulation area to give a steady frame of reference. Visually distinct (rendered purple as a placeholder). Scenarios have 0–1 planet (not common). Update "Orbit" scenario to use a planet instead of the current planetoid.
 - [ ] **Performance** — Determine next steps for performance improvements; implement the most impactful one and add the rest to the backlog.

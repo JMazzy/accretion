@@ -134,6 +134,35 @@ projectile_max_dist = 2000.0
 # Radius (u) of each projectile's ball collider.
 projectile_collider_radius = 2.0
 
+# ── Player: Missiles ─────────────────────────────────────────────────────────
+
+# Maximum missile ammo capacity.
+missile_ammo_max = 5
+
+# Initial speed (u/s) when missiles spawn.
+missile_initial_speed = 120.0
+
+# Maximum missile speed (u/s) reached after acceleration.
+missile_speed = 380.0
+
+# Missile linear acceleration (u/s²) until `missile_speed` is reached.
+missile_acceleration = 700.0
+
+# Minimum seconds between consecutive missile shots.
+missile_cooldown = 0.5
+
+# Seconds before a missile despawns automatically.
+missile_lifetime = 4.0
+
+# Distance from origin beyond which missiles despawn.
+missile_max_dist = 2000.0
+
+# Radius (u) of missile collider.
+missile_collider_radius = 5.0
+
+# Legacy recharge constant (not used by current ore-based ammo economy).
+missile_recharge_secs = 12.0
+
 # ── Player: Health ────────────────────────────────────────────────────────────
 
 # Player ship starting and maximum HP.

@@ -92,7 +92,9 @@ pub struct PhysicsConfig {
 
     // ── Player: Missiles ─────────────────────────────────────────────────────
     pub missile_ammo_max: u32,
+    pub missile_initial_speed: f32,
     pub missile_speed: f32,
+    pub missile_acceleration: f32,
     pub missile_cooldown: f32,
     pub missile_lifetime: f32,
     pub missile_max_dist: f32,
@@ -205,7 +207,9 @@ impl Default for PhysicsConfig {
             projectile_collider_radius: PROJECTILE_COLLIDER_RADIUS,
             // Player: Missiles
             missile_ammo_max: MISSILE_AMMO_MAX,
+            missile_initial_speed: MISSILE_INITIAL_SPEED,
             missile_speed: MISSILE_SPEED,
+            missile_acceleration: MISSILE_ACCELERATION,
             missile_cooldown: MISSILE_COOLDOWN,
             missile_lifetime: MISSILE_LIFETIME,
             missile_max_dist: MISSILE_MAX_DIST,

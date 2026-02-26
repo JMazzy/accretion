@@ -16,13 +16,14 @@ use crate::player::{
     attach_player_ship_mesh_system, attach_player_ui_system, attach_projectile_mesh_system,
     camera_follow_system, cleanup_player_ui_system, despawn_old_missiles_system,
     despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
-    keyboard_to_intent_system, missile_asteroid_hit_system, missile_fire_system,
-    player_collision_damage_system, player_gizmo_system, player_intent_clear_system,
-    player_oob_damping_system, player_respawn_system, projectile_asteroid_hit_system,
-    projectile_fire_system, sync_aim_indicator_system,
-    sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system,
-    sync_projectile_rotation_system, AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown,
-    PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad,
+    keyboard_to_intent_system, missile_acceleration_system, missile_asteroid_hit_system,
+    missile_fire_system, missile_trail_particles_system, player_collision_damage_system,
+    player_gizmo_system, player_intent_clear_system, player_oob_damping_system,
+    player_respawn_system, projectile_asteroid_hit_system, projectile_fire_system,
+    sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
+    sync_player_health_bar_system, sync_projectile_rotation_system, AimDirection, AimIdleTimer,
+    MissileAmmo, MissileCooldown, PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities,
+    PreferredGamepad,
 };
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
@@ -104,6 +105,8 @@ impl Plugin for SimulationPlugin {
                     (
                         projectile_fire_system,           // Space/click/right-stick fires
                         missile_fire_system,              // X/right-click fires a missile
+                        missile_acceleration_system,      // Missiles ramp toward max speed
+                        missile_trail_particles_system,   // Exhaust particles opposite velocity
                         aim_snap_system,                  // Snap aim after idle timeout
                         despawn_old_projectiles_system,   // Expire old projectiles
                         despawn_old_missiles_system,      // Expire old missiles

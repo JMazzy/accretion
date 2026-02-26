@@ -204,6 +204,14 @@ pub const MISSILE_AMMO_MAX: u32 = 5;
 /// Speed (u/s) of fired missiles — slower than bullets, heavier impact.
 pub const MISSILE_SPEED: f32 = 380.0;
 
+/// Initial speed (u/s) of a newly fired missile.
+///
+/// Missiles now start slower and accelerate toward `MISSILE_SPEED` in flight.
+pub const MISSILE_INITIAL_SPEED: f32 = 120.0;
+
+/// Linear acceleration (u/s²) applied to missiles until they reach `MISSILE_SPEED`.
+pub const MISSILE_ACCELERATION: f32 = 700.0;
+
 /// Minimum seconds between consecutive missile shots.
 pub const MISSILE_COOLDOWN: f32 = 0.5;
 

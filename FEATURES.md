@@ -208,6 +208,8 @@ Live: XX | Culled: YY | Merged: ZZ
 
 - **Primary weapon projectiles**: elongated capsule shape (10 units long, 2u radius) in bright yellow, oriented in the direction of travel to resemble a sci-fi "plasma pulse" or "blaster bolt".
 - **Missiles**: rocket-shaped polygon (6u wide body, 12u long, 6u pointed nose, 4u fins) in orange, oriented in the direction of travel with a distinctive rocket silhouette.
+- **Missile movement profile**: missiles now spawn at a lower initial speed, then accelerate continuously in flight until reaching their configured max speed.
+- **Missile trail particles**: short-lived orange exhaust particles emit continuously from the missile tail opposite movement direction while missiles are in flight.
 - **Both weapons**: meshes are rotated automatically on spawn to align with velocity direction; the orientation is fixed for the lifetime of the projectile/missile.
 
 ## Simulation Statistics

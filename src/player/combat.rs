@@ -39,7 +39,9 @@ use crate::asteroid::{
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::mining::spawn_ore_drop;
-use crate::particles::{spawn_debris_particles, spawn_impact_particles};
+use crate::particles::{
+    spawn_debris_particles, spawn_impact_particles, spawn_missile_trail_particles,
+};
 use bevy::input::gamepad::GamepadAxis;
 use bevy::input::gamepad::GamepadButton;
 use bevy::input::mouse::MouseButton;
@@ -227,7 +229,7 @@ pub fn missile_fire_system(
         Visibility::default(),
         RigidBody::KinematicVelocityBased,
         Velocity {
-            linvel: fire_dir * config.missile_speed,
+            linvel: fire_dir * config.missile_initial_speed,
             angvel: 0.0,
         },
         Collider::ball(config.missile_collider_radius),
@@ -240,6 +242,28 @@ pub fn missile_fire_system(
         ActiveCollisionTypes::DYNAMIC_KINEMATIC,
         ActiveEvents::COLLISION_EVENTS,
     ));
+}
+
+/// Accelerate missiles in-flight until they reach configured max speed.
+pub fn missile_acceleration_system(
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+    mut q: Query<&mut Velocity, With<Missile>>,
+) {
+    let dt = time.delta_secs();
+    if dt <= 0.0 || config.missile_acceleration <= 0.0 {
+        return;
+    }
+
+    for mut velocity in q.iter_mut() {
+        let speed = velocity.linvel.length();
+        if speed <= 1e-4 || speed >= config.missile_speed {
+            continue;
+        }
+
+        let next_speed = (speed + config.missile_acceleration * dt).min(config.missile_speed);
+        velocity.linvel = velocity.linvel.normalize() * next_speed;
+    }
 }
 
 /// Age missiles each frame; despawn when they expire or go out of range.
@@ -255,6 +279,35 @@ pub fn despawn_old_missiles_system(
         let dist = transform.translation.truncate().length();
         if missile.age >= config.missile_lifetime || dist > config.missile_max_dist {
             commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Emit short-lived exhaust particles behind moving missiles.
+///
+/// The trail is emitted at a fixed cadence per missile so visuals remain
+/// consistent regardless of frame rate.
+pub fn missile_trail_particles_system(
+    mut commands: Commands,
+    mut q: Query<(&Transform, &Velocity, &mut Missile)>,
+    time: Res<Time>,
+) {
+    const TRAIL_INTERVAL_SECS: f32 = 0.035;
+
+    let dt = time.delta_secs();
+    for (transform, velocity, mut missile) in q.iter_mut() {
+        let speed_sq = velocity.linvel.length_squared();
+        if speed_sq < 1.0 {
+            continue;
+        }
+
+        missile.trail_emit_timer += dt;
+        let dir = velocity.linvel.normalize();
+        let nozzle_pos = transform.translation.truncate() - dir * 8.0;
+
+        while missile.trail_emit_timer >= TRAIL_INTERVAL_SECS {
+            missile.trail_emit_timer -= TRAIL_INTERVAL_SECS;
+            spawn_missile_trail_particles(&mut commands, nozzle_pos, -dir, velocity.linvel);
         }
     }
 }
