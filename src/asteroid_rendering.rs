@@ -26,7 +26,7 @@
 //! The semi-transparent gizmo overlay (`show_wireframes`) is preserved as an
 //! additive debug option and continues to use immediate-mode gizmos.
 
-use crate::asteroid::{Asteroid, Vertices};
+use crate::asteroid::{Asteroid, Planet, Vertices};
 use crate::rendering::OverlayState;
 use bevy::prelude::*;
 use bevy_asset::RenderAssetUsages;
@@ -63,19 +63,24 @@ pub struct AsteroidRenderHandles {
 /// `wireframe_only` toggle with no per-frame CPU cost.
 pub fn attach_asteroid_mesh_system(
     mut commands: Commands,
-    query: Query<(Entity, &Vertices), Added<Asteroid>>,
+    query: Query<(Entity, &Vertices, Option<&Planet>), Added<Asteroid>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     overlay: Res<OverlayState>,
 ) {
-    for (entity, vertices) in query.iter() {
+    for (entity, vertices, is_planet) in query.iter() {
         if vertices.0.len() < 3 {
             continue;
         }
 
         // ── Filled polygon mesh ───────────────────────────────────────────────
         let fill_mesh = meshes.add(filled_polygon_mesh(&vertices.0));
-        let fill_material = materials.add(ColorMaterial::from_color(rock_color(entity.index())));
+        let fill_color = if is_planet.is_some() {
+            Color::srgb(0.55, 0.25, 0.85)
+        } else {
+            rock_color(entity.index())
+        };
+        let fill_material = materials.add(ColorMaterial::from_color(fill_color));
 
         // ── Polygon outline mesh (used in wireframe_only mode) ────────────────
         // 0.4-unit half-width gives a crisp but thin outline at typical zoom levels.

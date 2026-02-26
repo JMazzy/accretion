@@ -19,6 +19,13 @@ use rand::Rng;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Asteroid;
 
+/// Marker component for a planet body.
+///
+/// Planets participate in gravity but are fixed in place and excluded from
+/// asteroid merge/split weapon-damage logic.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Planet;
+
 /// How many "unit" (single triangle) asteroids this entity represents.
 /// Single triangles = 1; composites = sum of constituents.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -222,18 +229,20 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
     }
 }
 
-/// Spawns a single large planetoid asteroid at the given position.
+/// Spawns a single fixed planet at the given position.
 ///
-/// The planetoid is a 16-sided near-circle with a large radius, full N-body
-/// physics, and a high unit-size count that reflects its dominant mass.
-/// It participates in gravity, collisions, and merging like any other asteroid;
-/// only its initial size and shape distinguish it.
+/// The planet is a near-circular high-mass body that participates in gravity
+/// while remaining anchored in world-space (`RigidBody::Fixed`).
+///
+/// It carries both [`Asteroid`] and [`Planet`] markers so gravity systems can
+/// include it, while merge/split and projectile-damage systems can explicitly
+/// exclude it via `Without<Planet>` filters.
 ///
 /// # Example
 /// ```
-/// spawn_planetoid(&mut commands, Vec2::new(500.0, 300.0), &config);
+/// spawn_planet(&mut commands, Vec2::new(500.0, 300.0), &config);
 /// ```
-pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &PhysicsConfig) {
+pub fn spawn_planet(commands: &mut Commands, position: Vec2, config: &PhysicsConfig) {
     let vertices = rescale_vertices_to_area(
         &generate_regular_polygon(16, 1.0, config.planetoid_base_radius),
         config.planetoid_unit_size as f32 / config.asteroid_density,
@@ -243,10 +252,11 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
             Transform::from_translation(position.extend(0.05)),
             GlobalTransform::default(),
             Asteroid,
+            Planet,
             AsteroidSize(config.planetoid_unit_size),
             NeighborCount(0),
             Vertices(vertices.clone()),
-            RigidBody::Dynamic,
+            RigidBody::Fixed,
         ),
         (
             {
@@ -255,10 +265,7 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
             },
             Restitution::coefficient(RESTITUTION_SMALL),
             Friction::coefficient(FRICTION_ASTEROID),
-            Velocity {
-                linvel: Vec2::ZERO,
-                angvel: 0.0,
-            },
+            Velocity::zero(),
             Damping {
                 linear_damping: 0.0,
                 angular_damping: 0.0,
@@ -280,10 +287,16 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
     ));
 }
 
+/// Backward-compatible wrapper retained for existing call-sites.
+#[allow(dead_code)]
+pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &PhysicsConfig) {
+    spawn_planet(commands, position, config);
+}
+
 /// Spawns the "orbit" pre-built scenario.
 ///
 /// The scenario consists of:
-/// - One very large 16-gon central planetoid at `(800, 0)`.
+/// - One very large 16-gon central planet at `(800, 0)`.
 /// - Three concentric rings of small triangle asteroids in near-circular orbits
 ///   around that body (CCW rotation).
 ///
@@ -297,7 +310,7 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
 const ORBIT_CENTRAL_MASS: u32 = 2000;
 
 pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
-    // ── Central planetoid ────────────────────────────────────────────────────
+    // ── Central anchored planet ──────────────────────────────────────────────
     //
     // 4× the normal planetoid radius gives a visually dominant body.  It is placed
     // at (800, 0) so the player (always at origin) starts outside the ring system
@@ -320,20 +333,18 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
             Transform::from_translation(central_pos.extend(0.05)),
             GlobalTransform::default(),
             Asteroid,
+            Planet,
             AsteroidSize(ORBIT_CENTRAL_MASS),
             NeighborCount(0),
             Vertices(central_vertices.clone()),
-            RigidBody::Dynamic,
+            RigidBody::Fixed,
         ),
         (
             Collider::convex_hull(&central_vertices)
                 .unwrap_or_else(|| Collider::ball(central_radius)),
             Restitution::coefficient(RESTITUTION_SMALL),
             Friction::coefficient(FRICTION_ASTEROID),
-            Velocity {
-                linvel: Vec2::ZERO,
-                angvel: 0.03, // slow stately rotation
-            },
+            Velocity::zero(),
             Damping {
                 linear_damping: 0.0,
                 angular_damping: 0.0,

@@ -6,7 +6,7 @@
 
 use crate::asteroid::{
     compute_convex_hull_from_points, rescale_vertices_to_area, Asteroid, AsteroidSize,
-    GravityForce, NeighborCount, Vertices,
+    GravityForce, NeighborCount, Planet, Vertices,
 };
 use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_render_mode_system};
 use crate::config::PhysicsConfig;
@@ -18,18 +18,19 @@ use crate::player::{
     despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
     keyboard_to_intent_system, missile_acceleration_system, missile_asteroid_hit_system,
     missile_fire_system, missile_trail_particles_system, player_collision_damage_system,
-    player_gizmo_system, player_intent_clear_system, player_oob_damping_system,
-    player_respawn_system, projectile_asteroid_hit_system, projectile_fire_system,
+    player_intent_clear_system, player_oob_damping_system, player_respawn_system,
+    projectile_asteroid_hit_system, projectile_fire_system, projectile_missile_planet_hit_system,
     sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
-    sync_player_health_bar_system, sync_projectile_rotation_system, AimDirection, AimIdleTimer,
-    MissileAmmo, MissileCooldown, PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities,
-    PreferredGamepad,
+    sync_player_health_bar_system, sync_projectile_outline_visibility_system,
+    sync_projectile_rotation_system, sync_ship_outline_visibility_and_color_system, AimDirection,
+    AimIdleTimer, MissileAmmo, MissileCooldown, PlayerIntent, PlayerLives, PlayerScore,
+    PlayerUiEntities, PreferredGamepad,
 };
 use crate::rendering::{
-    debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
-    lives_hud_display_system, missile_hud_display_system, ore_hud_display_system,
-    physics_inspector_display_system, profiler_display_system, stats_display_system,
-    sync_boundary_ring_visibility_system, sync_physics_inspector_visibility_system,
+    debug_panel_button_system, hud_score_display_system, lives_hud_display_system,
+    missile_hud_display_system, ore_hud_display_system, physics_inspector_display_system,
+    profiler_display_system, stats_display_system, sync_boundary_ring_visibility_system,
+    sync_debug_line_layers_system, sync_physics_inspector_visibility_system,
     sync_profiler_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
@@ -151,24 +152,25 @@ impl Plugin for SimulationPlugin {
                     // ── Group 2b: overlay sync + player logic + stats ────────
                     (
                         sync_boundary_ring_visibility_system, // Show/hide boundary ring
-                        gizmo_rendering_system,               // Render gizmo overlays
+                        sync_debug_line_layers_system,        // Refresh retained debug line layers
                         sync_stats_overlay_visibility_system, // Show/hide stats overlay
                         sync_physics_inspector_visibility_system, // Show/hide physics inspector
                         sync_profiler_visibility_system,      // Show/hide profiler overlay
-                        player_gizmo_system, // Render ship outline (aim/hbar now Mesh2d)
+                        sync_ship_outline_visibility_and_color_system, // Show/hide ship outline + apply HP tint
+                        sync_projectile_outline_visibility_system, // Show/hide projectile/missile ring outlines
                         sync_player_health_bar_system, // Update health bar position + colour
-                        sync_aim_indicator_system, // Update aim arrow orientation + visibility
-                        hud_score_display_system, // Refresh score HUD
-                        lives_hud_display_system, // Refresh lives + respawn-countdown HUD
-                        missile_hud_display_system, // Refresh missile ammo HUD
-                        ore_hud_display_system, // Refresh ore count HUD
-                        stats_display_system, // Render stats overlay text
+                        sync_aim_indicator_system,     // Update aim arrow orientation + visibility
+                        hud_score_display_system,      // Refresh score HUD
+                        lives_hud_display_system,      // Refresh lives + respawn-countdown HUD
+                        missile_hud_display_system,    // Refresh missile ammo HUD
+                        ore_hud_display_system,        // Refresh ore count HUD
+                        stats_display_system,          // Render stats overlay text
                         physics_inspector_display_system, // Render physics inspector text
-                        profiler_display_system, // Render profiler text
-                        player_oob_damping_system, // Slow player outside boundary
+                        profiler_display_system,       // Render profiler text
+                        player_oob_damping_system,     // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
-                        player_respawn_system, // Re-spawn ship after countdown
-                        cleanup_player_ui_system, // Despawn UI on player death
+                        player_respawn_system,         // Re-spawn ship after countdown
+                        cleanup_player_ui_system,      // Despawn UI on player death
                     )
                         .chain(),
                     profiler_mark_after_group2b_system,
@@ -206,6 +208,7 @@ impl Plugin for SimulationPlugin {
                         asteroid_formation_system,
                         projectile_asteroid_hit_system,
                         missile_asteroid_hit_system,
+                        projectile_missile_planet_hit_system,
                     )
                         .chain(),
                     profiler_end_post_update_system,
@@ -620,9 +623,13 @@ pub fn soft_boundary_system(
 ///
 /// Mass is approximated as `AsteroidSize` units (uniform density).
 /// Moment of inertia per member: `I = ½ · m · r_eff²` where `r_eff = √(m / π)`.
+#[allow(clippy::type_complexity)]
 pub fn asteroid_formation_system(
     mut commands: Commands,
-    query: Query<(Entity, &Transform, &Velocity, &Vertices, &AsteroidSize), With<Asteroid>>,
+    query: Query<
+        (Entity, &Transform, &Velocity, &Vertices, &AsteroidSize),
+        (With<Asteroid>, Without<Planet>),
+    >,
     rapier_context: ReadRapierContext,
     mut stats: ResMut<SimulationStats>,
     config: Res<PhysicsConfig>,

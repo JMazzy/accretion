@@ -1,5 +1,179 @@
 # Accretion Changelog
 
+## Remove Gizmos Migration (Steps 3–6 + Epic Complete) — February 26, 2026
+
+### Migrated remaining asteroid debug overlays to retained Mesh2d line layers
+
+Implemented the remaining execution steps of **Remove Gizmos: complete migration** and closed the epic.
+
+**What changed**:
+- Replaced `gizmo_rendering_system` in `src/rendering.rs` with retained `Mesh2d` line-layer architecture.
+- Added retained overlay layer entities and markers:
+  - `WireframeOverlayLayer`
+  - `ForceVectorLayer`
+  - `VelocityArrowLayer`
+  - `SpatialGridLayer`
+- Added `setup_debug_line_layers` startup system to spawn retained overlay layers.
+- Added `sync_debug_line_layers_system` to refresh overlay mesh geometry from current simulation state:
+  - asteroid additive wireframe overlay (`show_wireframes`)
+  - force vectors (`show_force_vectors`)
+  - velocity arrows (`show_velocity_arrows`)
+  - spatial grid split lines (`show_debug_grid`)
+- Wired startup/scheduling/cleanup updates across:
+  - `src/main.rs` (startup setup)
+  - `src/simulation.rs` (Update schedule)
+  - `src/menu.rs` (`cleanup_game_world` removal of retained overlay entities)
+
+**Backlog update**:
+- Removed **Remove Gizmos: complete migration** from pending `BACKLOG.md` items (epic completed).
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
+## Remove Gizmos Migration (Step 2) — February 26, 2026
+
+### Migrated ship outline overlay from Gizmos to retained Mesh2d
+
+Implemented the second execution step of **Remove Gizmos: complete migration**.
+
+**What changed**:
+- Replaced ship wireframe/nose gizmo drawing with retained `Mesh2d` child meshes in `src/player/rendering.rs`.
+- Added retained outline components:
+  - `ShipOutlineMesh`
+  - `ShipNoseMesh`
+- Added `sync_ship_outline_visibility_and_color_system`:
+  - applies `show_ship_outline` / `wireframe_only` visibility logic
+  - updates outline tint from player HP fraction (cyan → red)
+- Removed `player_gizmo_system` from the simulation update path and rewired exports/imports in:
+  - `src/player/mod.rs`
+  - `src/simulation.rs`
+
+**Backlog update**:
+- Marked migration step 2 (**Ship outline migration**) completed under the active Remove Gizmos epic.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
+## Remove Gizmos Migration (Step 1) — February 26, 2026
+
+### Migrated projectile/missile outline overlays from Gizmos to retained Mesh2d
+
+Implemented the first execution step of **Remove Gizmos: complete migration**.
+
+**What changed**:
+- Replaced projectile/missile outline circle gizmo drawing in `src/player/rendering.rs` with retained `Mesh2d` ring outlines.
+- Projectile and missile outlines now spawn as child entities (`ProjectileOutlineMesh`, `MissileOutlineMesh`) attached at projectile/missile creation time.
+- Added `sync_projectile_outline_visibility_system` to keep outline visibility aligned with overlay toggles:
+  - `show_projectile_outline`
+  - `wireframe_only`
+- Updated scheduling/wiring in:
+  - `src/player/mod.rs`
+  - `src/simulation.rs`
+- `player_gizmo_system` now handles ship gizmos only (projectile/missile outlines removed from gizmo path).
+
+**Backlog update**:
+- Marked migration step 1 (**Projectile/Missile outline migration**) completed under the active Remove Gizmos epic.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
+## Remove Gizmos Audit + Migration Plan — February 26, 2026
+
+### Completed rendering audit and defined ordered Mesh2d migration plan
+
+Implemented backlog item **Remove Gizmos: audit + migration plan** (planning deliverable).
+
+**What changed**:
+- Audited remaining runtime `Gizmos` usage in rendering systems.
+- Recorded remaining gizmo surfaces and complexity classification in `BACKLOG.md`.
+- Added an ordered migration sequence with rough effort estimates (`S/M/L`) for:
+  - projectile/missile outlines
+  - player ship outline
+  - velocity arrows
+  - force vectors
+  - spatial grid overlay
+  - asteroid additive wireframe overlay
+- Added explicit epic-level definition-of-done for full gizmo removal.
+
+**Backlog update**:
+- Removed **Remove Gizmos: audit + migration plan** as a separate pending item.
+- Kept **Remove Gizmos: complete migration** as the active implementation epic with a concrete execution checklist.
+
+---
+
+## Orbit Scenario Migration to Planets — February 26, 2026
+
+### Orbit scenario now uses an anchored central planet body
+
+Implemented backlog item **Orbit scenario migration to planets**.
+
+**What changed**:
+- Updated `spawn_orbit_scenario` in `src/asteroid.rs` so the central body is now a `Planet` marker entity.
+- Central orbit body now uses `RigidBody::Fixed` (anchored) instead of `RigidBody::Dynamic`.
+- Kept central-body gravitational mass (`ORBIT_CENTRAL_MASS`) and ring setup so orbit scenario remains stable and recognizable.
+
+**Behavioral result**:
+- Orbit layout is now explicitly planet-centric while preserving existing debris-ring gameplay.
+- Central body no longer merges/splits or receives destructive weapon-score interactions (handled by planet rules introduced previously).
+
+**Backlog update**:
+- Removed **Orbit scenario migration to planets** from pending `BACKLOG.md` items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
+## Planets: Entity + Physics Rules — February 26, 2026
+
+### Added anchored planet bodies with gravity participation and no-score weapon hits
+
+Implemented backlog item **Planets: entity + physics rules**.
+
+**What changed**:
+- Added new `Planet` component marker in `src/asteroid.rs`.
+- Added `spawn_planet(...)` in `src/asteroid.rs`:
+  - fixed-body (`RigidBody::Fixed`) near-circular high-mass body
+  - participates in gravity via shared `Asteroid` + `AsteroidSize` components
+- Updated Field scenario world setup in `src/main.rs` to spawn an anchored planet.
+- Updated asteroid rendering in `src/asteroid_rendering.rs` so planets render as a distinct purple placeholder.
+- Excluded planets from merge/split paths:
+  - `asteroid_formation_system` now filters with `Without<Planet>`
+  - projectile and missile asteroid-hit systems now filter with `Without<Planet>`
+- Added `projectile_missile_planet_hit_system` in `src/player/combat.rs`:
+  - consumes projectile/missile hits on planets
+  - awards no score and applies no destructive planet behavior
+- Wired planet-hit system into `PostUpdate` in `src/simulation.rs`.
+
+**Backlog update**:
+- Removed **Planets: entity + physics rules** from pending `BACKLOG.md` items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
 ## Profiler Integration — February 26, 2026
 
 ### Added in-game profiler overlay with frame-time and schedule breakdowns

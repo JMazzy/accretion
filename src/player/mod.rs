@@ -24,7 +24,7 @@ pub use combat::{
     despawn_old_missiles_system, despawn_old_projectiles_system, missile_acceleration_system,
     missile_asteroid_hit_system, missile_fire_system, missile_trail_particles_system,
     player_collision_damage_system, player_respawn_system, projectile_asteroid_hit_system,
-    projectile_fire_system,
+    projectile_fire_system, projectile_missile_planet_hit_system,
 };
 pub use control::{
     aim_snap_system, apply_player_intent_system, gamepad_connection_system,
@@ -34,9 +34,10 @@ pub use control::{
 pub use rendering::{
     attach_missile_mesh_system, attach_player_ship_mesh_system, attach_player_ui_system,
     attach_projectile_mesh_system, camera_follow_system, cleanup_player_ui_system,
-    player_gizmo_system, sync_aim_indicator_system,
-    sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system,
-    sync_projectile_rotation_system, PlayerUiEntities,
+    sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
+    sync_player_health_bar_system, sync_projectile_outline_visibility_system,
+    sync_projectile_rotation_system, sync_ship_outline_visibility_and_color_system,
+    PlayerUiEntities,
 };
 pub use state::{
     AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
@@ -54,7 +55,7 @@ use bevy_rapier2d::prelude::*;
 ///
 /// The ship uses a ball collider (`PLAYER_COLLIDER_RADIUS`) rather than a convex
 /// polygon collider — this simplifies physics interactions and is visually
-/// indistinguishable at normal zoom levels since the ship shape is drawn via gizmos.
+/// close enough at normal zoom levels while keeping collision math simple.
 ///
 /// Collision groups:
 /// - `GROUP_2` — ship belongs to this group

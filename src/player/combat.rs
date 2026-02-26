@@ -34,7 +34,7 @@ use super::state::{
 };
 use crate::asteroid::{
     canonical_vertices_for_mass, compute_convex_hull_from_points, rescale_vertices_to_area,
-    spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices,
+    spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Planet, Vertices,
 };
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
@@ -319,11 +319,14 @@ pub fn missile_trail_particles_system(
 /// | ≤ 3 | Immediate destroy + double destroy bonus |
 /// | 4–8 | Scatter into `n` unit fragments |
 /// | ≥ 9 | Scatter 4 unit fragments, chip mass by 3 |
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn missile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
-    q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity, &Vertices), With<Asteroid>>,
+    q_asteroids: Query<
+        (&AsteroidSize, &Transform, &Velocity, &Vertices),
+        (With<Asteroid>, Without<Planet>),
+    >,
     q_missiles: Query<&Transform, With<Missile>>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
@@ -705,11 +708,14 @@ pub fn player_respawn_system(
 /// Matches `CollisionEvent::Started` pairs; ignores `Stopped`.
 /// Uses two `HashSet`s to ensure each projectile and each asteroid is processed at
 /// most once per frame even if they appear in multiple cascade events.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn projectile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
-    q_asteroids: Query<(&AsteroidSize, &Transform, &Velocity, &Vertices), With<Asteroid>>,
+    q_asteroids: Query<
+        (&AsteroidSize, &Transform, &Velocity, &Vertices),
+        (With<Asteroid>, Without<Planet>),
+    >,
     mut q_proj: Query<(&Transform, &mut Projectile)>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
@@ -879,6 +885,44 @@ pub fn projectile_asteroid_hit_system(
                 linvel: vel,
                 angvel: ang_vel,
             });
+        }
+    }
+}
+
+/// Consume projectile/missile hits against planets without awarding score.
+///
+/// - Projectiles are marked as hit so lifetime cleanup despawns them.
+/// - Missiles are despawned immediately on contact.
+pub fn projectile_missile_planet_hit_system(
+    mut commands: Commands,
+    mut collision_events: MessageReader<CollisionEvent>,
+    q_planets: Query<Entity, With<Planet>>,
+    mut q_proj: Query<&mut Projectile>,
+    q_missiles: Query<(), With<Missile>>,
+) {
+    for event in collision_events.read() {
+        let (e1, e2) = match event {
+            CollisionEvent::Started(e1, e2, _) => (*e1, *e2),
+            CollisionEvent::Stopped(..) => continue,
+        };
+
+        let (planet_entity, other_entity) = if q_planets.contains(e1) {
+            (e1, e2)
+        } else if q_planets.contains(e2) {
+            (e2, e1)
+        } else {
+            continue;
+        };
+
+        let _ = planet_entity;
+
+        if let Ok(mut projectile) = q_proj.get_mut(other_entity) {
+            projectile.was_hit = true;
+            continue;
+        }
+
+        if q_missiles.contains(other_entity) {
+            commands.entity(other_entity).despawn();
         }
     }
 }

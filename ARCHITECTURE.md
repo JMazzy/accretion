@@ -306,6 +306,7 @@ Physics constants are defined in `src/constants.rs` as compile-time defaults and
 
 #### Gameplay & Extensibility
 - ~~**Configuration file support**: Load physics constants from an `assets/physics.toml` file at startup, enabling tuning without recompilation~~ ✅ **Completed** — `assets/physics.toml` loaded at startup via `PhysicsConfig` resource
+- ~~**Planet entity type**: Introduce an anchored high-mass world body that participates in gravity but is excluded from asteroid merge/split weapon destruction paths~~ ✅ **Completed**
 - **Score and progression system**: Points for asteroid destruction scaled by size; wave-based difficulty ramp spawning more and larger asteroids over time
 - **Power-up asteroids**: Special-coloured asteroids that grant the player temporary buffs (shield, rapid-fire, gravity bomb) on destruction
 - **Boss asteroids**: Single very-large composite (size ≥ 20) with scripted split behaviour acting as a wave-ending target

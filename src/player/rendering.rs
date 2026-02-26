@@ -6,14 +6,14 @@
 //! | Layer                  | Technology | Default | Toggle                     |
 //! |------------------------|------------|---------|----------------------------|
 //! | Ship filled polygon    | `Mesh2d`   | ON      | hidden in `wireframe_only` |
-//! | Ship wireframe outline | Gizmos     | OFF     | `show_ship_outline`        |
+//! | Ship wireframe outline | `Mesh2d`   | OFF     | `show_ship_outline`        |
 //! | Aim direction indicator| `Mesh2d`   | OFF     | `show_aim_indicator`       |
 //! | Health bar             | `Mesh2d`   | always  | —                          |
 //! | Projectile filled disc | `Mesh2d`   | ON      | hidden in `wireframe_only` |
-//! | Projectile outline     | Gizmos     | OFF     | `show_projectile_outline`  |
+//! | Projectile outline     | `Mesh2d`   | OFF     | `show_projectile_outline`  |
 
 use super::state::{AimDirection, Missile, Player, PlayerHealth, Projectile};
-use crate::asteroid_rendering::filled_polygon_mesh;
+use crate::asteroid_rendering::{filled_polygon_mesh, polygon_outline_mesh, ring_mesh};
 use crate::rendering::OverlayState;
 use bevy::prelude::*;
 use bevy_asset::RenderAssetUsages;
@@ -53,6 +53,22 @@ pub struct HealthBarFill(pub Handle<ColorMaterial>);
 /// Marker for the aim-direction arrow entity.
 #[derive(Component)]
 pub struct AimIndicatorMesh;
+
+/// Marker for retained projectile outline meshes.
+#[derive(Component)]
+pub struct ProjectileOutlineMesh;
+
+/// Marker for retained missile outline meshes.
+#[derive(Component)]
+pub struct MissileOutlineMesh;
+
+/// Marker + material handle for retained ship-outline mesh.
+#[derive(Component)]
+pub struct ShipOutlineMesh(pub Handle<ColorMaterial>);
+
+/// Marker for retained ship nose-line mesh.
+#[derive(Component)]
+pub struct ShipNoseMesh;
 
 // ── Mesh geometry helpers ─────────────────────────────────────────────────────
 
@@ -181,7 +197,8 @@ pub fn attach_player_ship_mesh_system(
     overlay: Res<OverlayState>,
 ) {
     for entity in query.iter() {
-        let mesh_handle = meshes.add(filled_polygon_mesh(&ship_vertices()));
+        let verts = ship_vertices();
+        let mesh_handle = meshes.add(filled_polygon_mesh(&verts));
         // Dark teal fill: complements the cyan gizmo outline colour used at full HP.
         let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(0.08, 0.30, 0.32)));
         let visibility = if overlay.wireframe_only {
@@ -194,6 +211,39 @@ pub fn attach_player_ship_mesh_system(
             MeshMaterial2d(mat_handle),
             visibility,
         ));
+
+        let outline_visibility = if overlay.show_ship_outline || overlay.wireframe_only {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        let outline_mat = materials.add(ColorMaterial::from_color(Color::srgb(0.2, 0.8, 1.0)));
+        let outline = commands
+            .spawn((
+                Mesh2d(meshes.add(polygon_outline_mesh(&verts, 0.45))),
+                MeshMaterial2d(outline_mat.clone()),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.02)),
+                outline_visibility,
+                ShipOutlineMesh(outline_mat),
+            ))
+            .id();
+
+        let nose = commands
+            .spawn((
+                Mesh2d(meshes.add(unit_rect_mesh())),
+                MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::WHITE))),
+                Transform {
+                    translation: Vec3::new(0.0, 6.0, 0.03),
+                    rotation: Quat::IDENTITY,
+                    scale: Vec3::new(0.9, 12.0, 1.0),
+                },
+                outline_visibility,
+                ShipNoseMesh,
+            ))
+            .id();
+
+        commands.entity(entity).add_child(outline);
+        commands.entity(entity).add_child(nose);
     }
 }
 
@@ -210,6 +260,8 @@ pub fn attach_projectile_mesh_system(
 ) {
     const PROJ_RADIUS: f32 = 2.0;
     const PROJ_LENGTH: f32 = 10.0;
+    const OUTLINE_RADIUS: f32 = 3.0;
+    const OUTLINE_THICKNESS: f32 = 0.8;
     let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.85, 0.1)));
     for (entity, velocity, mut transform) in query.iter_mut() {
         let mesh_handle = meshes.add(elongated_projectile_mesh(PROJ_RADIUS, PROJ_LENGTH, 16));
@@ -229,6 +281,24 @@ pub fn attach_projectile_mesh_system(
             MeshMaterial2d(mat_handle.clone()),
             visibility,
         ));
+
+        let outline_visibility = if overlay.show_projectile_outline || overlay.wireframe_only {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        let outline = commands
+            .spawn((
+                Mesh2d(meshes.add(ring_mesh(OUTLINE_RADIUS, OUTLINE_THICKNESS, 24))),
+                MeshMaterial2d(
+                    materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.9, 0.2))),
+                ),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.02)),
+                outline_visibility,
+                ProjectileOutlineMesh,
+            ))
+            .id();
+        commands.entity(entity).add_child(outline);
     }
 }
 
@@ -247,6 +317,8 @@ pub fn attach_missile_mesh_system(
     const BODY_LENGTH: f32 = 12.0;
     const NOSE_LENGTH: f32 = 6.0;
     const FIN_SIZE: f32 = 4.0;
+    const OUTLINE_RADIUS: f32 = 5.5;
+    const OUTLINE_THICKNESS: f32 = 1.0;
 
     let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.45, 0.05)));
     for (entity, velocity, mut transform) in query.iter_mut() {
@@ -267,6 +339,24 @@ pub fn attach_missile_mesh_system(
             MeshMaterial2d(mat_handle.clone()),
             visibility,
         ));
+
+        let outline_visibility = if overlay.show_projectile_outline || overlay.wireframe_only {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        let outline = commands
+            .spawn((
+                Mesh2d(meshes.add(ring_mesh(OUTLINE_RADIUS, OUTLINE_THICKNESS, 28))),
+                MeshMaterial2d(
+                    materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.45, 0.05))),
+                ),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.02)),
+                outline_visibility,
+                MissileOutlineMesh,
+            ))
+            .id();
+        commands.entity(entity).add_child(outline);
     }
 }
 
@@ -507,67 +597,58 @@ pub fn sync_player_and_projectile_mesh_visibility_system(
     }
 }
 
-// ── Gizmo rendering ───────────────────────────────────────────────────────────
-
-/// Draw optional gizmo overlays for the player ship and projectiles.
-///
-/// Which layers are drawn is controlled by [`OverlayState`]:
-/// - **Ship outline**: `show_ship_outline` OR `wireframe_only` → coloured polygon loop + nose line
-/// - **Projectile outlines**: `show_projectile_outline` OR `wireframe_only` → yellow circle
-///
-/// The health bar and aim indicator are now GPU-retained `Mesh2d` entities
-/// managed by `attach_player_ui_system`, `sync_player_health_bar_system`, and
-/// `sync_aim_indicator_system`.
-pub fn player_gizmo_system(
-    mut gizmos: Gizmos,
-    q_player: Query<(&Transform, &PlayerHealth), With<Player>>,
-    q_projectiles: Query<&Transform, With<Projectile>>,
-    q_missiles: Query<&Transform, With<Missile>>,
+/// Show/hide retained projectile and missile outlines from overlay toggles.
+pub fn sync_projectile_outline_visibility_system(
     overlay: Res<OverlayState>,
+    mut q_proj_outline: Query<&mut Visibility, With<ProjectileOutlineMesh>>,
+    mut q_missile_outline: Query<&mut Visibility, With<MissileOutlineMesh>>,
 ) {
-    // ── Ship ──────────────────────────────────────────────────────────────────
-    if let Ok((transform, health)) = q_player.single() {
-        let pos = transform.translation.truncate();
-        let rot = transform.rotation;
-        let verts = ship_vertices();
-
-        let hp_frac = (health.hp / health.max_hp).clamp(0.0, 1.0);
-
-        // ── Ship wireframe outline (optional) ─────────────────────────────────
-        if overlay.show_ship_outline || overlay.wireframe_only {
-            // Tint: cyan at full health, red at zero health
-            let ship_color = Color::srgb(1.0 - hp_frac * 0.8, hp_frac * 0.6 + 0.2, hp_frac);
-
-            for i in 0..verts.len() {
-                let v1 = verts[i];
-                let v2 = verts[(i + 1) % verts.len()];
-                let p1 = pos + rot.mul_vec3(v1.extend(0.0)).truncate();
-                let p2 = pos + rot.mul_vec3(v2.extend(0.0)).truncate();
-                gizmos.line_2d(p1, p2, ship_color);
-            }
-
-            // Nose direction indicator (white)
-            let nose_world = pos + rot.mul_vec3(Vec3::new(0.0, 12.0, 0.0)).truncate();
-            gizmos.line_2d(pos, nose_world, Color::WHITE);
-        }
-
-        // NOTE: Aim indicator and health bar are now GPU-retained Mesh2d entities.
-        // See attach_player_ui_system / sync_aim_indicator_system / sync_player_health_bar_system.
+    if !overlay.is_changed() {
+        return;
     }
 
-    // ── Projectile outlines (optional) ────────────────────────────────────────
-    if overlay.show_projectile_outline || overlay.wireframe_only {
-        let proj_color = Color::srgb(1.0, 0.9, 0.2); // yellow
-        for transform in q_projectiles.iter() {
-            let p = transform.translation.truncate();
-            gizmos.circle_2d(p, 3.0, proj_color);
+    let vis = if overlay.show_projectile_outline || overlay.wireframe_only {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+
+    for mut v in q_proj_outline.iter_mut() {
+        *v = vis;
+    }
+    for mut v in q_missile_outline.iter_mut() {
+        *v = vis;
+    }
+}
+
+/// Show/hide retained ship outline meshes and update HP-based tint.
+pub fn sync_ship_outline_visibility_and_color_system(
+    q_player: Query<&PlayerHealth, With<Player>>,
+    overlay: Res<OverlayState>,
+    mut q_outline: Query<(&ShipOutlineMesh, &mut Visibility)>,
+    mut q_nose: Query<&mut Visibility, With<ShipNoseMesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let Ok(health) = q_player.single() else {
+        return;
+    };
+
+    let hp_frac = (health.hp / health.max_hp).clamp(0.0, 1.0);
+    let ship_color = Color::srgb(1.0 - hp_frac * 0.8, hp_frac * 0.6 + 0.2, hp_frac);
+    let vis = if overlay.show_ship_outline || overlay.wireframe_only {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+
+    for (outline, mut visibility) in q_outline.iter_mut() {
+        *visibility = vis;
+        if let Some(mat) = materials.get_mut(&outline.0) {
+            mat.color = ship_color;
         }
-        // Missiles: orange outline, larger
-        let missile_color = Color::srgb(1.0, 0.45, 0.05);
-        for transform in q_missiles.iter() {
-            let p = transform.translation.truncate();
-            gizmos.circle_2d(p, 5.5, missile_color);
-        }
+    }
+    for mut visibility in q_nose.iter_mut() {
+        *visibility = vis;
     }
 }
 

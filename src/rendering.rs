@@ -6,15 +6,15 @@
 //! |--------------------|--------------|---------|-------------------------|
 //! | Asteroid fills     | `Mesh2d`     | ON      | `wireframe_only` flag   |
 //! | Wireframe outlines | `Mesh2d`     | OFF     | `wireframe_only` (swap) |
-//! | Gizmo wf overlay   | Gizmos       | OFF     | `show_wireframes`       |
-//! | Force vectors      | Gizmos       | OFF     | `show_force_vectors`    |
-//! | Velocity arrows    | Gizmos       | OFF     | `show_velocity_arrows`  |
+//! | Wireframe overlay  | `Mesh2d`     | OFF     | `show_wireframes`       |
+//! | Force vectors      | `Mesh2d`     | OFF     | `show_force_vectors`    |
+//! | Velocity arrows    | `Mesh2d`     | OFF     | `show_velocity_arrows`  |
 //! | Culling boundary   | `Mesh2d`     | OFF     | `show_boundary`         |
 //! | Player ship fill   | `Mesh2d`     | ON      | `wireframe_only` flag   |
-//! | Ship outline       | Gizmos       | OFF     | `show_ship_outline`     |
+//! | Ship outline       | `Mesh2d`     | OFF     | `show_ship_outline`     |
 //! | Aim indicator      | `Mesh2d`     | OFF     | `show_aim_indicator`    |
 //! | Projectile fills   | `Mesh2d`     | ON      | `wireframe_only` flag   |
-//! | Projectile outline | Gizmos       | OFF     | `show_projectile_outline`|
+//! | Projectile outline | `Mesh2d`     | OFF     | `show_projectile_outline`|
 //! | Health bar         | `Mesh2d`     | always  | —                       |
 //! | Stats overlay      | Bevy UI      | OFF     | `show_stats`            |
 //! | Score HUD          | Bevy UI      | always  | —                       |
@@ -34,7 +34,7 @@
 //! | `sync_boundary_ring_visibility_system` | Update | Show/hide boundary ring   |
 //! | `sync_stats_overlay_visibility_system` | Update | Show/hide stats overlay   |
 //! | `debug_panel_button_system`   | Update   | Process toggle button clicks        |
-//! | `gizmo_rendering_system`      | Update   | Draw gizmo overlays per OverlayState|
+//! | `sync_debug_line_layers_system` | Update | Refresh retained debug line layers   |
 
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
@@ -49,6 +49,8 @@ use crate::spatial_partition::SpatialGrid;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
+use bevy_asset::RenderAssetUsages;
+use bevy_mesh::{Indices, PrimitiveTopology};
 use bevy_rapier2d::prelude::{ReadRapierContext, Velocity};
 use std::collections::HashMap;
 
@@ -128,6 +130,22 @@ pub struct PhysicsInspectorDisplay;
 /// Marker for the profiler text node.
 #[derive(Component)]
 pub struct ProfilerDisplay;
+
+/// Marker for retained asteroid wireframe overlay line mesh.
+#[derive(Component)]
+pub struct WireframeOverlayLayer;
+
+/// Marker for retained force-vector overlay line mesh.
+#[derive(Component)]
+pub struct ForceVectorLayer;
+
+/// Marker for retained velocity-arrow overlay line mesh.
+#[derive(Component)]
+pub struct VelocityArrowLayer;
+
+/// Marker for retained spatial-grid overlay line mesh.
+#[derive(Component)]
+pub struct SpatialGridLayer;
 
 /// Tags a toggle button in the debug panel with the overlay field it controls.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
@@ -221,6 +239,53 @@ fn off_text() -> Color {
     Color::srgb(0.65, 0.65, 0.65)
 }
 
+fn line_segments_mesh(segments: &[(Vec2, Vec2)], half_width: f32) -> Mesh {
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(segments.len() * 4);
+    let mut indices: Vec<u32> = Vec::with_capacity(segments.len() * 6);
+
+    for (i, (a, b)) in segments.iter().copied().enumerate() {
+        let delta = b - a;
+        if delta.length_squared() <= 1e-6 {
+            continue;
+        }
+        let dir = delta.normalize();
+        let perp = Vec2::new(-dir.y, dir.x) * half_width;
+
+        let p0 = a + perp;
+        let p1 = b + perp;
+        let p2 = b - perp;
+        let p3 = a - perp;
+
+        let base = (i * 4) as u32;
+        positions.push([p0.x, p0.y, 0.0]);
+        positions.push([p1.x, p1.y, 0.0]);
+        positions.push([p2.x, p2.y, 0.0]);
+        positions.push([p3.x, p3.y, 0.0]);
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    let normals: Vec<[f32; 3]> = vec![[0.0, 0.0, 1.0]; positions.len()];
+    let uvs: Vec<[f32; 2]> = vec![[0.0, 0.0]; positions.len()];
+
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
+#[derive(Default)]
+pub struct DebugLineScratch {
+    wire: Vec<(Vec2, Vec2)>,
+    force: Vec<(Vec2, Vec2)>,
+    velocity: Vec<(Vec2, Vec2)>,
+    grid: Vec<(Vec2, Vec2)>,
+}
+
 // ── Startup: boundary ring ───────────────────────────────────────────────────
 
 /// Spawn the cull-boundary indicator as a retained GPU ring mesh.
@@ -246,6 +311,49 @@ pub fn setup_boundary_ring(
         Transform::from_translation(Vec3::new(0.0, 0.0, -0.5)), // behind asteroids
         Visibility::Hidden, // off by default, toggled by show_boundary flag
         BoundaryRing,
+    ));
+}
+
+/// Spawn retained `Mesh2d` entities for all debug line overlays.
+pub fn setup_debug_line_layers(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let empty = meshes.add(line_segments_mesh(&[], 0.4));
+
+    commands.spawn((
+        Mesh2d(empty.clone()),
+        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::srgba(1.0, 1.0, 1.0, 0.4)))),
+        Transform::from_translation(Vec3::new(0.0, 0.0, 2.5)),
+        Visibility::Hidden,
+        WireframeOverlayLayer,
+    ));
+
+    commands.spawn((
+        Mesh2d(empty.clone()),
+        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.15, 0.15)))),
+        Transform::from_translation(Vec3::new(0.0, 0.0, 2.55)),
+        Visibility::Hidden,
+        ForceVectorLayer,
+    ));
+
+    commands.spawn((
+        Mesh2d(empty.clone()),
+        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::srgb(0.2, 0.8, 1.0)))),
+        Transform::from_translation(Vec3::new(0.0, 0.0, 2.6)),
+        Visibility::Hidden,
+        VelocityArrowLayer,
+    ));
+
+    commands.spawn((
+        Mesh2d(empty),
+        MeshMaterial2d(materials.add(ColorMaterial::from_color(Color::srgba(
+            0.35, 0.95, 0.35, 0.45,
+        )))),
+        Transform::from_translation(Vec3::new(0.0, 0.0, 2.65)),
+        Visibility::Hidden,
+        SpatialGridLayer,
     ));
 }
 
@@ -996,27 +1104,28 @@ pub fn debug_panel_button_system(
     }
 }
 
-// ── Update: gizmo overlay rendering ──────────────────────────────────────────
+// ── Update: retained debug-line overlay rendering ───────────────────────────
 
-/// Draw all enabled gizmo overlay layers based on [`OverlayState`].
-///
-/// The culling boundary circle and asteroid wireframes in `wireframe_only` mode
-/// are now handled by retained `Mesh2d` entities — this system only handles the
-/// semi-transparent additive overlay (`show_wireframes`), force vectors, and
-/// velocity arrows.
-pub fn gizmo_rendering_system(
-    mut gizmos: Gizmos,
+/// Refresh retained `Mesh2d` line overlays from current simulation state.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn sync_debug_line_layers_system(
     query: Query<(&Transform, &Vertices, &GravityForce, &Velocity), With<Asteroid>>,
     stats: Res<SimulationStats>,
     config: Res<PhysicsConfig>,
     grid: Res<SpatialGrid>,
-    mut split_lines: Local<Vec<(Vec2, Vec2)>>,
     overlay: Res<OverlayState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut q_wire: Query<(&Mesh2d, &mut Visibility), With<WireframeOverlayLayer>>,
+    mut q_force: Query<(&Mesh2d, &mut Visibility), With<ForceVectorLayer>>,
+    mut q_velocity: Query<(&Mesh2d, &mut Visibility), With<VelocityArrowLayer>>,
+    mut q_grid: Query<(&Mesh2d, &mut Visibility), With<SpatialGridLayer>>,
+    mut scratch: Local<DebugLineScratch>,
 ) {
-    // ── Wireframe outlines (semi-transparent additive overlay) ─────────────────
-    // NOTE: wireframe_only mode now uses retained Mesh2d polygon-outline meshes
-    // (see sync_asteroid_render_mode_system). This branch only handles the
-    // show_wireframes semi-transparent overlay on top of fills.
+    scratch.wire.clear();
+    scratch.force.clear();
+    scratch.velocity.clear();
+    scratch.grid.clear();
+
     if overlay.show_wireframes {
         for (transform, vertices, _, _) in query.iter() {
             if vertices.0.len() < 2 {
@@ -1030,47 +1139,89 @@ pub fn gizmo_rendering_system(
                 let v2 = vertices.0[(i + 1) % n];
                 let p1 = pos + rot.mul_vec3(v1.extend(0.0)).truncate();
                 let p2 = pos + rot.mul_vec3(v2.extend(0.0)).truncate();
-                gizmos.line_2d(p1, p2, Color::srgba(1.0, 1.0, 1.0, 0.4));
+                scratch.wire.push((p1, p2));
             }
         }
     }
 
-    // ── Force vectors ─────────────────────────────────────────────────────────
     if overlay.show_force_vectors && stats.live_count < config.force_vector_hide_threshold {
         for (transform, _, grav, _) in query.iter() {
             let pos = transform.translation.truncate();
             let force_vec = grav.0 * config.force_vector_display_scale;
             if force_vec.length() > config.force_vector_min_length {
-                gizmos.line_2d(pos, pos + force_vec, Color::srgb(1.0, 0.15, 0.15));
+                scratch.force.push((pos, pos + force_vec));
             }
         }
     }
 
-    // ── Velocity arrows ───────────────────────────────────────────────────────
     if overlay.show_velocity_arrows {
         for (transform, _, _, vel) in query.iter() {
             let pos = transform.translation.truncate();
             let v = vel.linvel;
             if v.length_squared() > 0.5 {
                 let tip = pos + v * 0.15;
-                gizmos.line_2d(pos, tip, Color::srgb(0.2, 0.8, 1.0));
-                gizmos.circle_2d(tip, 1.5, Color::srgb(0.2, 0.8, 1.0));
+                scratch.velocity.push((pos, tip));
+
+                let dir = (tip - pos).normalize_or_zero();
+                if dir != Vec2::ZERO {
+                    let perp = Vec2::new(-dir.y, dir.x);
+                    scratch.velocity.push((tip, tip - dir * 2.2 + perp * 1.2));
+                    scratch.velocity.push((tip, tip - dir * 2.2 - perp * 1.2));
+                }
             }
         }
     }
 
-    // ── Spatial partition split cells (KD-tree) ─────────────────────────────
     if overlay.show_debug_grid {
         let half = config.cull_distance;
         let min = Vec2::new(-half, -half);
         let max = Vec2::new(half, half);
-        grid.collect_debug_split_lines(min, max, &mut split_lines);
-        for (a, b) in split_lines.iter().copied() {
-            gizmos.line_2d(a, b, Color::srgba(0.35, 0.95, 0.35, 0.45));
+        grid.collect_debug_split_lines(min, max, &mut scratch.grid);
+    }
+
+    if let Ok((mesh_handle, mut vis)) = q_wire.single_mut() {
+        *vis = if overlay.show_wireframes {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+            *mesh = line_segments_mesh(&scratch.wire, 0.28);
         }
     }
 
-    // NOTE: The culling boundary circle is now a retained Mesh2d ring entity
-    // managed by `setup_boundary_ring` + `sync_boundary_ring_visibility_system`.
-    // No per-frame gizmo call needed here.
+    if let Ok((mesh_handle, mut vis)) = q_force.single_mut() {
+        *vis = if overlay.show_force_vectors
+            && stats.live_count < config.force_vector_hide_threshold
+        {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+            *mesh = line_segments_mesh(&scratch.force, 0.35);
+        }
+    }
+
+    if let Ok((mesh_handle, mut vis)) = q_velocity.single_mut() {
+        *vis = if overlay.show_velocity_arrows {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+            *mesh = line_segments_mesh(&scratch.velocity, 0.32);
+        }
+    }
+
+    if let Ok((mesh_handle, mut vis)) = q_grid.single_mut() {
+        *vis = if overlay.show_debug_grid {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+            *mesh = line_segments_mesh(&scratch.grid, 0.20);
+        }
+    }
 }

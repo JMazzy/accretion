@@ -41,7 +41,7 @@
 - **Noise-based clustering**: positions are sampled from a hash-based 2D noise function so asteroids naturally form groups; cluster density and size are controlled by `noise_frequency` in `src/asteroid.rs`
 - Random shapes (triangles, squares, pentagons, hexagons, **heptagons, octagons**) and sizes (`ASTEROID_SIZE_SCALE_MIN`–`ASTEROID_SIZE_SCALE_MAX`×), random initial velocities
 - **Vertex jitter**: each spawned polygon has per-vertex random offsets applied (amplitude proportional to `size_scale × 0.8`) so asteroids appear worn and irregular rather than perfectly geometric
-- One **planetoid** (16-sided near-circle, unit size `PLANETOID_UNIT_SIZE`) spawns at a fixed offset from the origin and participates in full N-body gravity and merging like any other asteroid
+- One anchored **planet** (16-sided near-circle) spawns at a fixed offset from the origin; it participates in gravity but is excluded from merge/split destruction logic
 
 ### Camera Controls
 
@@ -221,6 +221,18 @@ Live: XX | Culled: YY | Merged: ZZ
 - **Purpose**: Shows edge where asteroids will be auto-removed
 - **Follows Camera**: Rendered in world-space, moves with pan
 - **Color**: RGB(1.0, 1.0, 0.0) - Bright yellow for visibility
+
+### Planets (Anchored Gravity Bodies)
+
+- Planets are large, near-circular **purple** world bodies used as anchored gravity wells.
+- Physics behavior:
+  - Participate in N-body gravity calculations
+  - Remain fixed in place (`RigidBody::Fixed`)
+  - Excluded from asteroid cluster-merging logic
+- Weapon interactions:
+  - Projectiles and missiles are consumed on impact
+  - Planet hits do **not** grant score and do not split/destroy the planet
+- Current usage: the Field scenario includes one offset anchored planet, and the Orbit scenario uses a central anchored planet with orbital debris rings.
 
 ### Asteroid Rendering
 
@@ -402,8 +414,8 @@ Open from the pause menu (**DEBUG OVERLAYS** button). Appears in the top-right c
 | Velocity Arrows       | OFF     | Cyan velocity arrows per asteroid                                |
 | Wireframe-Only Mode   | OFF     | Hide all `Mesh2d` fills; render everything as gizmo wireframes  |
 | Aim Indicator         | OFF     | Orange line + dot showing current fire direction                 |
-| Ship Outline          | OFF     | HP-tinted polygon edges + nose indicator over the ship fill     |
-| Projectile Outline    | OFF     | Yellow gizmo circles over projectile disc fills                  |
+| Ship Outline          | OFF     | Retained `Mesh2d` HP-tinted polygon edges + nose indicator      |
+| Projectile Outline    | OFF     | Retained `Mesh2d` ring outlines over projectile/missile fills    |
 | Spatial Grid          | OFF     | KD-tree split-cell lines for spatial partition debugging         |
 | Profiler              | OFF     | Frame ms/FPS and Update/Fixed/Post timing breakdown             |
 | Stats Overlay         | OFF     | Live/Culled/Merged/Split/Destroyed simulation counters           |
