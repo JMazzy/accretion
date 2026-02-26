@@ -261,15 +261,30 @@ pub const ORE_HEAL_AMOUNT: f32 = 30.0;
 
 // ── Ore Magnet ────────────────────────────────────────────────────────────────
 
-/// Distance (u) from the player within which ore pickups are attracted toward
-/// the ship.  Beyond this radius ore drifts freely; at or inside it the magnet
-/// pull activates.
-pub const ORE_MAGNET_RADIUS: f32 = 250.0;
+/// Base magnet pull radius at level 0 (world units).
+/// Upgrades add +50 u per level (→ 700 u at level 9).
+///
+/// Intentionally small at base level to incentivize upgrades; ore collection
+/// range feels limited until invested into.
+pub const ORE_MAGNET_BASE_RADIUS: f32 = 250.0;
 
-/// Speed (u/s) at which attracted ore is lerped toward its target velocity
-/// (directly at the player).  Higher values make the pull faster and snappier;
-/// lower values produce a gentler, smoother drift.
-pub const ORE_MAGNET_STRENGTH: f32 = 120.0;
+/// Base magnet pull strength at level 0 (velocity magnitude, u/s).
+/// Upgrades add +16 u/s per level (→ 184 u/s at level 9).
+///
+/// Reduced from 120 → 40 u/s to make upgrades feel impactful.  Level 0 collection
+/// is intentionally slow; by level 5–6 it's fast enough for comfortable play.
+pub const ORE_MAGNET_BASE_STRENGTH: f32 = 40.0;
+
+/// Maximum level the ore magnet can be upgraded to (1-indexed display; 0 = base).
+///
+/// At level N the magnet pulls ore from (250 + N × 50) u at (40 + N × 16) u/s.
+pub const ORE_AFFINITY_MAX_LEVEL: u32 = 10;
+
+/// Ore cost for the next magnet upgrade = `ORE_AFFINITY_UPGRADE_BASE_COST * next_level`.
+///
+/// Level 1 costs 5, Level 2 costs 10, …, Level 10 costs 50.
+/// Total to max-level: 5 + 10 + … + 50 = 275 ore.
+pub const ORE_AFFINITY_UPGRADE_BASE_COST: u32 = 5;
 
 // ── Gamepad ───────────────────────────────────────────────────────────────────
 
@@ -384,3 +399,17 @@ pub const PRIMARY_WEAPON_MAX_LEVEL: u32 = 10;
 /// Level 1 costs 5, Level 2 costs 10, …, Level 10 costs 50.
 /// Total to max-level: 5 + 10 + … + 50 = 275 ore.
 pub const WEAPON_UPGRADE_BASE_COST: u32 = 5;
+
+// ── Secondary Weapon (Missile) Upgrades ────────────────────────────────────────
+
+/// Maximum level the secondary weapon (missile) can be upgraded to (1-indexed display; 0 = base).
+///
+/// At level N the missile destroys asteroids of size ≤ (2 + N) and chips (2 + N) units
+/// for larger asteroids, each chipped unit becoming a size-1 fragment.
+pub const SECONDARY_WEAPON_MAX_LEVEL: u32 = 10;
+
+/// Ore cost for the next missile upgrade = `SECONDARY_WEAPON_UPGRADE_BASE_COST * next_level`.
+///
+/// Level 1 costs 5, Level 2 costs 10, …, Level 10 costs 50.
+/// Total to max-level: 5 + 10 + … + 50 = 275 ore.
+pub const SECONDARY_WEAPON_UPGRADE_BASE_COST: u32 = 5;

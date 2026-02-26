@@ -11,7 +11,7 @@ pub struct GameFont(pub Handle<Font>);
 ///
 /// Must run before any UI setup systems that spawn text.
 pub fn load_game_font(mut font: ResMut<GameFont>, asset_server: Res<AssetServer>) {
-    let font_handle = asset_server.load("fonts/Tektur/Tektur-VariableFont_wdth,wght.ttf");
+    let font_handle = asset_server.load("fonts/Tektur/static/Tektur-Regular.ttf");
     font.0 = font_handle;
     eprintln!("[SETUP] Game font loaded");
 }

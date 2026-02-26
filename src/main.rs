@@ -93,6 +93,7 @@ fn main() {
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
     .insert_resource(player::PlayerFireCooldown::default())
     .insert_resource(player::PrimaryWeaponLevel::default())
+    .insert_resource(player::SecondaryWeaponLevel::default())
     // Global startup: config + camera + physics settings (needed by both menu and gameplay).
     .add_systems(
         Startup,

@@ -8,7 +8,8 @@
 
 use crate::constants::{
     INVINCIBILITY_DURATION, MISSILE_AMMO_MAX, PLAYER_LIVES, PLAYER_MAX_HP,
-    PRIMARY_WEAPON_MAX_LEVEL, WEAPON_UPGRADE_BASE_COST,
+    PRIMARY_WEAPON_MAX_LEVEL, SECONDARY_WEAPON_MAX_LEVEL, SECONDARY_WEAPON_UPGRADE_BASE_COST,
+    WEAPON_UPGRADE_BASE_COST,
 };
 use bevy::prelude::*;
 
@@ -259,6 +260,87 @@ impl PrimaryWeaponLevel {
         } else {
             // next_level (1-indexed) × base cost: 5, 10, 15, …, 50
             Some(WEAPON_UPGRADE_BASE_COST * (self.level + 2))
+        }
+    }
+
+    /// Returns `true` when the player has enough ore to afford the next upgrade.
+    #[inline]
+    pub fn can_afford_next(&self, ore: u32) -> bool {
+        self.cost_for_next_level().is_some_and(|cost| ore >= cost)
+    }
+
+    /// Spend ore and increment the level.  Returns the amount spent, or `None`
+    /// if maxed-out or the player cannot afford it.
+    pub fn try_upgrade(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.level += 1;
+        Some(cost)
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Secondary Weapon (Missile) Upgrade Level
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Missile weapon upgrade level.
+///
+/// Missiles become more destructive with upgrades:
+/// - At level N (0-indexed), the missile destroys asteroids ≤ size `2 + N`
+/// - For asteroids > size `2 + N`, it chips away `2 + N` units as size-1 fragments
+///
+/// Example progression (internal level → destroy threshold / chip size):
+/// - Level 0 (base): destroys 0–2, chips 2 units
+/// - Level 1: destroys 0–3, chips 3 units
+/// - Level 5: destroys 0–7, chips 7 units
+/// - Level 9 (max): destroys 0–11, chips 11 units
+#[derive(Resource, Debug, Clone, Default)]
+pub struct SecondaryWeaponLevel {
+    /// Internal 0-indexed level (0 = Level 1 / base, 9 = Level 10 / max).
+    pub level: u32,
+}
+
+impl SecondaryWeaponLevel {
+    /// Maximum internal level value (inclusive).
+    pub const MAX: u32 = SECONDARY_WEAPON_MAX_LEVEL - 1;
+
+    /// Human-readable display level (1-indexed).
+    #[inline]
+    pub fn display_level(&self) -> u32 {
+        self.level + 1
+    }
+
+    /// Largest asteroid size that this weapon fully destroys in one hit.
+    #[inline]
+    pub fn destroy_threshold(&self) -> u32 {
+        2 + self.level
+    }
+
+    /// Number of units to chip when hitting asteroids above destroy threshold.
+    /// Each chipped unit becomes a size-1 fragment.
+    #[inline]
+    pub fn chip_size(&self) -> u32 {
+        2 + self.level
+    }
+
+    /// Whether the weapon can be upgraded further.
+    #[inline]
+    pub fn is_maxed(&self) -> bool {
+        self.level >= Self::MAX
+    }
+
+    /// Ore cost to buy the next upgrade level.
+    /// Returns `None` when already at max level.
+    #[inline]
+    pub fn cost_for_next_level(&self) -> Option<u32> {
+        if self.is_maxed() {
+            None
+        } else {
+            // next_level (1-indexed) × base cost: 5, 10, 15, …, 50
+            Some(SECONDARY_WEAPON_UPGRADE_BASE_COST * (self.level + 2))
         }
     }
 

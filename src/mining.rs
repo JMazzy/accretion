@@ -24,7 +24,6 @@
 //! `CollisionGroups` filter is broadened to `GROUP_1 | GROUP_4` so the
 //! player-ore sensor events fire correctly.
 
-use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::player::Player;
 use bevy::prelude::*;
@@ -59,6 +58,86 @@ pub struct PlayerOre {
     pub count: u32,
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Ore Magnet (Affinity) Upgrade Level
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Ore magnet upgrade level (affinity for ore collection).
+///
+/// Higher levels increase both the magnet's pull radius and velocity (strength).
+/// Base values are intentionally weak (40 u/s at level 0) to make upgrades feel
+/// impactful and rewarding.
+///
+/// Example progression (internal level → radius / strength):
+/// - Level 0 (base): 250 u radius, 40 u/s pull
+/// - Level 1: 300 u radius, 56 u/s pull
+/// - Level 5: 500 u radius, 120 u/s pull
+/// - Level 9 (max): 700 u radius, 184 u/s pull
+#[derive(Resource, Debug, Clone, Default)]
+pub struct OreAffinityLevel {
+    /// Internal 0-indexed level (0 = Level 1 / base, 9 = Level 10 / max).
+    pub level: u32,
+}
+
+impl OreAffinityLevel {
+    /// Maximum internal level value (inclusive).
+    pub const MAX: u32 = crate::constants::ORE_AFFINITY_MAX_LEVEL - 1;
+
+    /// Human-readable display level (1-indexed).
+    #[inline]
+    pub fn display_level(&self) -> u32 {
+        self.level + 1
+    }
+
+    /// Magnet pull radius at the current level (world units).
+    #[inline]
+    pub fn radius_at_level(&self) -> f32 {
+        crate::constants::ORE_MAGNET_BASE_RADIUS + (self.level as f32 * 50.0)
+    }
+
+    /// Magnet pull strength at the current level (velocity magnitude, u/s).
+    #[inline]
+    pub fn strength_at_level(&self) -> f32 {
+        crate::constants::ORE_MAGNET_BASE_STRENGTH + (self.level as f32 * 16.0)
+    }
+
+    /// Whether the magnet can be upgraded further.
+    #[inline]
+    pub fn is_maxed(&self) -> bool {
+        self.level >= Self::MAX
+    }
+
+    /// Ore cost to buy the next upgrade level.
+    /// Returns `None` when already at max level.
+    #[inline]
+    pub fn cost_for_next_level(&self) -> Option<u32> {
+        if self.is_maxed() {
+            None
+        } else {
+            // next_level (1-indexed) × base cost: 5, 10, 15, …, 50
+            Some(crate::constants::ORE_AFFINITY_UPGRADE_BASE_COST * (self.level + 2))
+        }
+    }
+
+    /// Returns `true` when the player has enough ore to afford the next upgrade.
+    #[inline]
+    pub fn can_afford_next(&self, ore: u32) -> bool {
+        self.cost_for_next_level().is_some_and(|cost| ore >= cost)
+    }
+
+    /// Spend ore and increment the level.  Returns the amount spent, or `None`
+    /// if maxed-out or the player cannot afford it.
+    pub fn try_upgrade(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.level += 1;
+        Some(cost)
+    }
+}
+
 /// Shared mesh handle for all ore diamond visuals (created once at startup).
 #[derive(Resource)]
 struct OreMesh(Handle<Mesh>);
@@ -70,6 +149,7 @@ pub struct MiningPlugin;
 impl Plugin for MiningPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PlayerOre>()
+            .init_resource::<OreAffinityLevel>()
             .add_systems(Startup, setup_ore_mesh)
             .add_systems(
                 Update,
@@ -149,7 +229,7 @@ fn attach_ore_mesh_system(
 /// directly at the player at `ore_magnet_strength` u/s.  Outside the magnet
 /// radius the ore velocity is left completely untouched.
 fn ore_magnet_system(
-    config: Res<PhysicsConfig>,
+    affinity_level: Res<OreAffinityLevel>,
     time: Res<Time>,
     q_player: Query<&Transform, With<Player>>,
     mut q_ore: Query<(&Transform, &mut Velocity), With<OrePickup>>,
@@ -158,7 +238,8 @@ fn ore_magnet_system(
         return;
     };
     let player_pos = player_transform.translation.truncate();
-    let radius_sq = config.ore_magnet_radius * config.ore_magnet_radius;
+    let radius = affinity_level.radius_at_level();
+    let radius_sq = radius * radius;
     let dt = time.delta_secs();
     // Lerp alpha: at 4 × dt the velocity rotates ~14% per frame (≈60 fps →
     // fully pointing at player in ~0.25 s), giving a smooth but responsive pull.
@@ -172,7 +253,7 @@ fn ore_magnet_system(
         }
         // direction is guaranteed non-zero: ore can't overlap the player sensor
         // without already triggering collection.
-        let target_linvel = delta.normalize_or_zero() * config.ore_magnet_strength;
+        let target_linvel = delta.normalize_or_zero() * affinity_level.strength_at_level();
         vel.linvel = vel.linvel.lerp(target_linvel, alpha);
     }
 }

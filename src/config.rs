@@ -223,8 +223,8 @@ impl Default for PhysicsConfig {
             passive_heal_delay_secs: PASSIVE_HEAL_DELAY_SECS,
             passive_heal_rate: PASSIVE_HEAL_RATE,
             // Ore Magnet
-            ore_magnet_radius: ORE_MAGNET_RADIUS,
-            ore_magnet_strength: ORE_MAGNET_STRENGTH,
+            ore_magnet_radius: ORE_MAGNET_BASE_RADIUS,
+            ore_magnet_strength: ORE_MAGNET_BASE_STRENGTH,
             ore_heal_amount: ORE_HEAL_AMOUNT,
             // Gamepad
             gamepad_left_deadzone: GAMEPAD_LEFT_DEADZONE,

@@ -275,6 +275,7 @@ pub fn missile_asteroid_hit_system(
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
     config: Res<PhysicsConfig>,
+    missile_level: Res<super::SecondaryWeaponLevel>,
 ) {
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
     let mut processed_missiles: std::collections::HashSet<Entity> = Default::default();
@@ -325,120 +326,123 @@ pub fn missile_asteroid_hit_system(
         score.streak += 1;
         let multiplier = score.multiplier();
 
-        match n {
+        let destroy_threshold = missile_level.destroy_threshold();
+        let chip_count = missile_level.chip_size();
+
+        if n <= destroy_threshold {
             // ── Instant destroy (small asteroids) ─────────────────────────────
-            0..=3 => {
+            commands.entity(asteroid_entity).despawn();
+            stats.destroyed_total += 1;
+            score.destroyed += 1;
+            // Missiles award double the destroy bonus for small targets.
+            score.points += multiplier + 10 * multiplier;
+
+            // Spawn ore drops (one per unit mass destroyed).
+            let drop_count = n.max(1);
+            for i in 0..drop_count {
+                let angle = std::f32::consts::TAU * (i as f32 / drop_count as f32);
+                let offset = Vec2::new(angle.cos(), angle.sin()) * 6.0;
+                spawn_ore_drop(&mut commands, pos + offset, vel);
+            }
+            spawn_debris_particles(&mut commands, pos, vel, n + 2);
+        } else {
+            // ── Chip large asteroid into size-1 fragments ─────────────────────
+            score.points += multiplier;
+            let mut rng = rand::thread_rng();
+
+            // World-space hull for surface-point computation.
+            let rot = transform.rotation;
+            let world_verts: Vec<Vec2> = vertices
+                .0
+                .iter()
+                .map(|v| pos + rot.mul_vec3(v.extend(0.0)).truncate())
+                .collect();
+
+            // Direction pointing outward from the asteroid toward the
+            // missile — this is the "hit side" of the surface.
+            let impact_outward = (missile_pos - pos).normalize_or_zero();
+            let impact_outward = if impact_outward == Vec2::ZERO {
+                Vec2::X
+            } else {
+                impact_outward
+            };
+
+            // Spawn chip_count size-1 fragments radiating around the impact direction.
+            let base_angle = impact_outward.y.atan2(impact_outward.x);
+            for i in 0..chip_count {
+                // Distribute fragments evenly around the impact direction.
+                let spread: f32 = if chip_count > 1 {
+                    135.0 // ±67.5° spread when multiple fragments
+                } else {
+                    0.0
+                };
+                let angle = if chip_count <= 1 {
+                    base_angle
+                } else {
+                    base_angle + (i as f32 / (chip_count - 1) as f32 - 0.5) * spread.to_radians()
+                };
+                let dir = Vec2::new(angle.cos(), angle.sin());
+
+                // Ray from asteroid center outward — find where it exits
+                // the convex hull so we can spawn at the surface.
+                let surface_pt = if world_verts.len() >= 3 {
+                    let nv = world_verts.len();
+                    let mut best_t = f32::MAX;
+                    for j in 0..nv {
+                        let a = world_verts[j];
+                        let b = world_verts[(j + 1) % nv];
+                        let edge = b - a;
+                        let denom = dir.x * edge.y - dir.y * edge.x;
+                        if denom.abs() < 1e-6 {
+                            continue;
+                        }
+                        let diff = a - pos;
+                        let t = (diff.x * edge.y - diff.y * edge.x) / denom;
+                        let s = (diff.x * dir.y - diff.y * dir.x) / denom;
+                        if t > 0.0 && (0.0..=1.0).contains(&s) && t < best_t {
+                            best_t = t;
+                        }
+                    }
+                    if best_t < f32::MAX {
+                        pos + dir * best_t
+                    } else {
+                        let outer = vertices
+                            .0
+                            .iter()
+                            .map(|v| v.length())
+                            .fold(0.0_f32, f32::max);
+                        pos + dir * outer
+                    }
+                } else {
+                    missile_pos
+                };
+
+                // Place the fragment just beyond the surface and eject it
+                // outward from the impact with some random spread.
+                let frag_vel = vel
+                    + dir * 45.0
+                    + Vec2::new(rng.gen_range(-20.0..20.0), rng.gen_range(-20.0..20.0));
+                spawn_unit_fragment(
+                    &mut commands,
+                    surface_pt + dir * 6.0,
+                    frag_vel,
+                    ang_vel,
+                    config.asteroid_density,
+                );
+            }
+
+            // Calculate remaining asteroid mass after chipping.
+            let remaining_mass = n.saturating_sub(chip_count);
+
+            if remaining_mass == 0 {
+                // Asteroid completely destroyed by missile.
                 commands.entity(asteroid_entity).despawn();
                 stats.destroyed_total += 1;
                 score.destroyed += 1;
-                // Missiles award double the destroy bonus for small targets.
-                score.points += multiplier + 10 * multiplier;
-                spawn_ore_drop(&mut commands, pos, vel);
-                spawn_debris_particles(&mut commands, pos, vel, n + 2);
-            }
-
-            // ── Scatter into fragments (medium) ───────────────────────────
-            4..=8 => {
-                commands.entity(asteroid_entity).despawn();
-                stats.split_total += 1;
-                score.points += multiplier;
-                let mut rng = rand::thread_rng();
-                for i in 0..n {
-                    let angle = std::f32::consts::TAU * (i as f32 / n as f32);
-                    let offset = Vec2::new(angle.cos(), angle.sin()) * 10.0;
-                    let frag_vel =
-                        vel + Vec2::new(rng.gen_range(-50.0..50.0), rng.gen_range(-50.0..50.0));
-                    spawn_unit_fragment(
-                        &mut commands,
-                        pos + offset,
-                        frag_vel,
-                        ang_vel,
-                        config.asteroid_density,
-                    );
-                }
-                spawn_debris_particles(&mut commands, pos, vel, n);
-            }
-
-            // ── Chip a large asteroid, scatter burst ─────────────────────────
-            _ => {
-                score.points += multiplier;
-                let mut rng = rand::thread_rng();
-
-                // World-space hull for surface-point computation.
-                let rot = transform.rotation;
-                let world_verts: Vec<Vec2> = vertices
-                    .0
-                    .iter()
-                    .map(|v| pos + rot.mul_vec3(v.extend(0.0)).truncate())
-                    .collect();
-
-                // Direction pointing outward from the asteroid toward the
-                // missile — this is the "hit side" of the surface.
-                let impact_outward = (missile_pos - pos).normalize_or_zero();
-                let impact_outward = if impact_outward == Vec2::ZERO {
-                    Vec2::X
-                } else {
-                    impact_outward
-                };
-
-                // Fan 4 fragments ±67.5° / ±22.5° around the impact direction.
-                let base_angle = impact_outward.y.atan2(impact_outward.x);
-                for da in [-67.5_f32, -22.5, 22.5, 67.5] {
-                    let angle = base_angle + da.to_radians();
-                    let dir = Vec2::new(angle.cos(), angle.sin());
-
-                    // Ray from asteroid center outward — find where it exits
-                    // the convex hull so we can spawn at the surface.
-                    let surface_pt = if world_verts.len() >= 3 {
-                        let nv = world_verts.len();
-                        let mut best_t = f32::MAX;
-                        for i in 0..nv {
-                            let a = world_verts[i];
-                            let b = world_verts[(i + 1) % nv];
-                            let edge = b - a;
-                            let denom = dir.x * edge.y - dir.y * edge.x;
-                            if denom.abs() < 1e-6 {
-                                continue;
-                            }
-                            let diff = a - pos;
-                            let t = (diff.x * edge.y - diff.y * edge.x) / denom;
-                            let s = (diff.x * dir.y - diff.y * dir.x) / denom;
-                            if t > 0.0 && (0.0..=1.0).contains(&s) && t < best_t {
-                                best_t = t;
-                            }
-                        }
-                        if best_t < f32::MAX {
-                            pos + dir * best_t
-                        } else {
-                            let outer = vertices
-                                .0
-                                .iter()
-                                .map(|v| v.length())
-                                .fold(0.0_f32, f32::max);
-                            pos + dir * outer
-                        }
-                    } else {
-                        missile_pos
-                    };
-
-                    // Place the fragment just beyond the surface and eject it
-                    // outward from the impact with some random spread.
-                    let frag_vel = vel
-                        + dir * 45.0
-                        + Vec2::new(rng.gen_range(-20.0..20.0), rng.gen_range(-20.0..20.0));
-                    spawn_unit_fragment(
-                        &mut commands,
-                        surface_pt + dir * 6.0,
-                        frag_vel,
-                        ang_vel,
-                        config.asteroid_density,
-                    );
-                }
+            } else {
+                // Asteroid survives with reduced mass — bevel and respawn.
                 // Cut a flat facet at the most prominent vertex in the direction
-                // of the shot (the vertex furthest from centroid toward impact,
-                // approximated as the first vertex when hull is traversed from
-                // the scatter direction).  Same flat-facet bevel as bullet chip.
-                let chip_mass = n.saturating_sub(3).max(1);
+                // of the shot (the vertex furthest from centroid toward impact).
                 let local_verts: Vec<Vec2> = if !vertices.0.is_empty() {
                     let n_verts = vertices.0.len();
                     // Pick the vertex with the largest local radius as the bevel target.
@@ -471,9 +475,9 @@ pub fn missile_asteroid_hit_system(
                     let c = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
                     hull.iter().map(|v| *v - c).collect()
                 } else {
-                    canonical_vertices_for_mass(chip_mass)
+                    canonical_vertices_for_mass(remaining_mass)
                 };
-                let target_area = chip_mass as f32 / config.asteroid_density;
+                let target_area = remaining_mass as f32 / config.asteroid_density;
                 let local = rescale_vertices_to_area(&local_verts, target_area);
                 let grey = 0.4 + rand::random::<f32>() * 0.3;
                 let new_ent = spawn_asteroid_with_vertices(
@@ -481,7 +485,7 @@ pub fn missile_asteroid_hit_system(
                     pos,
                     &local,
                     Color::srgb(grey, grey, grey),
-                    chip_mass,
+                    remaining_mass,
                 );
                 commands.entity(asteroid_entity).despawn();
                 stats.split_total += 1;
@@ -489,8 +493,8 @@ pub fn missile_asteroid_hit_system(
                     linvel: vel,
                     angvel: ang_vel,
                 });
-                spawn_debris_particles(&mut commands, pos, vel, 4);
             }
+            spawn_debris_particles(&mut commands, pos, vel, chip_count.min(8));
         }
     }
 }
