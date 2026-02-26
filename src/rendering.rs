@@ -1115,10 +1115,12 @@ pub fn sync_debug_line_layers_system(
     grid: Res<SpatialGrid>,
     overlay: Res<OverlayState>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut q_wire: Query<(&Mesh2d, &mut Visibility), With<WireframeOverlayLayer>>,
-    mut q_force: Query<(&Mesh2d, &mut Visibility), With<ForceVectorLayer>>,
-    mut q_velocity: Query<(&Mesh2d, &mut Visibility), With<VelocityArrowLayer>>,
-    mut q_grid: Query<(&Mesh2d, &mut Visibility), With<SpatialGridLayer>>,
+    mut debug_layers: ParamSet<(
+        Query<(&Mesh2d, &mut Visibility), With<WireframeOverlayLayer>>,
+        Query<(&Mesh2d, &mut Visibility), With<ForceVectorLayer>>,
+        Query<(&Mesh2d, &mut Visibility), With<VelocityArrowLayer>>,
+        Query<(&Mesh2d, &mut Visibility), With<SpatialGridLayer>>,
+    )>,
     mut scratch: Local<DebugLineScratch>,
 ) {
     scratch.wire.clear();
@@ -1179,7 +1181,7 @@ pub fn sync_debug_line_layers_system(
         grid.collect_debug_split_lines(min, max, &mut scratch.grid);
     }
 
-    if let Ok((mesh_handle, mut vis)) = q_wire.single_mut() {
+    if let Ok((mesh_handle, mut vis)) = debug_layers.p0().single_mut() {
         *vis = if overlay.show_wireframes {
             Visibility::Visible
         } else {
@@ -1190,7 +1192,7 @@ pub fn sync_debug_line_layers_system(
         }
     }
 
-    if let Ok((mesh_handle, mut vis)) = q_force.single_mut() {
+    if let Ok((mesh_handle, mut vis)) = debug_layers.p1().single_mut() {
         *vis = if overlay.show_force_vectors
             && stats.live_count < config.force_vector_hide_threshold
         {
@@ -1203,7 +1205,7 @@ pub fn sync_debug_line_layers_system(
         }
     }
 
-    if let Ok((mesh_handle, mut vis)) = q_velocity.single_mut() {
+    if let Ok((mesh_handle, mut vis)) = debug_layers.p2().single_mut() {
         *vis = if overlay.show_velocity_arrows {
             Visibility::Visible
         } else {
@@ -1214,7 +1216,7 @@ pub fn sync_debug_line_layers_system(
         }
     }
 
-    if let Ok((mesh_handle, mut vis)) = q_grid.single_mut() {
+    if let Ok((mesh_handle, mut vis)) = debug_layers.p3().single_mut() {
         *vis = if overlay.show_debug_grid {
             Visibility::Visible
         } else {

@@ -598,10 +598,13 @@ pub fn sync_player_and_projectile_mesh_visibility_system(
 }
 
 /// Show/hide retained projectile and missile outlines from overlay toggles.
+#[allow(clippy::type_complexity)]
 pub fn sync_projectile_outline_visibility_system(
     overlay: Res<OverlayState>,
-    mut q_proj_outline: Query<&mut Visibility, With<ProjectileOutlineMesh>>,
-    mut q_missile_outline: Query<&mut Visibility, With<MissileOutlineMesh>>,
+    mut outlines: ParamSet<(
+        Query<&mut Visibility, With<ProjectileOutlineMesh>>,
+        Query<&mut Visibility, With<MissileOutlineMesh>>,
+    )>,
 ) {
     if !overlay.is_changed() {
         return;
@@ -613,20 +616,23 @@ pub fn sync_projectile_outline_visibility_system(
         Visibility::Hidden
     };
 
-    for mut v in q_proj_outline.iter_mut() {
+    for mut v in outlines.p0().iter_mut() {
         *v = vis;
     }
-    for mut v in q_missile_outline.iter_mut() {
+    for mut v in outlines.p1().iter_mut() {
         *v = vis;
     }
 }
 
 /// Show/hide retained ship outline meshes and update HP-based tint.
+#[allow(clippy::type_complexity)]
 pub fn sync_ship_outline_visibility_and_color_system(
     q_player: Query<&PlayerHealth, With<Player>>,
     overlay: Res<OverlayState>,
-    mut q_outline: Query<(&ShipOutlineMesh, &mut Visibility)>,
-    mut q_nose: Query<&mut Visibility, With<ShipNoseMesh>>,
+    mut ship_outline: ParamSet<(
+        Query<(&ShipOutlineMesh, &mut Visibility)>,
+        Query<&mut Visibility, With<ShipNoseMesh>>,
+    )>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let Ok(health) = q_player.single() else {
@@ -641,13 +647,13 @@ pub fn sync_ship_outline_visibility_and_color_system(
         Visibility::Hidden
     };
 
-    for (outline, mut visibility) in q_outline.iter_mut() {
+    for (outline, mut visibility) in ship_outline.p0().iter_mut() {
         *visibility = vis;
         if let Some(mat) = materials.get_mut(&outline.0) {
             mat.color = ship_color;
         }
     }
-    for mut visibility in q_nose.iter_mut() {
+    for mut visibility in ship_outline.p1().iter_mut() {
         *visibility = vis;
     }
 }
