@@ -36,6 +36,10 @@ use crate::player::{
     state::{MissileAmmo, PlayerHealth},
     Player, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
 };
+use crate::save::{
+    load_slot, slot_loadable, slot_metadata, PendingLoadedSnapshot, SaveSlotRequest,
+    SAVE_SLOT_COUNT,
+};
 
 // ── Game state ────────────────────────────────────────────────────────────────
 
@@ -49,6 +53,8 @@ pub enum GameState {
     /// Main-menu splash screen; shown on startup.
     #[default]
     MainMenu,
+    /// Load game slot picker shown from MainMenu.
+    LoadGameMenu,
     /// Scenario / save picker shown after clicking Start Game.
     ScenarioSelect,
     /// Active simulation / gameplay.
@@ -106,9 +112,35 @@ pub struct MainMenuRoot;
 #[derive(Component)]
 pub struct MenuStartButton;
 
+/// Tags the "Load Game" button.
+#[derive(Component)]
+pub struct MenuLoadButton;
+
 /// Tags the "Quit" button.
 #[derive(Component)]
 pub struct MenuQuitButton;
+
+// ── LoadGameMenu component markers ──────────────────────────────────────────
+
+/// Root node of the load-game screen; despawned on `OnExit(LoadGameMenu)`.
+#[derive(Component)]
+pub struct LoadGameRoot;
+
+/// Tags the "Load Slot 1" button.
+#[derive(Component)]
+pub struct LoadSlot1Button;
+
+/// Tags the "Load Slot 2" button.
+#[derive(Component)]
+pub struct LoadSlot2Button;
+
+/// Tags the "Load Slot 3" button.
+#[derive(Component)]
+pub struct LoadSlot3Button;
+
+/// Tags the "Back" button on the load-game screen.
+#[derive(Component)]
+pub struct LoadGameBackButton;
 
 // ── ScenarioSelect component markers ─────────────────────────────────────────
 
@@ -154,6 +186,18 @@ pub struct PauseDebugButton;
 /// Pressing it cleans up the game world and returns to [`GameState::MainMenu`].
 #[derive(Component)]
 pub struct PauseMainMenuButton;
+
+/// Tags the "SAVE SLOT 1" button in the pause menu.
+#[derive(Component)]
+pub struct PauseSaveSlot1Button;
+
+/// Tags the "SAVE SLOT 2" button in the pause menu.
+#[derive(Component)]
+pub struct PauseSaveSlot2Button;
+
+/// Tags the "SAVE SLOT 3" button in the pause menu.
+#[derive(Component)]
+pub struct PauseSaveSlot3Button;
 
 // ── Ore shop component markers ────────────────────────────────────────────────
 
@@ -230,6 +274,13 @@ impl Plugin for MainMenuPlugin {
             .add_systems(
                 Update,
                 menu_button_system.run_if(in_state(GameState::MainMenu)),
+            )
+            // ── Load game menu ───────────────────────────────────────────────
+            .add_systems(OnEnter(GameState::LoadGameMenu), setup_load_game_menu)
+            .add_systems(OnExit(GameState::LoadGameMenu), cleanup_load_game_menu)
+            .add_systems(
+                Update,
+                load_game_menu_button_system.run_if(in_state(GameState::LoadGameMenu)),
             )
             // ── Scenario select ───────────────────────────────────────────────
             .add_systems(OnEnter(GameState::ScenarioSelect), setup_scenario_select)
@@ -412,11 +463,40 @@ pub fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
                 btn.spawn((
                     Text::new("START GAME"),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
                     TextColor(start_text()),
+                ));
+            });
+
+            spacer(root, 14.0);
+
+            // ── Load Game button ─────────────────────────────────────────────
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(220.0),
+                    height: Val::Px(50.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(pause_debug_bg()),
+                BorderColor::all(pause_debug_border()),
+                MenuLoadButton,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new("LOAD GAME"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(pause_debug_text()),
                 ));
             });
 
@@ -441,7 +521,7 @@ pub fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
                 btn.spawn((
                     Text::new("QUIT"),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -512,6 +592,7 @@ pub fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, With<MainM
 #[allow(clippy::type_complexity)]
 pub fn menu_button_system(
     start_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuStartButton>)>,
+    load_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuLoadButton>)>,
     quit_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuQuitButton>)>,
     mut btn_text: Query<&mut TextColor>,
     mut next_state: ResMut<NextState<GameState>>,
@@ -540,6 +621,28 @@ pub fn menu_button_system(
         }
     }
 
+    for (interaction, children) in load_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                next_state.set(GameState::LoadGameMenu);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(pause_debug_text());
+                    }
+                }
+            }
+        }
+    }
+
     for (interaction, children) in quit_query.iter() {
         match interaction {
             Interaction::Pressed => {
@@ -556,6 +659,311 @@ pub fn menu_button_system(
                 for child in children.iter() {
                     if let Ok(mut color) = btn_text.get_mut(child) {
                         *color = TextColor(quit_text());
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── OnEnter(LoadGameMenu): spawn load-game screen ───────────────────────────
+
+fn format_saved_at(unix_secs: u64) -> String {
+    if unix_secs == 0 {
+        "saved: unknown".to_string()
+    } else {
+        format!("saved: unix {unix_secs}")
+    }
+}
+
+pub fn setup_load_game_menu(mut commands: Commands, font: Res<GameFont>) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::BLACK),
+            LoadGameRoot,
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Text::new("LOAD GAME"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 42.0,
+                    ..default()
+                },
+                TextColor(title_color()),
+            ));
+
+            spacer(root, 10.0);
+
+            root.spawn((
+                Text::new("Choose a save slot"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(subtitle_color()),
+            ));
+
+            spacer(root, 30.0);
+
+            for slot in 1..=SAVE_SLOT_COUNT {
+                let meta = slot_metadata(slot);
+                let button_bg = if meta.loadable {
+                    start_bg()
+                } else if meta.exists {
+                    Color::srgb(0.22, 0.10, 0.10)
+                } else {
+                    Color::srgb(0.10, 0.10, 0.10)
+                };
+                let button_border = if meta.loadable {
+                    start_border()
+                } else if meta.exists {
+                    Color::srgb(0.55, 0.25, 0.25)
+                } else {
+                    Color::srgb(0.22, 0.22, 0.22)
+                };
+                let button_text_color = if meta.loadable {
+                    start_text()
+                } else {
+                    Color::srgb(0.45, 0.45, 0.45)
+                };
+                let label = if meta.loadable {
+                    format!("LOAD SLOT {}", meta.slot)
+                } else if meta.exists {
+                    format!("SLOT {} ({})", meta.slot, meta.status)
+                } else {
+                    format!("SLOT {} (EMPTY)", meta.slot)
+                };
+                let details = if let Some(scenario) = meta.scenario {
+                    let ts = meta.saved_at_unix.unwrap_or(0);
+                    format!("{}  •  {}", scenario.label(), format_saved_at(ts))
+                } else if meta.exists {
+                    "unreadable save file".to_string()
+                } else {
+                    "no save data".to_string()
+                };
+
+                let mut entity = root.spawn((
+                    Button,
+                    Node {
+                        width: Val::Px(260.0),
+                        height: Val::Px(72.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        flex_direction: FlexDirection::Column,
+                        border: UiRect::all(Val::Px(2.0)),
+                        ..default()
+                    },
+                    BackgroundColor(button_bg),
+                    BorderColor::all(button_border),
+                ));
+
+                match slot {
+                    1 => {
+                        entity.insert(LoadSlot1Button);
+                    }
+                    2 => {
+                        entity.insert(LoadSlot2Button);
+                    }
+                    _ => {
+                        entity.insert(LoadSlot3Button);
+                    }
+                }
+
+                entity.with_children(|btn| {
+                    btn.spawn((
+                        Text::new(label),
+                        TextFont {
+                            font: font.0.clone(),
+                            font_size: 17.0,
+                            ..default()
+                        },
+                        TextColor(button_text_color),
+                    ));
+                    btn.spawn((
+                        Text::new(details),
+                        TextFont {
+                            font: font.0.clone(),
+                            font_size: 12.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.60, 0.66, 0.72)),
+                    ));
+                });
+
+                spacer(root, 12.0);
+            }
+
+            spacer(root, 16.0);
+
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(180.0),
+                    height: Val::Px(44.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(back_bg()),
+                BorderColor::all(back_border()),
+                LoadGameBackButton,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new("BACK"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(back_text()),
+                ));
+            });
+        });
+}
+
+pub fn cleanup_load_game_menu(mut commands: Commands, query: Query<Entity, With<LoadGameRoot>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn();
+    }
+}
+
+#[allow(clippy::type_complexity)]
+pub fn load_game_menu_button_system(
+    mut commands: Commands,
+    slot1_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<LoadSlot1Button>)>,
+    slot2_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<LoadSlot2Button>)>,
+    slot3_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<LoadSlot3Button>)>,
+    back_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<LoadGameBackButton>)>,
+    mut btn_text: Query<&mut TextColor>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    let mut handle_slot = |slot: u8, interaction: &Interaction| -> bool {
+        if *interaction != Interaction::Pressed {
+            return false;
+        }
+
+        match load_slot(slot) {
+            Ok(snapshot) => {
+                commands.insert_resource(PendingLoadedSnapshot(Some(snapshot)));
+                next_state.set(GameState::Playing);
+                true
+            }
+            Err(err) => {
+                error!("Failed to load slot {}: {}", slot, err);
+                false
+            }
+        }
+    };
+
+    for (interaction, children) in slot1_query.iter() {
+        if handle_slot(1, interaction) {
+            return;
+        }
+        match interaction {
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(if slot_loadable(1) {
+                            start_text()
+                        } else {
+                            Color::srgb(0.45, 0.45, 0.45)
+                        });
+                    }
+                }
+            }
+            Interaction::Pressed => {}
+        }
+    }
+
+    for (interaction, children) in slot2_query.iter() {
+        if handle_slot(2, interaction) {
+            return;
+        }
+        match interaction {
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(if slot_loadable(2) {
+                            start_text()
+                        } else {
+                            Color::srgb(0.45, 0.45, 0.45)
+                        });
+                    }
+                }
+            }
+            Interaction::Pressed => {}
+        }
+    }
+
+    for (interaction, children) in slot3_query.iter() {
+        if handle_slot(3, interaction) {
+            return;
+        }
+        match interaction {
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(if slot_loadable(3) {
+                            start_text()
+                        } else {
+                            Color::srgb(0.45, 0.45, 0.45)
+                        });
+                    }
+                }
+            }
+            Interaction::Pressed => {}
+        }
+    }
+
+    for (interaction, children) in back_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                next_state.set(GameState::MainMenu);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(back_text());
                     }
                 }
             }
@@ -675,7 +1083,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 card.spawn((
                     Text::new("FIELD"),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -688,7 +1096,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                          The original chaotic asteroid field.",
                     ),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -722,7 +1130,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 card.spawn((
                     Text::new("ORBIT"),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -735,7 +1143,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                          fields of smaller asteroids in near-circular orbits.",
                     ),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -769,7 +1177,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 card.spawn((
                     Text::new("COMETS"),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -782,7 +1190,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                          They fragment on impact — dodge and shoot before they escape.",
                     ),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -816,7 +1224,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 card.spawn((
                     Text::new("SHOWER"),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -829,7 +1237,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                          pull them into growing clusters in real time.",
                     ),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -858,7 +1266,7 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 btn.spawn((
                     Text::new("BACK"),
                     TextFont {
-                    font: font.0.clone(),
+                        font: font.0.clone(),
                         font_size: 16.0,
                         ..default()
                     },
@@ -1193,7 +1601,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                     card.spawn((
                         Text::new("PAUSED"),
                         TextFont {
-                    font: font.0.clone(),
+                            font: font.0.clone(),
                             font_size: 38.0,
                             ..default()
                         },
@@ -1221,7 +1629,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                         btn.spawn((
                             Text::new("RESUME"),
                             TextFont {
-                    font: font.0.clone(),
+                                font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -1248,12 +1656,99 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                         btn.spawn((
                             Text::new("DEBUG OVERLAYS"),
                             TextFont {
-                    font: font.0.clone(),
+                                font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
                             TextColor(pause_debug_text()),
                         ));
+                    });
+
+                    // Save slot buttons
+                    card.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(8.0),
+                        align_items: AlignItems::Center,
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(68.0),
+                                height: Val::Px(40.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                border: UiRect::all(Val::Px(2.0)),
+                                ..default()
+                            },
+                            BackgroundColor(shop_buy_bg()),
+                            BorderColor::all(shop_buy_border()),
+                            PauseSaveSlot1Button,
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("SAVE 1"),
+                                TextFont {
+                                    font: font.0.clone(),
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(shop_buy_text()),
+                            ));
+                        });
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(68.0),
+                                height: Val::Px(40.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                border: UiRect::all(Val::Px(2.0)),
+                                ..default()
+                            },
+                            BackgroundColor(shop_buy_bg()),
+                            BorderColor::all(shop_buy_border()),
+                            PauseSaveSlot2Button,
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("SAVE 2"),
+                                TextFont {
+                                    font: font.0.clone(),
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(shop_buy_text()),
+                            ));
+                        });
+
+                        row.spawn((
+                            Button,
+                            Node {
+                                width: Val::Px(68.0),
+                                height: Val::Px(40.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                border: UiRect::all(Val::Px(2.0)),
+                                ..default()
+                            },
+                            BackgroundColor(shop_buy_bg()),
+                            BorderColor::all(shop_buy_border()),
+                            PauseSaveSlot3Button,
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("SAVE 3"),
+                                TextFont {
+                                    font: font.0.clone(),
+                                    font_size: 12.0,
+                                    ..default()
+                                },
+                                TextColor(shop_buy_text()),
+                            ));
+                        });
                     });
 
                     // Upgrades / Shop button removed — use Tab to open Ore Shop directly.
@@ -1277,7 +1772,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                         btn.spawn((
                             Text::new("MAIN MENU"),
                             TextFont {
-                    font: font.0.clone(),
+                                font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -1289,9 +1784,9 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
 
                     // Hint text
                     card.spawn((
-                        Text::new("ESC → resume  ·  Tab → ore shop"),
+                        Text::new("ESC → resume  ·  Tab → ore shop  ·  SAVE 1/2/3"),
                         TextFont {
-                    font: font.0.clone(),
+                            font: font.0.clone(),
                             font_size: 12.0,
                             ..default()
                         },
@@ -1430,7 +1925,7 @@ fn spawn_ore_shop_overlay(
                     card.spawn((
                         Text::new(ore_text),
                         TextFont {
-                    font: font.0.clone(),
+                            font: font.0.clone(),
                             font_size: 16.0,
                             ..default()
                         },
@@ -1522,400 +2017,403 @@ fn spawn_ore_shop_overlay(
                     })
                     .with_children(|upgrades_row| {
                         // ── Weapon card ──────────────────────────────────────
-                        upgrades_row.spawn((
-                            Node {
-                                width: Val::Px(248.0),
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(6.0),
-                                padding: UiRect::all(Val::Px(12.0)),
-                                border: UiRect::all(Val::Px(2.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.09, 0.09, 0.08)),
-                            BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
-                        ))
-                        .with_children(|card_col| {
-                            let can_upgrade =
-                                !weapon_level.is_maxed() && weapon_level.can_afford_next(ore);
-                            let upg_btn_bg = if can_upgrade {
-                                shop_buy_bg()
-                            } else {
-                                Color::srgb(0.14, 0.14, 0.14)
-                            };
-                            let upg_btn_border = if can_upgrade {
-                                shop_buy_border()
-                            } else {
-                                Color::srgb(0.28, 0.28, 0.28)
-                            };
-                            let upg_btn_text_color = if can_upgrade {
-                                shop_buy_text()
-                            } else {
-                                Color::srgb(0.40, 0.40, 0.40)
-                            };
-                            let upg_label = if weapon_level.is_maxed() {
-                                "— MAX LEVEL —".to_string()
-                            } else {
-                                let cost = weapon_level.cost_for_next_level().unwrap_or(0);
-                                format!("UPGRADE ({cost} ore)")
-                            };
-                            let cost_status = if weapon_level.is_maxed() {
-                                "MAX LEVEL REACHED".to_string()
-                            } else {
-                                let cost = weapon_level.cost_for_next_level().unwrap_or(0);
-                                if can_upgrade {
-                                    format!("Cost: {cost} ore")
+                        upgrades_row
+                            .spawn((
+                                Node {
+                                    width: Val::Px(248.0),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(6.0),
+                                    padding: UiRect::all(Val::Px(12.0)),
+                                    border: UiRect::all(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.09, 0.09, 0.08)),
+                                BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
+                            ))
+                            .with_children(|card_col| {
+                                let can_upgrade =
+                                    !weapon_level.is_maxed() && weapon_level.can_afford_next(ore);
+                                let upg_btn_bg = if can_upgrade {
+                                    shop_buy_bg()
                                 } else {
-                                    format!("Need {cost} ore")
-                                }
-                            };
-                            let level_text = format!(
-                                "Level {} / {}",
-                                weapon_level.display_level(),
-                                crate::constants::PRIMARY_WEAPON_MAX_LEVEL
-                            );
-                            let range_text = if weapon_level.is_maxed() {
-                                format!("Destroy size: {}", weapon_level.max_destroy_size())
-                            } else {
-                                format!(
-                                    "Destroy size: {} -> {}",
-                                    weapon_level.max_destroy_size(),
-                                    weapon_level.max_destroy_size() + 1
-                                )
-                            };
+                                    Color::srgb(0.14, 0.14, 0.14)
+                                };
+                                let upg_btn_border = if can_upgrade {
+                                    shop_buy_border()
+                                } else {
+                                    Color::srgb(0.28, 0.28, 0.28)
+                                };
+                                let upg_btn_text_color = if can_upgrade {
+                                    shop_buy_text()
+                                } else {
+                                    Color::srgb(0.40, 0.40, 0.40)
+                                };
+                                let upg_label = if weapon_level.is_maxed() {
+                                    "— MAX LEVEL —".to_string()
+                                } else {
+                                    let cost = weapon_level.cost_for_next_level().unwrap_or(0);
+                                    format!("UPGRADE ({cost} ore)")
+                                };
+                                let cost_status = if weapon_level.is_maxed() {
+                                    "MAX LEVEL REACHED".to_string()
+                                } else {
+                                    let cost = weapon_level.cost_for_next_level().unwrap_or(0);
+                                    if can_upgrade {
+                                        format!("Cost: {cost} ore")
+                                    } else {
+                                        format!("Need {cost} ore")
+                                    }
+                                };
+                                let level_text = format!(
+                                    "Level {} / {}",
+                                    weapon_level.display_level(),
+                                    crate::constants::PRIMARY_WEAPON_MAX_LEVEL
+                                );
+                                let range_text = if weapon_level.is_maxed() {
+                                    format!("Destroy size: {}", weapon_level.max_destroy_size())
+                                } else {
+                                    format!(
+                                        "Destroy size: {} -> {}",
+                                        weapon_level.max_destroy_size(),
+                                        weapon_level.max_destroy_size() + 1
+                                    )
+                                };
 
-                            card_col.spawn((
-                                Text::new("WEAPON"),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 13.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.45, 0.45, 0.45)),
-                            ));
-                            card_col.spawn((
-                                Text::new(level_text),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 15.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.85, 0.85, 0.85)),
-                            ));
-                            card_col.spawn((
-                                Text::new(range_text),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 12.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.55, 0.65, 0.60)),
-                            ));
-                            card_col.spawn((
-                                Text::new(cost_status),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 13.0,
-                                    ..default()
-                                },
-                                TextColor(if weapon_level.is_maxed() {
-                                    Color::srgb(0.90, 0.80, 0.30)
-                                } else if can_upgrade {
-                                    Color::srgb(0.75, 0.90, 0.75)
-                                } else {
-                                    Color::srgb(0.75, 0.40, 0.40)
-                                }),
-                            ));
-                            card_col
-                                .spawn((
-                                    Button,
-                                    Node {
-                                        width: Val::Percent(100.0),
-                                        height: Val::Px(42.0),
-                                        justify_content: JustifyContent::Center,
-                                        align_items: AlignItems::Center,
-                                        border: UiRect::all(Val::Px(2.0)),
+                                card_col.spawn((
+                                    Text::new("WEAPON"),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
                                         ..default()
                                     },
-                                    BackgroundColor(upg_btn_bg),
-                                    BorderColor::all(upg_btn_border),
-                                    OreShopUpgradeButton,
-                                ))
-                                .with_children(|btn| {
-                                    btn.spawn((
-                                        Text::new(upg_label),
-                                        TextFont {
-                                            font: font.0.clone(),
-                                            font_size: 14.0,
+                                    TextColor(Color::srgb(0.45, 0.45, 0.45)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(level_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 15.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.85, 0.85, 0.85)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(range_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.55, 0.65, 0.60)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(cost_status),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(if weapon_level.is_maxed() {
+                                        Color::srgb(0.90, 0.80, 0.30)
+                                    } else if can_upgrade {
+                                        Color::srgb(0.75, 0.90, 0.75)
+                                    } else {
+                                        Color::srgb(0.75, 0.40, 0.40)
+                                    }),
+                                ));
+                                card_col
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            height: Val::Px(42.0),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            border: UiRect::all(Val::Px(2.0)),
                                             ..default()
                                         },
-                                        TextColor(upg_btn_text_color),
-                                    ));
-                                });
-                        });
+                                        BackgroundColor(upg_btn_bg),
+                                        BorderColor::all(upg_btn_border),
+                                        OreShopUpgradeButton,
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new(upg_label),
+                                            TextFont {
+                                                font: font.0.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(upg_btn_text_color),
+                                        ));
+                                    });
+                            });
 
                         // ── Missile card ─────────────────────────────────────
-                        upgrades_row.spawn((
-                            Node {
-                                width: Val::Px(248.0),
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(6.0),
-                                padding: UiRect::all(Val::Px(12.0)),
-                                border: UiRect::all(Val::Px(2.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.09, 0.09, 0.08)),
-                            BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
-                        ))
-                        .with_children(|card_col| {
-                            let can_upgrade =
-                                !missile_level.is_maxed() && missile_level.can_afford_next(ore);
-                            let upg_btn_bg = if can_upgrade {
-                                shop_buy_bg()
-                            } else {
-                                Color::srgb(0.14, 0.14, 0.14)
-                            };
-                            let upg_btn_border = if can_upgrade {
-                                shop_buy_border()
-                            } else {
-                                Color::srgb(0.28, 0.28, 0.28)
-                            };
-                            let upg_btn_text_color = if can_upgrade {
-                                shop_buy_text()
-                            } else {
-                                Color::srgb(0.40, 0.40, 0.40)
-                            };
-                            let upg_label = if missile_level.is_maxed() {
-                                "— MAX LEVEL —".to_string()
-                            } else {
-                                let cost = missile_level.cost_for_next_level().unwrap_or(0);
-                                format!("UPGRADE ({cost} ore)")
-                            };
-                            let cost_status = if missile_level.is_maxed() {
-                                "MAX LEVEL REACHED".to_string()
-                            } else {
-                                let cost = missile_level.cost_for_next_level().unwrap_or(0);
-                                if can_upgrade {
-                                    format!("Cost: {cost} ore")
+                        upgrades_row
+                            .spawn((
+                                Node {
+                                    width: Val::Px(248.0),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(6.0),
+                                    padding: UiRect::all(Val::Px(12.0)),
+                                    border: UiRect::all(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.09, 0.09, 0.08)),
+                                BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
+                            ))
+                            .with_children(|card_col| {
+                                let can_upgrade =
+                                    !missile_level.is_maxed() && missile_level.can_afford_next(ore);
+                                let upg_btn_bg = if can_upgrade {
+                                    shop_buy_bg()
                                 } else {
-                                    format!("Need {cost} ore")
-                                }
-                            };
-                            let level_text = format!(
-                                "Level {} / {}",
-                                missile_level.display_level(),
-                                crate::constants::SECONDARY_WEAPON_MAX_LEVEL
-                            );
-                            let range_text = if missile_level.is_maxed() {
-                                format!("Destroy size: {}", missile_level.destroy_threshold())
-                            } else {
-                                format!(
-                                    "Destroy size: {} -> {}",
-                                    missile_level.destroy_threshold(),
-                                    missile_level.destroy_threshold() + 1
-                                )
-                            };
+                                    Color::srgb(0.14, 0.14, 0.14)
+                                };
+                                let upg_btn_border = if can_upgrade {
+                                    shop_buy_border()
+                                } else {
+                                    Color::srgb(0.28, 0.28, 0.28)
+                                };
+                                let upg_btn_text_color = if can_upgrade {
+                                    shop_buy_text()
+                                } else {
+                                    Color::srgb(0.40, 0.40, 0.40)
+                                };
+                                let upg_label = if missile_level.is_maxed() {
+                                    "— MAX LEVEL —".to_string()
+                                } else {
+                                    let cost = missile_level.cost_for_next_level().unwrap_or(0);
+                                    format!("UPGRADE ({cost} ore)")
+                                };
+                                let cost_status = if missile_level.is_maxed() {
+                                    "MAX LEVEL REACHED".to_string()
+                                } else {
+                                    let cost = missile_level.cost_for_next_level().unwrap_or(0);
+                                    if can_upgrade {
+                                        format!("Cost: {cost} ore")
+                                    } else {
+                                        format!("Need {cost} ore")
+                                    }
+                                };
+                                let level_text = format!(
+                                    "Level {} / {}",
+                                    missile_level.display_level(),
+                                    crate::constants::SECONDARY_WEAPON_MAX_LEVEL
+                                );
+                                let range_text = if missile_level.is_maxed() {
+                                    format!("Destroy size: {}", missile_level.destroy_threshold())
+                                } else {
+                                    format!(
+                                        "Destroy size: {} -> {}",
+                                        missile_level.destroy_threshold(),
+                                        missile_level.destroy_threshold() + 1
+                                    )
+                                };
 
-                            card_col.spawn((
-                                Text::new("MISSILE"),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 13.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.45, 0.45, 0.45)),
-                            ));
-                            card_col.spawn((
-                                Text::new(level_text),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 15.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.85, 0.85, 0.85)),
-                            ));
-                            card_col.spawn((
-                                Text::new(range_text),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 12.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.55, 0.65, 0.60)),
-                            ));
-                            card_col.spawn((
-                                Text::new(cost_status),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 13.0,
-                                    ..default()
-                                },
-                                TextColor(if missile_level.is_maxed() {
-                                    Color::srgb(0.90, 0.80, 0.30)
-                                } else if can_upgrade {
-                                    Color::srgb(0.75, 0.90, 0.75)
-                                } else {
-                                    Color::srgb(0.75, 0.40, 0.40)
-                                }),
-                            ));
-                            card_col
-                                .spawn((
-                                    Button,
-                                    Node {
-                                        width: Val::Percent(100.0),
-                                        height: Val::Px(42.0),
-                                        justify_content: JustifyContent::Center,
-                                        align_items: AlignItems::Center,
-                                        border: UiRect::all(Val::Px(2.0)),
+                                card_col.spawn((
+                                    Text::new("MISSILE"),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
                                         ..default()
                                     },
-                                    BackgroundColor(upg_btn_bg),
-                                    BorderColor::all(upg_btn_border),
-                                    OreShopMissileUpgradeButton,
-                                ))
-                                .with_children(|btn| {
-                                    btn.spawn((
-                                        Text::new(upg_label),
-                                        TextFont {
-                                            font: font.0.clone(),
-                                            font_size: 14.0,
+                                    TextColor(Color::srgb(0.45, 0.45, 0.45)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(level_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 15.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.85, 0.85, 0.85)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(range_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.55, 0.65, 0.60)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(cost_status),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(if missile_level.is_maxed() {
+                                        Color::srgb(0.90, 0.80, 0.30)
+                                    } else if can_upgrade {
+                                        Color::srgb(0.75, 0.90, 0.75)
+                                    } else {
+                                        Color::srgb(0.75, 0.40, 0.40)
+                                    }),
+                                ));
+                                card_col
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            height: Val::Px(42.0),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            border: UiRect::all(Val::Px(2.0)),
                                             ..default()
                                         },
-                                        TextColor(upg_btn_text_color),
-                                    ));
-                                });
-                        });
+                                        BackgroundColor(upg_btn_bg),
+                                        BorderColor::all(upg_btn_border),
+                                        OreShopMissileUpgradeButton,
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new(upg_label),
+                                            TextFont {
+                                                font: font.0.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(upg_btn_text_color),
+                                        ));
+                                    });
+                            });
 
                         // ── Magnet card ──────────────────────────────────────
-                        upgrades_row.spawn((
-                            Node {
-                                width: Val::Px(248.0),
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(6.0),
-                                padding: UiRect::all(Val::Px(12.0)),
-                                border: UiRect::all(Val::Px(2.0)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.09, 0.09, 0.08)),
-                            BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
-                        ))
-                        .with_children(|card_col| {
-                            let can_upgrade =
-                                !magnet_level.is_maxed() && magnet_level.can_afford_next(ore);
-                            let upg_btn_bg = if can_upgrade {
-                                shop_buy_bg()
-                            } else {
-                                Color::srgb(0.14, 0.14, 0.14)
-                            };
-                            let upg_btn_border = if can_upgrade {
-                                shop_buy_border()
-                            } else {
-                                Color::srgb(0.28, 0.28, 0.28)
-                            };
-                            let upg_btn_text_color = if can_upgrade {
-                                shop_buy_text()
-                            } else {
-                                Color::srgb(0.40, 0.40, 0.40)
-                            };
-                            let upg_label = if magnet_level.is_maxed() {
-                                "— MAX LEVEL —".to_string()
-                            } else {
-                                let cost = magnet_level.cost_for_next_level().unwrap_or(0);
-                                format!("UPGRADE ({cost} ore)")
-                            };
-                            let cost_status = if magnet_level.is_maxed() {
-                                "MAX LEVEL REACHED".to_string()
-                            } else {
-                                let cost = magnet_level.cost_for_next_level().unwrap_or(0);
-                                if can_upgrade {
-                                    format!("Cost: {cost} ore")
+                        upgrades_row
+                            .spawn((
+                                Node {
+                                    width: Val::Px(248.0),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(6.0),
+                                    padding: UiRect::all(Val::Px(12.0)),
+                                    border: UiRect::all(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.09, 0.09, 0.08)),
+                                BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
+                            ))
+                            .with_children(|card_col| {
+                                let can_upgrade =
+                                    !magnet_level.is_maxed() && magnet_level.can_afford_next(ore);
+                                let upg_btn_bg = if can_upgrade {
+                                    shop_buy_bg()
                                 } else {
-                                    format!("Need {cost} ore")
-                                }
-                            };
-                            let level_text = format!(
-                                "Level {} / {}",
-                                magnet_level.display_level(),
-                                crate::constants::ORE_AFFINITY_MAX_LEVEL
-                            );
-                            let range_text = if magnet_level.is_maxed() {
-                                format!("Pull radius: {:.0} px", magnet_level.radius_at_level())
-                            } else {
-                                format!(
-                                    "Pull radius: {:.0} -> {:.0} px",
-                                    magnet_level.radius_at_level(),
-                                    magnet_level.radius_at_level() + 50.0
-                                )
-                            };
+                                    Color::srgb(0.14, 0.14, 0.14)
+                                };
+                                let upg_btn_border = if can_upgrade {
+                                    shop_buy_border()
+                                } else {
+                                    Color::srgb(0.28, 0.28, 0.28)
+                                };
+                                let upg_btn_text_color = if can_upgrade {
+                                    shop_buy_text()
+                                } else {
+                                    Color::srgb(0.40, 0.40, 0.40)
+                                };
+                                let upg_label = if magnet_level.is_maxed() {
+                                    "— MAX LEVEL —".to_string()
+                                } else {
+                                    let cost = magnet_level.cost_for_next_level().unwrap_or(0);
+                                    format!("UPGRADE ({cost} ore)")
+                                };
+                                let cost_status = if magnet_level.is_maxed() {
+                                    "MAX LEVEL REACHED".to_string()
+                                } else {
+                                    let cost = magnet_level.cost_for_next_level().unwrap_or(0);
+                                    if can_upgrade {
+                                        format!("Cost: {cost} ore")
+                                    } else {
+                                        format!("Need {cost} ore")
+                                    }
+                                };
+                                let level_text = format!(
+                                    "Level {} / {}",
+                                    magnet_level.display_level(),
+                                    crate::constants::ORE_AFFINITY_MAX_LEVEL
+                                );
+                                let range_text = if magnet_level.is_maxed() {
+                                    format!("Pull radius: {:.0} px", magnet_level.radius_at_level())
+                                } else {
+                                    format!(
+                                        "Pull radius: {:.0} -> {:.0} px",
+                                        magnet_level.radius_at_level(),
+                                        magnet_level.radius_at_level() + 50.0
+                                    )
+                                };
 
-                            card_col.spawn((
-                                Text::new("MAGNET"),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 13.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.45, 0.45, 0.45)),
-                            ));
-                            card_col.spawn((
-                                Text::new(level_text),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 15.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.85, 0.85, 0.85)),
-                            ));
-                            card_col.spawn((
-                                Text::new(range_text),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 12.0,
-                                    ..default()
-                                },
-                                TextColor(Color::srgb(0.55, 0.65, 0.60)),
-                            ));
-                            card_col.spawn((
-                                Text::new(cost_status),
-                                TextFont {
-                                    font: font.0.clone(),
-                                    font_size: 13.0,
-                                    ..default()
-                                },
-                                TextColor(if magnet_level.is_maxed() {
-                                    Color::srgb(0.90, 0.80, 0.30)
-                                } else if can_upgrade {
-                                    Color::srgb(0.75, 0.90, 0.75)
-                                } else {
-                                    Color::srgb(0.75, 0.40, 0.40)
-                                }),
-                            ));
-                            card_col
-                                .spawn((
-                                    Button,
-                                    Node {
-                                        width: Val::Percent(100.0),
-                                        height: Val::Px(42.0),
-                                        justify_content: JustifyContent::Center,
-                                        align_items: AlignItems::Center,
-                                        border: UiRect::all(Val::Px(2.0)),
+                                card_col.spawn((
+                                    Text::new("MAGNET"),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
                                         ..default()
                                     },
-                                    BackgroundColor(upg_btn_bg),
-                                    BorderColor::all(upg_btn_border),
-                                    OreShopMagnetUpgradeButton,
-                                ))
-                                .with_children(|btn| {
-                                    btn.spawn((
-                                        Text::new(upg_label),
-                                        TextFont {
-                                            font: font.0.clone(),
-                                            font_size: 14.0,
+                                    TextColor(Color::srgb(0.45, 0.45, 0.45)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(level_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 15.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.85, 0.85, 0.85)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(range_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.55, 0.65, 0.60)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(cost_status),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(if magnet_level.is_maxed() {
+                                        Color::srgb(0.90, 0.80, 0.30)
+                                    } else if can_upgrade {
+                                        Color::srgb(0.75, 0.90, 0.75)
+                                    } else {
+                                        Color::srgb(0.75, 0.40, 0.40)
+                                    }),
+                                ));
+                                card_col
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            height: Val::Px(42.0),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            border: UiRect::all(Val::Px(2.0)),
                                             ..default()
                                         },
-                                        TextColor(upg_btn_text_color),
-                                    ));
-                                });
-                        });
+                                        BackgroundColor(upg_btn_bg),
+                                        BorderColor::all(upg_btn_border),
+                                        OreShopMagnetUpgradeButton,
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new(upg_label),
+                                            TextFont {
+                                                font: font.0.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(upg_btn_text_color),
+                                        ));
+                                    });
+                            });
                     });
 
                     card.spawn(Node {
@@ -1942,7 +2440,7 @@ fn spawn_ore_shop_overlay(
                         btn.spawn((
                             Text::new("CLOSE"),
                             TextFont {
-                    font: font.0.clone(),
+                                font: font.0.clone(),
                                 font_size: 16.0,
                                 ..default()
                             },
@@ -1953,7 +2451,7 @@ fn spawn_ore_shop_overlay(
                     card.spawn((
                         Text::new("Press Tab or ESC to close"),
                         TextFont {
-                    font: font.0.clone(),
+                            font: font.0.clone(),
                             font_size: 12.0,
                             ..default()
                         },
@@ -1964,6 +2462,7 @@ fn spawn_ore_shop_overlay(
 }
 
 /// Spawn the ore shop overlay when entering [`GameState::OreShop`].
+#[allow(clippy::too_many_arguments)]
 pub fn setup_ore_shop(
     mut commands: Commands,
     ore: Res<PlayerOre>,
@@ -2146,7 +2645,9 @@ pub fn ore_shop_button_system(
     }
 
     // ── Missile upgrade ───────────────────────────────────────────────────────
-    let missile_upgrade_pressed = missile_upgrade_query.iter().any(|i| *i == Interaction::Pressed);
+    let missile_upgrade_pressed = missile_upgrade_query
+        .iter()
+        .any(|i| *i == Interaction::Pressed);
     if missile_upgrade_pressed {
         missile_level.try_upgrade(&mut ore.count);
         let (hp, max_hp) = q_health
@@ -2176,7 +2677,9 @@ pub fn ore_shop_button_system(
     }
 
     // ── Magnet upgrade ────────────────────────────────────────────────────────
-    let magnet_upgrade_pressed = magnet_upgrade_query.iter().any(|i| *i == Interaction::Pressed);
+    let magnet_upgrade_pressed = magnet_upgrade_query
+        .iter()
+        .any(|i| *i == Interaction::Pressed);
     if magnet_upgrade_pressed {
         magnet_level.try_upgrade(&mut ore.count);
         let (hp, max_hp) = q_health
@@ -2274,8 +2777,10 @@ pub fn cleanup_game_world(
     *overlay = crate::rendering::OverlayState::default();
     *sim_stats = crate::simulation::SimulationStats::default();
     *ore = crate::mining::PlayerOre::default();
-    // Reset weapon upgrades so a new session starts fresh.
+    // Reset upgrades so a new session starts fresh.
     commands.insert_resource(PrimaryWeaponLevel::default());
+    commands.insert_resource(SecondaryWeaponLevel::default());
+    commands.insert_resource(OreAffinityLevel::default());
     // Keep the physics pipeline disabled until a new session begins.
     // resume_physics is called on OnTransition { ScenarioSelect → Playing }.
     for mut cfg in rapier_config.iter_mut() {
@@ -2295,11 +2800,24 @@ pub fn cleanup_game_world(
 pub fn pause_menu_button_system(
     resume_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<PauseResumeButton>)>,
     debug_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<PauseDebugButton>)>,
+    save1_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<PauseSaveSlot1Button>),
+    >,
+    save2_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<PauseSaveSlot2Button>),
+    >,
+    save3_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<PauseSaveSlot3Button>),
+    >,
     quit_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<PauseMainMenuButton>)>,
     mut btn_text: Query<&mut TextColor>,
     mut next_state: ResMut<NextState<GameState>>,
     mut debug_panel_query: Query<&mut Visibility, With<crate::rendering::DebugPanel>>,
     mut overlay: ResMut<crate::rendering::OverlayState>,
+    mut save_writer: MessageWriter<SaveSlotRequest>,
 ) {
     for (interaction, children) in resume_query.iter() {
         match interaction {
@@ -2347,6 +2865,72 @@ pub fn pause_menu_button_system(
                 for child in children.iter() {
                     if let Ok(mut color) = btn_text.get_mut(child) {
                         *color = TextColor(pause_debug_text());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in save1_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                save_writer.write(SaveSlotRequest { slot: 1 });
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(shop_buy_text());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in save2_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                save_writer.write(SaveSlotRequest { slot: 2 });
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(shop_buy_text());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in save3_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                save_writer.write(SaveSlotRequest { slot: 3 });
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(shop_buy_text());
                     }
                 }
             }
@@ -2418,7 +3002,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>, font: Re
                     card.spawn((
                         Text::new("GAME OVER"),
                         TextFont {
-                    font: font.0.clone(),
+                            font: font.0.clone(),
                             font_size: 46.0,
                             ..default()
                         },
@@ -2435,7 +3019,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>, font: Re
                             score.destroyed
                         )),
                         TextFont {
-                    font: font.0.clone(),
+                            font: font.0.clone(),
                             font_size: 16.0,
                             ..default()
                         },
@@ -2463,7 +3047,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>, font: Re
                         btn.spawn((
                             Text::new("PLAY AGAIN"),
                             TextFont {
-                    font: font.0.clone(),
+                                font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -2490,7 +3074,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>, font: Re
                         btn.spawn((
                             Text::new("QUIT"),
                             TextFont {
-                    font: font.0.clone(),
+                                font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -2503,7 +3087,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>, font: Re
                     card.spawn((
                         Text::new("Press Enter to play again"),
                         TextFont {
-                    font: font.0.clone(),
+                            font: font.0.clone(),
                             font_size: 12.0,
                             ..default()
                         },

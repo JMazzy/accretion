@@ -29,6 +29,7 @@ src/
 ├── spatial_partition.rs  - KD-tree spatial index for O(K + log N) neighbour lookup (replaces flat grid)
 ├── rendering.rs          - OverlayState resource, debug overlay panel UI, gizmo rendering (asteroids, boundary, force/velocity vectors)
 ├── asteroid_rendering.rs - Mesh2d filled-polygon rendering for asteroids (attach-on-spawn, wireframe_only sync)
+├── save.rs               - Slot-based save/load snapshot schema, TOML I/O, and world restore systems
 ├── player/               - Player ship entity, WASD controls, projectile firing, Mesh2d ship/projectile rendering, camera follow
 ├── graphics.rs           - Camera setup for 2D rendering
 ├── testing.rs            - Automated test scenarios for physics validation
@@ -66,6 +67,18 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 - **Ore magnet upgrades** (`OreAffinityLevel` in `src/mining.rs`): increases ore magnet radius and pull strength per level via `radius_at_level()` and `strength_at_level()`.
 - **Economy coupling**: all three upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
 - **Session scope**: upgrade resources reset when returning to `MainMenu`; persistent progression depends on the planned save/load system.
+
+## Save / Load Architecture
+
+- **Persistence format**: versioned TOML snapshots under `saves/slot_N.toml` (`N = 1..3`).
+- **Schema** (`src/save.rs`):
+  - `SaveSnapshot` root (`version`, `scenario`, `player`, `asteroids`, `resources`)
+  - `PlayerSnapshot` captures transform/velocity + health state
+  - `AsteroidSnapshot` captures transform/velocity + `AsteroidSize` + local-space `Vertices`
+  - `ResourceSnapshot` captures score/lives/ore/ammo and upgrade levels
+- **Save trigger**: pause-menu `SAVE 1/2/3` buttons emit `SaveSlotRequest`; `handle_save_slot_requests_system` serializes current ECS state while paused.
+- **Load trigger**: main-menu `LOAD GAME` opens `LoadGameMenu`; selecting a slot reads TOML into `PendingLoadedSnapshot` and transitions to `Playing`.
+- **Load apply**: `apply_pending_loaded_snapshot_system` restores resources, respawns asteroids from local-space hull vertices, and respawns the player with saved physics/health state.
 
 ## Physics Rules
 

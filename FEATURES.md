@@ -14,6 +14,7 @@
 | **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
+| **Pause menu Save buttons** | Save current run to slot 1/2/3                                                 |
 
 - **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
 - An **orange aim indicator** (line + dot) extends from the ship in the current fire direction. It is shown by default and can be hidden via the debug panel (*Aim Indicator* toggle).
@@ -78,6 +79,21 @@
 - When the final life is lost the simulation freezes and a **full-screen Game Over overlay** appears, showing the current score.
 - **PLAY AGAIN** (button or **Enter**): resets lives to 3 and returns to the existing world (asteroids remain intact).
 - **QUIT** (button): exits the application.
+
+## Save / Load
+
+### Save Slots
+
+- The game supports **three manual save slots** (`saves/slot_1.toml`, `saves/slot_2.toml`, `saves/slot_3.toml`).
+- While paused, use **SAVE 1 / SAVE 2 / SAVE 3** buttons to write the current run to a slot.
+- Save files are TOML and include a schema version for compatibility checks.
+
+### Loading
+
+- From the main menu, click **LOAD GAME** to open the slot picker.
+- Slot buttons show save metadata per slot: scenario and save timestamp (`saved: unix ...`) when loadable.
+- Corrupt or unreadable slot files are shown as **SLOT N (CORRUPT)** and are not presented as load-ready.
+- Loading restores the saved scenario, asteroid world snapshot, player state, and progression resources (score/lives/ore/ammo/upgrades).
 
 ## Ore Pickups
 

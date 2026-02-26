@@ -11,6 +11,7 @@ pub mod mining;
 pub mod particles;
 pub mod player;
 pub mod rendering;
+pub mod save;
 pub mod simulation;
 pub mod spatial_partition;
 pub mod testing;

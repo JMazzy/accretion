@@ -1,5 +1,52 @@
 # Accretion Changelog
 
+## Save/Load System (Slot-Based, TOML) — February 25, 2026
+
+### Added persistent save/load with three manual slots
+
+Implemented the backlog save/load feature with slot-based TOML snapshots and menu integration.
+
+**What was added**:
+- New `src/save.rs` module:
+  - `SaveSnapshot` schema with versioning (`version = 1`)
+  - Slot paths: `saves/slot_1.toml` .. `saves/slot_3.toml`
+  - `SaveSlotRequest` message + paused save handler system
+  - Slot read/write helpers and pending-load resource
+  - Load apply system that restores world/resources into ECS on transition to `Playing`
+- Main menu now includes **LOAD GAME** button leading to a dedicated slot picker (`GameState::LoadGameMenu`)
+- Pause menu now includes **SAVE 1 / SAVE 2 / SAVE 3** buttons
+
+**Snapshot contents** (MVP full run state):
+- Scenario selection
+- Player state (transform, velocity, health timers)
+- Asteroid world snapshot (position/rotation/velocity, `AsteroidSize`, local-space `Vertices`)
+- Progression resources (score, lives, ore, missile ammo, primary/secondary/magnet levels)
+
+**Integration points**:
+- `main.rs`: registers `SavePlugin`; adds `LoadGameMenu → Playing` transition setup and load-apply systems
+- `menu.rs`: load-game menu UI/systems + pause save-slot actions
+- `lib.rs`: exports `save` module
+
+**Build verification**:
+- `cargo check` ✅
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+### Second pass improvements — February 26, 2026
+
+- **Slot metadata UI**: Load Game menu now shows scenario + timestamp metadata for each slot when available.
+- **Corrupt-slot handling**: unreadable slots are surfaced as `CORRUPT` in the load menu instead of appearing loadable.
+- **Migration hook**: save loading now parses through a migration step that can normalize older TOML saves (e.g., missing `version` or `saved_at_unix`) before deserialization.
+- **New snapshot field**: `saved_at_unix` is now written on save and displayed in slot metadata.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
+---
+
 ## Fix: GameFont resource initialization order — February 25, 2026
 
 ### Fixed panic on startup due to GameFont not existing when menu systems run

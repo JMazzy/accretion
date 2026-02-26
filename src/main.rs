@@ -14,6 +14,7 @@ mod mining;
 mod particles;
 mod player;
 mod rendering;
+mod save;
 mod simulation;
 mod spatial_partition;
 mod testing;
@@ -94,6 +95,7 @@ fn main() {
     .insert_resource(player::PlayerFireCooldown::default())
     .insert_resource(player::PrimaryWeaponLevel::default())
     .insert_resource(player::SecondaryWeaponLevel::default())
+    .add_plugins(save::SavePlugin)
     // Global startup: config + camera + physics settings (needed by both menu and gameplay).
     .add_systems(
         Startup,
@@ -109,6 +111,21 @@ fn main() {
     .add_systems(
         OnTransition {
             exited: GameState::ScenarioSelect,
+            entered: GameState::Playing,
+        },
+        (
+            rendering::setup_boundary_ring,
+            rendering::setup_hud_score,
+            rendering::setup_lives_hud,
+            rendering::setup_missile_hud,
+            rendering::setup_ore_hud,
+            rendering::setup_stats_text,
+            rendering::setup_debug_panel,
+        ),
+    )
+    .add_systems(
+        OnTransition {
+            exited: GameState::LoadGameMenu,
             entered: GameState::Playing,
         },
         (
@@ -150,6 +167,16 @@ fn main() {
                 (
                     spawn_initial_world,
                     player::spawn_player,
+                    menu::resume_physics,
+                ),
+            )
+            .add_systems(
+                OnTransition {
+                    exited: GameState::LoadGameMenu,
+                    entered: GameState::Playing,
+                },
+                (
+                    save::apply_pending_loaded_snapshot_system,
                     menu::resume_physics,
                 ),
             )
