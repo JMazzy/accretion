@@ -1,5 +1,62 @@
 # Accretion Changelog
 
+## Physics Inspector Overlay — February 26, 2026
+
+### Added in-game physics inspector toggle with IDs, velocities, and contacts
+
+Implemented backlog item **Physics inspector overlay**.
+
+**What changed**:
+- Added a new debug toggle in `src/rendering.rs`: `OverlayToggle::PhysicsInspector`.
+- Added `OverlayState::show_physics_inspector` and a new `PhysicsInspectorDisplay` UI node.
+- Added `setup_physics_inspector_text` startup system and `sync_physics_inspector_visibility_system`.
+- Added `physics_inspector_display_system` that renders:
+  - Active Rapier contact-pair count
+  - Player entity ID + position/velocity/contact count
+  - A sample of asteroid entity IDs + position/velocity/contact counts
+- Wired systems in `src/simulation.rs` and startup setup in `src/main.rs`.
+- Added cleanup coverage in `cleanup_game_world` (`src/menu.rs`).
+
+**Backlog update**:
+- Removed **Physics inspector overlay** from pending `BACKLOG.md` items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
+## Hot-Reload Physics Constants — February 26, 2026
+
+### `assets/physics.toml` now hot-reloads at runtime
+
+Implemented backlog item **Hot-reload constants**.
+
+**What changed**:
+- Added `PhysicsConfigHotReloadState` resource in `src/config.rs` to track polling timer and last-seen file modification time.
+- Added startup initialization system `init_physics_hot_reload_state`.
+- Added update system `hot_reload_physics_config` that polls `assets/physics.toml` and applies new `PhysicsConfig` values when the file changes.
+- Added internal helpers for file-read/parse and modified-time checks.
+- Wired systems/resources in `src/main.rs`.
+- Updated `assets/physics.toml` header comment to reflect hot-reload behavior.
+
+**Behavior**:
+- Physics config edits now apply live while the game runs (no restart needed).
+- If the edited file is malformed, the current in-memory config remains active and an error is logged.
+
+**Backlog update**:
+- Removed **Hot-reload constants** from `BACKLOG.md` pending items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
 ## Missile Movement: Slow Start + Acceleration — February 26, 2026
 
 ### Missiles now launch slower and accelerate in-flight until max speed

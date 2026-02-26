@@ -66,7 +66,7 @@
 
 - The player starts each session with **3 lives** (displayed as ♥ hearts in the HUD, below the score).
 - Each time the ship is destroyed one heart is consumed and a respawn countdown begins.
-- The `player_lives` count (default `PLAYER_LIVES = 3`) and all timing constants can be tuned in `assets/physics.toml` without recompilation.
+- The `player_lives` count (default `PLAYER_LIVES = 3`) and all timing constants can be tuned in `assets/physics.toml` without recompilation, and changes hot-reload at runtime.
 
 ### Respawn
 
@@ -114,7 +114,7 @@
 - The pull uses a velocity lerp each frame: ore `linvel` smoothly transitions toward a vector pointing at the player at `ore_magnet_strength` u/s (base 40 u/s).
 - Each ore-magnet upgrade level increases radius by +50 u and strength by +16 u/s (up to Level 10).
 - Ore outside the magnet radius drifts freely under its initial scatter velocity.
-- Base constants are runtime-tunable via `assets/physics.toml`.
+- Base constants are runtime-tunable via `assets/physics.toml` and hot-reload while the game is running.
 
 ### Spending Ore
 
@@ -188,6 +188,15 @@ Live: XX | Culled: YY | Merged: ZZ
 - **Culled**: Total number of asteroids removed by culling system
 - **Merged**: Total number of merge events (N asteroids → 1 counts as 1 merge)
 - **Updates**: Every frame in real-time
+
+### Physics Inspector Overlay
+
+- A new **Physics Inspector** debug overlay can be toggled from the in-game debug panel.
+- Shows:
+  - Active contact pair count
+  - Player entity ID, position, velocity, and contact count
+  - A small sample of asteroid entity IDs with position/velocity/contact counts
+- Useful for live debugging of contact/velocity behavior without restarting in test mode.
 
 ### Culling Boundary Visualization
 

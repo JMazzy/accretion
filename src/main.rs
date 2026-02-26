@@ -84,6 +84,7 @@ fn main() {
     // Insert PhysicsConfig with compiled defaults; load_physics_config will
     // overwrite it from assets/physics.toml (if present) in the Startup schedule.
     .insert_resource(PhysicsConfig::default())
+    .insert_resource(config::PhysicsConfigHotReloadState::default())
     // Insert GameFont resource early so menu systems can access it; the actual
     // font handle will be loaded during Startup via load_game_font.
     .insert_resource(graphics::GameFont::default())
@@ -101,11 +102,13 @@ fn main() {
         Startup,
         (
             config::load_physics_config,
+            config::init_physics_hot_reload_state.after(config::load_physics_config),
             graphics::load_game_font,
             graphics::setup_camera.after(config::load_physics_config),
             setup_physics_config,
         ),
     )
+    .add_systems(Update, config::hot_reload_physics_config)
     // Game-world setup: runs only on the ScenarioSelect → Playing transition (not on
     // Paused → Playing resume), so world entities and HUD are spawned exactly once per session.
     .add_systems(
@@ -120,6 +123,7 @@ fn main() {
             rendering::setup_missile_hud,
             rendering::setup_ore_hud,
             rendering::setup_stats_text,
+            rendering::setup_physics_inspector_text,
             rendering::setup_debug_panel,
         ),
     )
@@ -135,6 +139,7 @@ fn main() {
             rendering::setup_missile_hud,
             rendering::setup_ore_hud,
             rendering::setup_stats_text,
+            rendering::setup_physics_inspector_text,
             rendering::setup_debug_panel,
         ),
     );

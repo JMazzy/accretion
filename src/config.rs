@@ -23,6 +23,26 @@
 use crate::constants::*;
 use bevy::prelude::*;
 use serde::Deserialize;
+use std::time::SystemTime;
+
+const PHYSICS_CONFIG_PATH: &str = "assets/physics.toml";
+const HOT_RELOAD_POLL_SECS: f32 = 0.5;
+
+/// Tracks state for runtime hot-reloading of `assets/physics.toml`.
+#[derive(Resource, Debug, Clone)]
+pub struct PhysicsConfigHotReloadState {
+    pub last_seen_modified: Option<SystemTime>,
+    pub poll_timer: f32,
+}
+
+impl Default for PhysicsConfigHotReloadState {
+    fn default() -> Self {
+        Self {
+            last_seen_modified: None,
+            poll_timer: 0.0,
+        }
+    }
+}
 
 /// Runtime-tunable physics and gameplay configuration.
 ///
@@ -268,20 +288,74 @@ impl Default for PhysicsConfig {
 /// to stderr but do not abort the simulation.  A missing file is silently
 /// ignored (defaults are already in place from `insert_resource`).
 pub fn load_physics_config(mut config: ResMut<PhysicsConfig>) {
-    let path = "assets/physics.toml";
-    match std::fs::read_to_string(path) {
-        Ok(contents) => match toml::from_str::<PhysicsConfig>(&contents) {
-            Ok(loaded) => {
-                *config = loaded;
-                println!("✓ Loaded physics config from {path}");
-            }
-            Err(e) => {
-                eprintln!("⚠ Failed to parse {path}: {e}; using defaults");
-            }
-        },
-        Err(_) => {
-            // File not present — defaults are already in place; not an error.
-            println!("ℹ No {path} found; using compiled defaults");
+    match read_physics_config_file(PHYSICS_CONFIG_PATH) {
+        Ok(loaded) => {
+            *config = loaded;
+            println!("✓ Loaded physics config from {PHYSICS_CONFIG_PATH}");
+        }
+        Err(err) => {
+            // File absent or malformed — defaults are already in place.
+            println!("ℹ {err}; using current/default physics config");
         }
     }
+}
+
+/// Initialize hot-reload file timestamp tracking after startup config load.
+pub fn init_physics_hot_reload_state(mut state: ResMut<PhysicsConfigHotReloadState>) {
+    state.last_seen_modified = physics_config_modified_time(PHYSICS_CONFIG_PATH);
+}
+
+/// Poll `assets/physics.toml` and hot-reload config when the file is modified.
+pub fn hot_reload_physics_config(
+    time: Res<Time>,
+    mut state: ResMut<PhysicsConfigHotReloadState>,
+    mut config: ResMut<PhysicsConfig>,
+) {
+    state.poll_timer += time.delta_secs();
+    if state.poll_timer < HOT_RELOAD_POLL_SECS {
+        return;
+    }
+    state.poll_timer = 0.0;
+
+    let Some(modified) = physics_config_modified_time(PHYSICS_CONFIG_PATH) else {
+        state.last_seen_modified = None;
+        return;
+    };
+
+    let changed = match state.last_seen_modified {
+        Some(previous) => modified > previous,
+        None => {
+            state.last_seen_modified = Some(modified);
+            false
+        }
+    };
+
+    if !changed {
+        return;
+    }
+
+    match read_physics_config_file(PHYSICS_CONFIG_PATH) {
+        Ok(loaded) => {
+            *config = loaded;
+            info!("Hot-reloaded physics config from {}", PHYSICS_CONFIG_PATH);
+        }
+        Err(err) => {
+            eprintln!("⚠ Failed hot-reload from {PHYSICS_CONFIG_PATH}: {err}");
+        }
+    }
+
+    // Advance watermark regardless of parse result to avoid repeated spam on the
+    // same broken file version; next edit will trigger another reload attempt.
+    state.last_seen_modified = Some(modified);
+}
+
+fn read_physics_config_file(path: &str) -> Result<PhysicsConfig, String> {
+    let contents =
+        std::fs::read_to_string(path).map_err(|err| format!("failed reading {path}: {err}"))?;
+    toml::from_str::<PhysicsConfig>(&contents)
+        .map_err(|err| format!("failed parsing {path}: {err}"))
+}
+
+fn physics_config_modified_time(path: &str) -> Option<SystemTime> {
+    std::fs::metadata(path).ok()?.modified().ok()
 }

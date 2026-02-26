@@ -22,7 +22,7 @@ Pure asteroid-based simulation where asteroids naturally aggregate through gravi
 src/
 ├── main.rs               - Bevy app setup, window configuration, test mode routing
 ├── constants.rs          - All tuneable physics and gameplay constants (compile-time defaults)
-├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup
+├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup and hot-reloaded at runtime
 ├── menu.rs               - GameState enum (MainMenu / ScenarioSelect / Playing / Paused / GameOver), SelectedScenario resource, MainMenuPlugin, splash screen + scenario-select + pause menu UI
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
@@ -280,7 +280,7 @@ Built-in scenarios are variants of `SelectedScenario` (in `menu.rs`) and spawned
 
 #### Runtime Configuration
 
-Physics constants are defined in `src/constants.rs` as compile-time defaults and mirrored into a `PhysicsConfig` Bevy resource (`src/config.rs`) at startup. If `assets/physics.toml` is present it overrides the defaults — no recompilation is required. If the file is absent the compiled-in defaults are used silently. The resource is injected before all other startup systems so every system reads up-to-date values on the first frame.
+Physics constants are defined in `src/constants.rs` as compile-time defaults and mirrored into a `PhysicsConfig` Bevy resource (`src/config.rs`). At startup, `assets/physics.toml` (if present) overrides defaults. During runtime, the file is polled and hot-reloaded when its modification timestamp changes, so updated values are applied without restart or recompilation. If the file is absent the compiled-in defaults are used silently.
 
 #### Version Constraints
 - **Bevy 0.17** + **bevy_rapier2d 0.32**: Current versions. Migration from 0.13 completed February 2026.
@@ -314,7 +314,8 @@ Physics constants are defined in `src/constants.rs` as compile-time defaults and
 #### Test & Developer Tooling
 - **Automated regression baseline**: Store golden frame-log snapshots in `tests/golden/` and compare on each test run, automatically catching physics constant drift
 - **In-game physics inspector**: Toggle an overlay showing entity IDs, velocities, and contact counts on-screen for live debugging without restarting in test mode
-- **Hot-reload constants**: Watch `assets/physics.toml` for changes at runtime and apply updated constants on the fly
+- ~~**In-game physics inspector**: Toggle an overlay showing entity IDs, velocities, and contact counts on-screen for live debugging without restarting in test mode~~ ✅ Completed
+- ~~**Hot-reload constants**: Watch `assets/physics.toml` for changes at runtime and apply updated constants on the fly~~ ✅ Completed
 
 ## Development Commands
 

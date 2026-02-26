@@ -28,8 +28,8 @@ use crate::player::{
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
     lives_hud_display_system, missile_hud_display_system, ore_hud_display_system,
-    stats_display_system, sync_boundary_ring_visibility_system,
-    sync_stats_overlay_visibility_system, OverlayState,
+    physics_inspector_display_system, stats_display_system, sync_boundary_ring_visibility_system,
+    sync_physics_inspector_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -128,6 +128,7 @@ impl Plugin for SimulationPlugin {
                         sync_boundary_ring_visibility_system, // Show/hide boundary ring
                         gizmo_rendering_system,               // Render gizmo overlays
                         sync_stats_overlay_visibility_system, // Show/hide stats overlay
+                        sync_physics_inspector_visibility_system, // Show/hide physics inspector
                         player_gizmo_system, // Render ship outline (aim/hbar now Mesh2d)
                         sync_player_health_bar_system, // Update health bar position + colour
                         sync_aim_indicator_system, // Update aim arrow orientation + visibility
@@ -136,6 +137,7 @@ impl Plugin for SimulationPlugin {
                         missile_hud_display_system, // Refresh missile ammo HUD
                         ore_hud_display_system, // Refresh ore count HUD
                         stats_display_system, // Render stats overlay text
+                        physics_inspector_display_system, // Render physics inspector text
                         player_oob_damping_system, // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
                         player_respawn_system, // Re-spawn ship after countdown

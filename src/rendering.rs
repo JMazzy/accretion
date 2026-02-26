@@ -42,11 +42,13 @@ use crate::config::PhysicsConfig;
 use crate::graphics::GameFont;
 use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
+use crate::player::Player;
 use crate::player::{PlayerLives, PlayerScore, PrimaryWeaponLevel};
 use crate::simulation::SimulationStats;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
-use bevy_rapier2d::prelude::Velocity;
+use bevy_rapier2d::prelude::{ReadRapierContext, Velocity};
+use std::collections::HashMap;
 
 // ── Overlay state resource ────────────────────────────────────────────────────
 
@@ -75,6 +77,8 @@ pub struct OverlayState {
     pub show_projectile_outline: bool,
     /// Show the simulation statistics overlay (Live/Culled/Merged/Split/Destroyed).
     pub show_stats: bool,
+    /// Show the physics inspector overlay (entity IDs, velocities, contacts).
+    pub show_physics_inspector: bool,
 }
 
 // ── Component markers ─────────────────────────────────────────────────────────
@@ -111,6 +115,10 @@ pub struct MissileHudDisplay;
 #[derive(Component)]
 pub struct OreHudDisplay;
 
+/// Marker for the physics-inspector text node.
+#[derive(Component)]
+pub struct PhysicsInspectorDisplay;
+
 /// Tags a toggle button in the debug panel with the overlay field it controls.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OverlayToggle {
@@ -123,6 +131,7 @@ pub enum OverlayToggle {
     AimIndicator,
     ProjectileOutline,
     StatsOverlay,
+    PhysicsInspector,
 }
 
 impl OverlayToggle {
@@ -138,6 +147,7 @@ impl OverlayToggle {
             Self::AimIndicator => state.show_aim_indicator,
             Self::ProjectileOutline => state.show_projectile_outline,
             Self::StatsOverlay => state.show_stats,
+            Self::PhysicsInspector => state.show_physics_inspector,
         }
     }
 
@@ -155,6 +165,9 @@ impl OverlayToggle {
                 state.show_projectile_outline = !state.show_projectile_outline;
             }
             Self::StatsOverlay => state.show_stats = !state.show_stats,
+            Self::PhysicsInspector => {
+                state.show_physics_inspector = !state.show_physics_inspector;
+            }
         }
     }
 
@@ -170,6 +183,7 @@ impl OverlayToggle {
             Self::AimIndicator => "Aim Indicator",
             Self::ProjectileOutline => "Projectile Outline",
             Self::StatsOverlay => "Stats Overlay",
+            Self::PhysicsInspector => "Physics Inspector",
         }
     }
 }
@@ -484,6 +498,37 @@ pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>, font
         });
 }
 
+/// Startup: spawn physics-inspector text overlay (hidden by default).
+pub fn setup_physics_inspector_text(
+    mut commands: Commands,
+    config: Res<PhysicsConfig>,
+    font: Res<GameFont>,
+) {
+    let row_h = config.stats_font_size + 6.0;
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                top: Val::Px(10.0 + row_h * 6.0),
+                ..default()
+            },
+            PhysicsInspectorDisplay,
+            Visibility::Hidden,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Physics Inspector\n(no data)"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: (config.stats_font_size - 4.0).max(10.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(0.75, 0.95, 0.95)),
+            ));
+        });
+}
+
 // ── Startup: debug panel ──────────────────────────────────────────────────────
 
 /// Spawn the debug overlay panel (hidden until the user presses ESC).
@@ -502,6 +547,7 @@ pub fn setup_debug_panel(mut commands: Commands, font: Res<GameFont>) {
         (OverlayToggle::ShipOutline, false),
         (OverlayToggle::ProjectileOutline, false),
         (OverlayToggle::StatsOverlay, false),
+        (OverlayToggle::PhysicsInspector, false),
     ];
 
     commands
@@ -681,6 +727,24 @@ pub fn sync_stats_overlay_visibility_system(
     }
 }
 
+/// Show or hide the physics inspector overlay based on [`OverlayState`].
+pub fn sync_physics_inspector_visibility_system(
+    overlay: Res<OverlayState>,
+    mut query: Query<&mut Visibility, With<PhysicsInspectorDisplay>>,
+) {
+    if !overlay.is_changed() {
+        return;
+    }
+    let vis = if overlay.show_physics_inspector {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    for mut v in query.iter_mut() {
+        *v = vis;
+    }
+}
+
 // ── Update: stats text ────────────────────────────────────────────────────────
 
 /// Refresh the stats text content each frame.
@@ -700,6 +764,87 @@ pub fn stats_display_system(
                     stats.split_total,
                     stats.destroyed_total
                 ));
+            }
+        }
+    }
+}
+
+/// Refresh the physics inspector text with IDs, velocities, and active contact counts.
+pub fn physics_inspector_display_system(
+    overlay: Res<OverlayState>,
+    parent_query: Query<&Children, With<PhysicsInspectorDisplay>>,
+    mut text_query: Query<&mut Text>,
+    q_player: Query<(Entity, &Transform, &Velocity), With<Player>>,
+    q_asteroids: Query<(Entity, &Transform, &Velocity), With<Asteroid>>,
+    rapier_context: ReadRapierContext,
+) {
+    if !overlay.show_physics_inspector {
+        return;
+    }
+
+    let mut contact_counts: HashMap<Entity, u32> = HashMap::new();
+    let mut active_pairs = 0_u32;
+    if let Ok(rapier) = rapier_context.single() {
+        for pair in rapier
+            .simulation
+            .contact_pairs(rapier.colliders, rapier.rigidbody_set)
+        {
+            if !pair.has_any_active_contact() {
+                continue;
+            }
+            active_pairs += 1;
+            if let Some(e1) = pair.collider1() {
+                *contact_counts.entry(e1).or_default() += 1;
+            }
+            if let Some(e2) = pair.collider2() {
+                *contact_counts.entry(e2).or_default() += 1;
+            }
+        }
+    }
+
+    let mut lines = Vec::with_capacity(10);
+    lines.push(format!("Contacts(active pairs): {active_pairs}"));
+
+    if let Ok((entity, transform, velocity)) = q_player.single() {
+        let p = transform.translation.truncate();
+        let v = velocity.linvel;
+        let c = contact_counts.get(&entity).copied().unwrap_or(0);
+        lines.push(format!(
+            "Player id={} pos=({:.0},{:.0}) vel=({:.1},{:.1}) contacts={}",
+            entity.index(),
+            p.x,
+            p.y,
+            v.x,
+            v.y,
+            c
+        ));
+    } else {
+        lines.push("Player: none".to_string());
+    }
+
+    lines.push(format!("Asteroids: {}", q_asteroids.iter().len()));
+
+    for (i, (entity, transform, velocity)) in q_asteroids.iter().take(4).enumerate() {
+        let p = transform.translation.truncate();
+        let v = velocity.linvel;
+        let c = contact_counts.get(&entity).copied().unwrap_or(0);
+        lines.push(format!(
+            "A{} id={} pos=({:.0},{:.0}) vel=({:.1},{:.1}) c={}",
+            i,
+            entity.index(),
+            p.x,
+            p.y,
+            v.x,
+            v.y,
+            c
+        ));
+    }
+
+    let display = lines.join("\n");
+    for children in parent_query.iter() {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                *text = Text::new(display.clone());
             }
         }
     }

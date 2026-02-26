@@ -22,8 +22,6 @@ Last updated: February 25, 2026.
 
 ## Developer Tooling
 
-- [ ] **Hot-reload constants** — Watch `assets/physics.toml`; apply changes instantly
-- [ ] **Physics inspector overlay** — Show entity IDs, velocities, contacts; toggle in-game
 - [ ] **Profiler integration** — Frame-time breakdown (physics, rendering, ECS)
 - [ ] **Replay/playback system** — Record and replay sessions
 - [ ] **Debug grid visualization** — Draw spatial partition cells

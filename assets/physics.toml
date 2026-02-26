@@ -4,7 +4,7 @@
 # Missing keys fall back to the compiled defaults — you only need to list
 # the values you want to change.
 #
-# Restart the simulation after editing this file; no recompilation needed.
+# The game hot-reloads this file at runtime (polled); no restart/recompile needed.
 # Validate changes by running: ./test_all.sh
 #
 # ── World Bounds ──────────────────────────────────────────────────────────────
