@@ -58,6 +58,14 @@ pub struct Particle {
     pub material: Option<Handle<ColorMaterial>>,
 }
 
+/// Visual mode for tractor beam particle emission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TractorBeamVfxMode {
+    Pull,
+    Push,
+    Freeze,
+}
+
 // ── Plugin ────────────────────────────────────────────────────────────────────
 
 pub struct ParticlesPlugin;
@@ -299,6 +307,90 @@ pub fn spawn_merge_particles(commands: &mut Commands, center: Vec2) {
                 material: None,
             },
             Transform::from_translation((center + offset).extend(0.9)),
+            Visibility::default(),
+        ));
+    }
+}
+
+/// Spawn light-blue directional particles for tractor beam force application.
+///
+/// `force_dir` should point in the same direction as the applied tractor force.
+/// `intensity` is expected in `[0, 1]` and controls emission count/energy.
+pub fn spawn_tractor_beam_particles(
+    commands: &mut Commands,
+    origin: Vec2,
+    force_dir: Vec2,
+    target_vel: Vec2,
+    mode: TractorBeamVfxMode,
+    intensity: f32,
+) {
+    let mut rng = rand::thread_rng();
+    let base_dir = if force_dir.length_squared() > 1e-6 {
+        force_dir.normalize()
+    } else {
+        Vec2::Y
+    };
+    let base_angle = base_dir.y.atan2(base_dir.x);
+    let intensity = intensity.clamp(0.0, 1.0);
+
+    let base_count = match mode {
+        TractorBeamVfxMode::Pull => 2_u32,
+        TractorBeamVfxMode::Push => 2_u32,
+        TractorBeamVfxMode::Freeze => 3_u32,
+    };
+    let count = (base_count as f32 + intensity * 2.0).round() as u32;
+
+    for _ in 0..count.max(1) {
+        let spread = match mode {
+            TractorBeamVfxMode::Pull => 0.28_f32,
+            TractorBeamVfxMode::Push => 0.22_f32,
+            TractorBeamVfxMode::Freeze => 0.45_f32,
+        };
+        let angle = base_angle + rng.gen_range(-spread..spread);
+
+        let speed = match mode {
+            TractorBeamVfxMode::Pull => rng.gen_range(35.0_f32..80.0_f32),
+            TractorBeamVfxMode::Push => rng.gen_range(55.0_f32..105.0_f32),
+            TractorBeamVfxMode::Freeze => rng.gen_range(20.0_f32..55.0_f32),
+        } * (0.7 + 0.6 * intensity);
+
+        let velocity = Vec2::new(angle.cos(), angle.sin()) * speed + target_vel * 0.12;
+
+        let (r, g, b, lifetime) = match mode {
+            TractorBeamVfxMode::Pull => (
+                rng.gen_range(0.50_f32..0.72_f32),
+                rng.gen_range(0.88_f32..1.00_f32),
+                rng.gen_range(0.95_f32..1.00_f32),
+                rng.gen_range(0.12_f32..0.23_f32),
+            ),
+            TractorBeamVfxMode::Push => (
+                rng.gen_range(0.38_f32..0.62_f32),
+                rng.gen_range(0.78_f32..0.95_f32),
+                rng.gen_range(0.95_f32..1.00_f32),
+                rng.gen_range(0.10_f32..0.20_f32),
+            ),
+            TractorBeamVfxMode::Freeze => (
+                rng.gen_range(0.68_f32..0.90_f32),
+                rng.gen_range(0.94_f32..1.00_f32),
+                rng.gen_range(0.94_f32..1.00_f32),
+                rng.gen_range(0.18_f32..0.32_f32),
+            ),
+        };
+
+        let lateral = Vec2::new(-base_dir.y, base_dir.x) * rng.gen_range(-2.5_f32..2.5_f32);
+        let offset = base_dir * rng.gen_range(-2.0_f32..2.0_f32) + lateral;
+
+        commands.spawn((
+            Particle {
+                velocity,
+                age: 0.0,
+                lifetime,
+                r,
+                g,
+                b,
+                material: None,
+            },
+            Transform::from_translation((origin + offset).extend(0.9)),
             Visibility::default(),
         ));
     }

@@ -149,13 +149,26 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 
 ### Player Tractor Beam
 
-- **Activation**: hold `E` to pull; hold `Alt+E` to push.
+- **Activation**:
+  - hold `Q` to pull
+  - hold `E` to push
+  - hold `Q+E` for freeze mode
 - **System**: `tractor_beam_force_system` runs in `FixedUpdate` after `nbody_gravity_system` so beam forces are added on top of gravity each physics step.
 - **Target filter**:
   - asteroid must be within beam range and outside `TRACTOR_BEAM_MIN_DISTANCE`
-  - asteroid must be inside an aim cone (`TRACTOR_BEAM_AIM_CONE_DOT`) around current `AimDirection`
+  - asteroid must be inside a ship-forward cone (`TRACTOR_BEAM_AIM_CONE_DOT`) around the ship forward vector
   - asteroid size and speed must be below level-scaled limits (`TRACTOR_BEAM_MAX_TARGET_SIZE_*`, `TRACTOR_BEAM_MAX_TARGET_SPEED_*`)
-- **Stability controls**: force uses distance falloff and strict speed/mass gating to avoid runaway acceleration.
+- **Push/Pull force model**: distance-falloff force applied along player-target axis.
+- **Freeze force model**: anchored-offset spring-damper hold force
+  - on freeze engage, each target stores a held offset `r_hold` relative to ship position (clamped by `tractor_beam_freeze_max_hold_offset`)
+  - per step, desired position is `p_target = p_ship + r_hold`
+  - `F_freeze = clamp((p_target - p_ast) * tractor_beam_freeze_offset_stiffness - v_rel * tractor_beam_freeze_velocity_damping, force_limit)`
+  - `force_limit = force_at_level * tractor_beam_freeze_force_multiplier`
+  - damping is reduced above `tractor_beam_freeze_max_relative_speed` to prevent spikes
+- **VFX**: tractor force emits directional light-blue particles via `spawn_tractor_beam_particles`:
+  - pull (cyan), push (blue), freeze (aqua-white)
+  - emission is burst-throttled and capped per fixed-step to keep frame-time stable
+- **Stability controls**: strict speed/mass/range/cone gating, frozen-mode size/speed multipliers, and freeze force caps avoid runaway acceleration.
 
 ## ECS Systems Execution Order
 

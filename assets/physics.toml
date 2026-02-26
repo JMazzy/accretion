@@ -149,6 +149,26 @@ tractor_beam_min_distance = 20.0
 # Aim cone dot threshold (higher = narrower beam cone).
 tractor_beam_aim_cone_dot = 0.25
 
+# Freeze-mode (`Q+E`) relative-velocity damping strength.
+tractor_beam_freeze_velocity_damping = 260.0
+
+# Relative speed (u/s) where freeze damping reaches its full-strength knee.
+# Above this speed, damping scales down to avoid force spikes.
+tractor_beam_freeze_max_relative_speed = 160.0
+
+# Maximum freeze force as a multiplier of level-scaled base tractor force.
+tractor_beam_freeze_force_multiplier = 1.35
+
+# Spring stiffness for freeze hold position correction (higher = tighter hold).
+tractor_beam_freeze_offset_stiffness = 90.0
+
+# Maximum stored hold offset radius from ship while freezing.
+tractor_beam_freeze_max_hold_offset = 180.0
+
+# Additional frozen-mode safety multipliers applied to level-scaled target limits.
+tractor_beam_freeze_max_target_size_multiplier = 0.75
+tractor_beam_freeze_max_target_speed_multiplier = 0.8
+
 # ── Player: Combat ────────────────────────────────────────────────────────────
 
 # Projectile muzzle speed (u/s).

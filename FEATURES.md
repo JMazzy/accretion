@@ -12,8 +12,9 @@
 | **D**                       | Rotate ship right                                                              |
 | **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
-| **Hold E**                   | Tractor beam pull (affects aimed, nearby asteroids within beam envelope)        |
-| **Hold Alt + E**             | Tractor beam push (same targeting envelope, opposite force direction)            |
+| **Hold Q**                   | Tractor beam pull (ship-forward cone targets nearby asteroids)                   |
+| **Hold E**                   | Tractor beam push (same cone and envelope, opposite force direction)             |
+| **Hold Q + E**               | Tractor beam freeze (damps relative motion to hold target offsets stably)        |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
 | **Pause menu Save buttons** | Save current run to slot 1/2/3                                                 |
@@ -167,14 +168,25 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
 
 ### Tractor Beam (MVP)
 
-- Hold **E** to pull asteroids toward the ship; hold **Alt + E** to invert into a push beam.
-- Beam targeting is constrained by your current aim direction (cone around `AimDirection`) and a distance envelope.
+- Hold **Q** to pull asteroids toward the ship.
+- Hold **E** to push asteroids away from the ship.
+- Hold **Q + E** to enter freeze mode, which holds asteroids at a bounded target offset relative to the ship.
+- Beam targeting is constrained by a configurable front cone around **ship forward** (independent from weapon aim direction) and a distance envelope.
 - Tractor beam has its own ore-shop upgrade card (**TRACTOR**) up to Level 10.
 - Each level increases beam range/force and expands the max affected size/speed envelope.
 - Stability safeguards prevent runaway behavior:
   - ignores asteroids below a minimum interaction distance
   - ignores asteroids above a level-scaled max size
   - ignores asteroids already moving above a level-scaled speed threshold
+- Freeze mode uses a spring-damper hold model with explicit clamps:
+  - target offset is captured on freeze engage and clamped by `tractor_beam_freeze_max_hold_offset`
+  - force combines offset correction + relative-velocity damping, then is capped by `tractor_beam_freeze_force_multiplier`
+  - additional frozen-mode target guards apply (`tractor_beam_freeze_max_target_size_multiplier`, `tractor_beam_freeze_max_target_speed_multiplier`)
+- Tractor beam now emits directional **light-blue particles** along applied force direction:
+  - pull: cyan-leaning streaks toward ship
+  - push: deeper blue streaks away from ship
+  - freeze: brighter aqua-white particles with softer spread for hold-state readability
+- Emission is burst-throttled in fixed-step updates to preserve frame-time under dense asteroid fields.
 - Beam force/range and all envelope limits are runtime-tunable via `assets/physics.toml` (`tractor_beam_*` keys).
 - **Persistence**: tractor beam level is saved/restored in save slots.
 

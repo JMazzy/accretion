@@ -1,5 +1,103 @@
 # Accretion Changelog
 
+## Tractor Hold/Freeze Stability Pass — February 26, 2026
+
+### Completed spring-damper hold model with explicit frozen-mode safeguards
+
+Implemented backlog item **Tractor hold/freeze stability pass**.
+
+**What changed**:
+- Upgraded freeze behavior in `tractor_beam_force_system` (`src/player/control.rs`) from damping-only to anchored spring-damper hold:
+  - captures per-target hold offset on freeze engage
+  - applies spring correction toward held offset plus relative-velocity damping
+  - keeps force bounded by freeze force cap
+- Added explicit frozen-mode safety guards in `src/player/control.rs`:
+  - stricter frozen target size/speed limits via multipliers
+  - bounded hold offset radius
+  - stale freeze-target cleanup each frame for deterministic behavior
+- Added new freeze-stability config fields mirrored across:
+  - `src/constants.rs`
+  - `src/config.rs`
+  - `assets/physics.toml`
+  - fields: `tractor_beam_freeze_offset_stiffness`, `tractor_beam_freeze_max_hold_offset`, `tractor_beam_freeze_max_target_size_multiplier`, `tractor_beam_freeze_max_target_speed_multiplier`
+- Added focused tests in `src/player/control.rs`:
+  - `tractor_freeze_holds_target_offset_with_spring_correction`
+  - `tractor_freeze_applies_stricter_speed_guard`
+
+**Backlog update**:
+- Removed completed item **Tractor hold/freeze stability pass** from `BACKLOG.md`.
+
+**Validation**:
+- `cargo test tractor_` ✅
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+## Tractor Beam Particles (Directional Light-Blue VFX) — February 26, 2026
+
+### Implemented directional tractor force particles with pull/push/freeze distinction
+
+Implemented backlog item **Tractor beam particles (light blue force-direction VFX)**.
+
+**What changed**:
+- Added new particle API in `src/particles.rs`:
+  - `TractorBeamVfxMode` (`Pull`, `Push`, `Freeze`)
+  - `spawn_tractor_beam_particles(...)`
+- Wired tractor VFX into `tractor_beam_force_system` in `src/player/control.rs`:
+  - emits particles in the applied force direction for pull/push/freeze
+  - freeze mode uses force-direction particles based on bounded relative-velocity damping force
+  - emission is throttled (`0.05s` burst interval) and capped per burst to limit runtime cost
+- Added focused test `tractor_pull_emits_particles` in `src/player/control.rs`.
+
+**Backlog update**:
+- Removed completed item **Tractor beam particles (light blue force-direction VFX)** from `BACKLOG.md`.
+
+**Validation**:
+- `cargo test tractor_` ✅
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+## Tractor Control Mode (Q/E + Ship-Forward Cone) — February 26, 2026
+
+### Implemented backlog foundation for deterministic tractor controls and freeze behavior
+
+Implemented backlog item **Tractor control mode: ship-forward cone + Q/E semantics** and started the freeze stability pass.
+
+**What changed**:
+- Updated `tractor_beam_force_system` in `src/player/control.rs`:
+  - `Q` only: pull toward ship
+  - `E` only: push away from ship
+  - `Q + E`: freeze mode using bounded relative-velocity damping
+- Decoupled tractor targeting from weapon aim direction:
+  - cone source is now ship forward (from player transform rotation)
+  - existing cone threshold config is preserved via `tractor_beam_aim_cone_dot`
+- Added freeze stability runtime config keys and defaults:
+  - `tractor_beam_freeze_velocity_damping`
+  - `tractor_beam_freeze_max_relative_speed`
+  - `tractor_beam_freeze_force_multiplier`
+  - mirrored across `src/constants.rs`, `src/config.rs`, and `assets/physics.toml`
+- Added focused tractor behavior unit tests in `src/player/control.rs`:
+  - verifies Q pull direction
+  - verifies E push direction
+  - verifies Q+E freeze opposes relative velocity and respects force cap
+  - verifies front-cone filtering rejects targets behind ship
+
+**Backlog update**:
+- Removed completed item **Tractor control mode: ship-forward cone + Q/E semantics** from `BACKLOG.md`.
+- Cleared dependency tags from tractor follow-up items now that the control-mode foundation is in place.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
 ## Missile Buff Balance + Telemetry Pass — February 26, 2026
 
 ### Tuned missile cadence/velocity and added outcome-distribution frame telemetry

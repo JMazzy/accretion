@@ -207,8 +207,35 @@ pub const TRACTOR_BEAM_MAX_TARGET_SPEED_PER_LEVEL: f32 = 20.0;
 /// Minimum interaction distance to avoid unstable near-zero distance pulls.
 pub const TRACTOR_BEAM_MIN_DISTANCE: f32 = 20.0;
 
-/// Dot-product threshold for beam targeting cone around current aim direction.
+/// Dot-product threshold for beam targeting cone around ship forward direction.
 pub const TRACTOR_BEAM_AIM_CONE_DOT: f32 = 0.25;
+
+/// Velocity damping coefficient used by tractor freeze mode (`Q` + `E`).
+/// Higher values lock relative asteroid motion more aggressively.
+pub const TRACTOR_BEAM_FREEZE_VELOCITY_DAMPING: f32 = 260.0;
+
+/// Maximum relative speed (u/s) at which freeze damping applies at full strength.
+/// Above this, damping is proportionally reduced to avoid force spikes.
+pub const TRACTOR_BEAM_FREEZE_MAX_RELATIVE_SPEED: f32 = 160.0;
+
+/// Multiplier applied to base tractor force to cap freeze-mode force output.
+pub const TRACTOR_BEAM_FREEZE_FORCE_MULTIPLIER: f32 = 1.35;
+
+/// Spring stiffness for freeze hold position correction (`Q` + `E`).
+/// Higher values pull targets back to their held offset more aggressively.
+pub const TRACTOR_BEAM_FREEZE_OFFSET_STIFFNESS: f32 = 90.0;
+
+/// Maximum held offset from the ship center while freezing.
+/// Initial hold offsets are clamped to this radius for bounded behavior.
+pub const TRACTOR_BEAM_FREEZE_MAX_HOLD_OFFSET: f32 = 180.0;
+
+/// Multiplier for max target size while frozen, applied to level-scaled tractor max.
+/// Keeps freeze mode conservative on very large asteroids.
+pub const TRACTOR_BEAM_FREEZE_MAX_TARGET_SIZE_MULTIPLIER: f32 = 0.75;
+
+/// Multiplier for max target speed while frozen, applied to level-scaled tractor max.
+/// Keeps freeze mode stable by rejecting faster-moving targets.
+pub const TRACTOR_BEAM_FREEZE_MAX_TARGET_SPEED_MULTIPLIER: f32 = 0.8;
 
 // ── Player: Combat ────────────────────────────────────────────────────────────
 

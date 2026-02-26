@@ -14,25 +14,6 @@ Last updated: February 26, 2026.
 
 ### Gameplay Foundation (Combat + AI)
 
-- [ ] **Tractor control mode: ship-forward cone + Q/E semantics**
-	- Decouple tractor targeting from primary-weapon aim direction.
-	- Beam origin/direction should be based on ship forward with a configurable front cone.
-	- Keyboard controls:
-		- `Q` only → pull toward ship
-		- `E` only → push away from ship
-		- `Q`+`E` → hold/freeze relative to ship (bounded/stable behavior only)
-	- Acceptance: tractor behavior is deterministic and control mapping is consistent across frames (no oscillation/jitter spikes).
-
-- [ ] **Tractor hold/freeze stability pass** `depends on Tractor control mode: ship-forward cone + Q/E semantics`
-	- Define freeze behavior mathematically (target offset + damping/velocity clamp) so it remains predictable under gravity.
-	- Add explicit safeguards for mass/speed/range limits while frozen.
-	- Acceptance: frozen asteroids remain controllable without runaway acceleration or physics explosions in stress scenarios.
-
-- [ ] **Tractor beam particles (light blue force-direction VFX)** `depends on Tractor control mode: ship-forward cone + Q/E semantics`
-	- Emit light-blue particles along the applied force direction (inward/outward).
-	- Show directional distinction for pull/push and visually indicate freeze mode.
-	- Acceptance: particles are readable at normal zoom and do not materially degrade frame-time.
-
 - [ ] **Enemy ships: foundation + spawning**
 	- Add enemy entity type, rendering, HP, and basic movement/targeting toward player.
 	- Add deterministic spawn rules (count, spacing, cooldown) tied to scenario/session progression.

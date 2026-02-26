@@ -114,6 +114,13 @@ pub struct PhysicsConfig {
     pub tractor_beam_max_target_speed_per_level: f32,
     pub tractor_beam_min_distance: f32,
     pub tractor_beam_aim_cone_dot: f32,
+    pub tractor_beam_freeze_velocity_damping: f32,
+    pub tractor_beam_freeze_max_relative_speed: f32,
+    pub tractor_beam_freeze_force_multiplier: f32,
+    pub tractor_beam_freeze_offset_stiffness: f32,
+    pub tractor_beam_freeze_max_hold_offset: f32,
+    pub tractor_beam_freeze_max_target_size_multiplier: f32,
+    pub tractor_beam_freeze_max_target_speed_multiplier: f32,
 
     // ── Player: Combat ────────────────────────────────────────────────────────
     pub projectile_speed: f32,
@@ -243,6 +250,15 @@ impl Default for PhysicsConfig {
             tractor_beam_max_target_speed_per_level: TRACTOR_BEAM_MAX_TARGET_SPEED_PER_LEVEL,
             tractor_beam_min_distance: TRACTOR_BEAM_MIN_DISTANCE,
             tractor_beam_aim_cone_dot: TRACTOR_BEAM_AIM_CONE_DOT,
+            tractor_beam_freeze_velocity_damping: TRACTOR_BEAM_FREEZE_VELOCITY_DAMPING,
+            tractor_beam_freeze_max_relative_speed: TRACTOR_BEAM_FREEZE_MAX_RELATIVE_SPEED,
+            tractor_beam_freeze_force_multiplier: TRACTOR_BEAM_FREEZE_FORCE_MULTIPLIER,
+            tractor_beam_freeze_offset_stiffness: TRACTOR_BEAM_FREEZE_OFFSET_STIFFNESS,
+            tractor_beam_freeze_max_hold_offset: TRACTOR_BEAM_FREEZE_MAX_HOLD_OFFSET,
+            tractor_beam_freeze_max_target_size_multiplier:
+                TRACTOR_BEAM_FREEZE_MAX_TARGET_SIZE_MULTIPLIER,
+            tractor_beam_freeze_max_target_speed_multiplier:
+                TRACTOR_BEAM_FREEZE_MAX_TARGET_SPEED_MULTIPLIER,
             // Player: Combat
             projectile_speed: PROJECTILE_SPEED,
             fire_cooldown: FIRE_COOLDOWN,
