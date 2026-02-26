@@ -65,7 +65,8 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 - **Primary weapon upgrades** (`PrimaryWeaponLevel` in `src/player/state.rs`): raises projectile full-destroy threshold by level; larger asteroids are chipped.
 - **Secondary weapon upgrades** (`SecondaryWeaponLevel` in `src/player/state.rs`): raises missile impact power; higher levels chip more size-1 units from larger targets.
 - **Ore magnet upgrades** (`OreAffinityLevel` in `src/mining.rs`): increases ore magnet radius and pull strength per level via `radius_at_level()` and `strength_at_level()`.
-- **Economy coupling**: all three upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
+- **Tractor beam scaling** (`TractorBeamLevel` in `src/player/state.rs`): scales beam force/range plus max affected asteroid size/speed envelope.
+- **Economy coupling**: weapon/missile/magnet/tractor upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
 - **Session scope**: upgrade resources reset when returning to `MainMenu`; persistent progression depends on the planned save/load system.
 
 ## Save / Load Architecture
@@ -75,7 +76,7 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
   - `SaveSnapshot` root (`version`, `scenario`, `player`, `asteroids`, `resources`)
   - `PlayerSnapshot` captures transform/velocity + health state
   - `AsteroidSnapshot` captures transform/velocity + `AsteroidSize` + local-space `Vertices`
-  - `ResourceSnapshot` captures score/lives/ore/ammo and upgrade levels
+  - `ResourceSnapshot` captures score/lives/ore/ammo and upgrade levels (weapon, missile, magnet, tractor)
 - **Save trigger**: pause-menu `SAVE 1/2/3` buttons emit `SaveSlotRequest`; `handle_save_slot_requests_system` serializes current ECS state while paused.
 - **Load trigger**: main-menu `LOAD GAME` opens `LoadGameMenu`; selecting a slot reads TOML into `PendingLoadedSnapshot` and transitions to `Playing`.
 - **Load apply**: `apply_pending_loaded_snapshot_system` restores resources, respawns asteroids from local-space hull vertices, and respawns the player with saved physics/health state.
@@ -145,6 +146,16 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 - **Stats boundary**: `CULL_DISTANCE` — reference for the live-count display; asteroids within this radius are shown as "live".
 - Artificial velocity damping ramps have been removed; energy loss occurs only through collisions and the outer soft spring.
 
+### Player Tractor Beam
+
+- **Activation**: hold `E` to pull; hold `Alt+E` to push.
+- **System**: `tractor_beam_force_system` runs in `FixedUpdate` after `nbody_gravity_system` so beam forces are added on top of gravity each physics step.
+- **Target filter**:
+  - asteroid must be within beam range and outside `TRACTOR_BEAM_MIN_DISTANCE`
+  - asteroid must be inside an aim cone (`TRACTOR_BEAM_AIM_CONE_DOT`) around current `AimDirection`
+  - asteroid size and speed must be below level-scaled limits (`TRACTOR_BEAM_MAX_TARGET_SIZE_*`, `TRACTOR_BEAM_MAX_TARGET_SPEED_*`)
+- **Stability controls**: force uses distance falloff and strict speed/mass gating to avoid runaway acceleration.
+
 ## ECS Systems Execution Order
 
 ### Update Schedule
@@ -172,7 +183,9 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 
 1. **`rebuild_spatial_grid_system`** - Rebuilds grid with physics-step positions
 2. **`nbody_gravity_system`** - Applies mutual gravity using spatial grid (O(N·K))
-3. **Rapier physics** - Solves all collision, integrates velocities, populates contact manifolds
+3. **`tractor_beam_force_system`** - Applies player beam pull/push forces to eligible asteroids
+4. **`neighbor_counting_system`** - Counts nearby asteroids using current fixed-step positions
+5. **Rapier physics** - Solves all collision, integrates velocities, populates contact manifolds
 
 ### PostUpdate Schedule (CRITICAL TIMING)
 
@@ -206,9 +219,10 @@ Key constant groups (see `src/constants.rs` for current values):
 | Boundary | `SOFT_BOUNDARY_RADIUS`, `SOFT_BOUNDARY_STRENGTH`, `HARD_CULL_DISTANCE`, `CULL_DISTANCE` |
 | Camera | `MIN_ZOOM`, `MAX_ZOOM`, `ZOOM_SPEED` |
 | Player movement | `THRUST_FORCE`, `REVERSE_FORCE`, `ROTATION_SPEED` |
+| Tractor beam | `TRACTOR_BEAM_RANGE_*`, `TRACTOR_BEAM_FORCE_*`, `TRACTOR_BEAM_MAX_TARGET_SIZE_*`, `TRACTOR_BEAM_MAX_TARGET_SPEED_*`, `TRACTOR_BEAM_MIN_DISTANCE`, `TRACTOR_BEAM_AIM_CONE_DOT` |
 | Player OOB | `OOB_RADIUS`, `OOB_DAMPING`, `OOB_RAMP_WIDTH` |
 | Player combat | `PROJECTILE_SPEED`, `FIRE_COOLDOWN`, `PROJECTILE_LIFETIME`, `MISSILE_INITIAL_SPEED`, `MISSILE_ACCELERATION`, `MISSILE_SPEED` |
-| Weapon upgrades | `PRIMARY_WEAPON_MAX_LEVEL`, `WEAPON_UPGRADE_BASE_COST`, `SECONDARY_WEAPON_MAX_LEVEL`, `SECONDARY_WEAPON_UPGRADE_BASE_COST` |
+| Weapon upgrades | `PRIMARY_WEAPON_MAX_LEVEL`, `WEAPON_UPGRADE_BASE_COST`, `SECONDARY_WEAPON_MAX_LEVEL`, `SECONDARY_WEAPON_UPGRADE_BASE_COST`, `TRACTOR_BEAM_MAX_LEVEL`, `TRACTOR_BEAM_UPGRADE_BASE_COST` |
 | Ore economy & magnet upgrades | `ORE_HEAL_AMOUNT`, `ORE_MAGNET_BASE_RADIUS`, `ORE_MAGNET_BASE_STRENGTH`, `ORE_AFFINITY_MAX_LEVEL`, `ORE_AFFINITY_UPGRADE_BASE_COST` |
 | Player health | `PLAYER_MAX_HP`, `DAMAGE_SPEED_THRESHOLD`, `INVINCIBILITY_DURATION` |
 | Gamepad | `GAMEPAD_BRAKE_DAMPING`, `GAMEPAD_LEFT_DEADZONE`, etc. |

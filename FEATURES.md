@@ -12,6 +12,8 @@
 | **D**                       | Rotate ship right                                                              |
 | **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
+| **Hold E**                   | Tractor beam pull (affects aimed, nearby asteroids within beam envelope)        |
+| **Hold Alt + E**             | Tractor beam push (same targeting envelope, opposite force direction)            |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
 | **Pause menu Save buttons** | Save current run to slot 1/2/3                                                 |
@@ -126,7 +128,7 @@ Ore has two consumable uses, replacing the old passive regeneration systems:
 | Restock missile | `M` | DPad Down | 1 ore | +1 missile, capped at `missile_ammo_max` |
 
 - Ore is **not spent** if the corresponding stat is already full.
-- The ore HUD row shows `[H] heal  [M] ammo  | Wpn: Lv.N` so current weapon level and spending hints are always visible.
+- The ore HUD row now shows all progression levels in one compact line, e.g. `Ore: 12 | Blaster: 3 | Missile: 2 | Tractor: 1`.
 - Passive HP regen and passive missile recharge have been **removed**; ore spending is the only way to replenish them.
 
 ### Primary Weapon Upgrades
@@ -144,7 +146,7 @@ The primary projectile weapon can be upgraded up to **Level 10** using ore, acce
 - **Above threshold**: any asteroid larger than the current destroy-size is *chipped* — one vertex is removed and a size-1 fragment is ejected. No single hit can destroy more than half the target.
 - **Ore reward scaling**: fully-destroying a size-N asteroid drops N ore (vs. 1 before), so higher-level play generates proportionally more upgrade fuel.
 - **Shop UI**: opened from pause menu → UPGRADES. Shows current level, size range, ore balance, and upgrade cost. The buy button greys out when unaffordable or at max level.
-- **Session-only**: upgrades reset when returning to the main menu (saves are not yet implemented).
+- **Persistence**: weapon level is saved/restored in save slots.
 
 ### Secondary Weapon Upgrades (Missiles)
 
@@ -154,7 +156,20 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
 - **Upgrade scaling**: each level increases missile impact power so larger asteroids can be fully destroyed, and chips remove more size-1 units on heavy targets.
 - **Costs**: level cost scales linearly by upgrade tier (same progression shape as other ore upgrades).
 - **HUD/shop visibility**: current levels and upgrade affordability are shown in the upgrade UI.
-- **Session-only**: missile upgrades reset when returning to the main menu (until save/load exists).
+- **Persistence**: missile level is saved/restored in save slots.
+
+### Tractor Beam (MVP)
+
+- Hold **E** to pull asteroids toward the ship; hold **Alt + E** to invert into a push beam.
+- Beam targeting is constrained by your current aim direction (cone around `AimDirection`) and a distance envelope.
+- Tractor beam has its own ore-shop upgrade card (**TRACTOR**) up to Level 10.
+- Each level increases beam range/force and expands the max affected size/speed envelope.
+- Stability safeguards prevent runaway behavior:
+  - ignores asteroids below a minimum interaction distance
+  - ignores asteroids above a level-scaled max size
+  - ignores asteroids already moving above a level-scaled speed threshold
+- Beam force/range and all envelope limits are runtime-tunable via `assets/physics.toml` (`tractor_beam_*` keys).
+- **Persistence**: tractor beam level is saved/restored in save slots.
 
 ## Visual Feedback
 

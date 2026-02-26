@@ -43,7 +43,9 @@ use crate::graphics::GameFont;
 use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
 use crate::player::Player;
-use crate::player::{PlayerLives, PlayerScore, PrimaryWeaponLevel};
+use crate::player::{
+    PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel,
+};
 use crate::simulation::{ProfilerStats, SimulationStats};
 use crate::spatial_partition::SpatialGrid;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
@@ -571,22 +573,37 @@ pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: R
 pub fn ore_hud_display_system(
     ore: Res<PlayerOre>,
     weapon_level: Res<PrimaryWeaponLevel>,
+    missile_level: Res<SecondaryWeaponLevel>,
+    tractor_level: Res<TractorBeamLevel>,
     parent_query: Query<&Children, With<OreHudDisplay>>,
     mut text_query: Query<&mut Text>,
 ) {
-    if !ore.is_changed() && !weapon_level.is_changed() {
+    if !ore.is_changed()
+        && !weapon_level.is_changed()
+        && !missile_level.is_changed()
+        && !tractor_level.is_changed()
+    {
         return;
     }
-    let level_str = if weapon_level.is_maxed() {
-        " | Wpn: MAX".to_string()
+    let blaster_text = if weapon_level.is_maxed() {
+        "MAX".to_string()
     } else {
-        format!(" | Wpn: Lv.{}", weapon_level.display_level())
+        weapon_level.display_level().to_string()
     };
-    let display = if ore.count > 0 {
-        format!("Ore: {}{}", ore.count, level_str)
+    let missile_text = if missile_level.is_maxed() {
+        "MAX".to_string()
     } else {
-        format!("Ore: 0{}", level_str)
+        missile_level.display_level().to_string()
     };
+    let tractor_text = if tractor_level.is_maxed() {
+        "MAX".to_string()
+    } else {
+        tractor_level.display_level().to_string()
+    };
+    let display = format!(
+        "Ore: {} | Blaster: {} | Missile: {} | Tractor: {}",
+        ore.count, blaster_text, missile_text, tractor_text
+    );
     for children in parent_query.iter() {
         for child in children.iter() {
             if let Ok(mut text) = text_query.get_mut(child) {

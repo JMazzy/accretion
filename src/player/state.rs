@@ -6,10 +6,11 @@
 //! - [`super::combat`] — projectile firing + damage
 //! - [`super::rendering`] — gizmo drawing + camera
 
+use crate::config::PhysicsConfig;
 use crate::constants::{
     INVINCIBILITY_DURATION, MISSILE_AMMO_MAX, PLAYER_LIVES, PLAYER_MAX_HP,
     PRIMARY_WEAPON_MAX_LEVEL, SECONDARY_WEAPON_MAX_LEVEL, SECONDARY_WEAPON_UPGRADE_BASE_COST,
-    WEAPON_UPGRADE_BASE_COST,
+    TRACTOR_BEAM_MAX_LEVEL, TRACTOR_BEAM_UPGRADE_BASE_COST, WEAPON_UPGRADE_BASE_COST,
 };
 use bevy::prelude::*;
 
@@ -303,6 +304,84 @@ impl PrimaryWeaponLevel {
 pub struct SecondaryWeaponLevel {
     /// Internal 0-indexed level (0 = Level 1 / base, 9 = Level 10 / max).
     pub level: u32,
+}
+
+/// Tractor beam upgrade level.
+///
+/// Level scaling controls how aggressively the beam can interact with asteroids:
+/// radius, force, max affected asteroid size, and max affected asteroid speed.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct TractorBeamLevel {
+    /// Internal 0-indexed level (0 = base).
+    pub level: u32,
+}
+
+impl TractorBeamLevel {
+    /// Maximum internal level value (inclusive).
+    pub const MAX: u32 = TRACTOR_BEAM_MAX_LEVEL - 1;
+
+    /// Human-readable display level (1-indexed).
+    #[inline]
+    pub fn display_level(&self) -> u32 {
+        self.level + 1
+    }
+
+    #[inline]
+    pub fn range_at_level(&self, config: &PhysicsConfig) -> f32 {
+        config.tractor_beam_range_base + self.level as f32 * config.tractor_beam_range_per_level
+    }
+
+    #[inline]
+    pub fn force_at_level(&self, config: &PhysicsConfig) -> f32 {
+        config.tractor_beam_force_base + self.level as f32 * config.tractor_beam_force_per_level
+    }
+
+    #[inline]
+    pub fn max_target_size_at_level(&self, config: &PhysicsConfig) -> u32 {
+        config.tractor_beam_max_target_size_base
+            + self.level * config.tractor_beam_max_target_size_per_level
+    }
+
+    #[inline]
+    pub fn max_target_speed_at_level(&self, config: &PhysicsConfig) -> f32 {
+        config.tractor_beam_max_target_speed_base
+            + self.level as f32 * config.tractor_beam_max_target_speed_per_level
+    }
+
+    /// Whether the tractor beam can be upgraded further.
+    #[inline]
+    pub fn is_maxed(&self) -> bool {
+        self.level >= Self::MAX
+    }
+
+    /// Ore cost to buy the next upgrade level.
+    /// Returns `None` when already at max level.
+    #[inline]
+    pub fn cost_for_next_level(&self) -> Option<u32> {
+        if self.is_maxed() {
+            None
+        } else {
+            Some(TRACTOR_BEAM_UPGRADE_BASE_COST * (self.level + 2))
+        }
+    }
+
+    /// Returns `true` when the player has enough ore to afford the next upgrade.
+    #[inline]
+    pub fn can_afford_next(&self, ore: u32) -> bool {
+        self.cost_for_next_level().is_some_and(|cost| ore >= cost)
+    }
+
+    /// Spend ore and increment the level. Returns the amount spent, or `None`
+    /// if maxed-out or the player cannot afford it.
+    pub fn try_upgrade(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.level += 1;
+        Some(cost)
+    }
 }
 
 impl SecondaryWeaponLevel {

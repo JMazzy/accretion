@@ -14,6 +14,15 @@ Last updated: February 26, 2026.
 
 ### Gameplay Foundation (Combat + AI)
 
+- [ ] 
+
+- [ ] **Missile Buff**
+    - Missiles work and look good but feel very weak compared to an even moderately upgraded primary weapon. This aims to fix that.
+    - Change missile behavior to act opposite to what the primary weapon does - instead of chipping, it _splits_ asteroids.
+    - Leveling - level 1 splits the asteroid in two pieces (one cut), additional levels lead to additional pieces (level 2 -> 3 pieces, level 3 -> 4 pieces, etc.)
+    - Split piece size is based on impact point. Impact straight on leads to near-equal halves, impact to one side leads to different size pieces.
+    - If level >= size of asteroid, the result should be total decomposition into unit asteroids.
+
 - [ ] **Enemy ships: foundation + spawning**
 	- Add enemy entity type, rendering, HP, and basic movement/targeting toward player.
 	- Add deterministic spawn rules (count, spacing, cooldown) tied to scenario/session progression.
@@ -29,11 +38,6 @@ Last updated: February 26, 2026.
 	- Add upgrade progression and HUD feedback for stun duration/effectiveness.
 	- Acceptance: cannon applies temporary disable correctly across enemy tiers.
 
-- [ ] **Tractor Beam MVP**
-	- Add hold-to-pull / alt-to-push force interaction on asteroids.
-	- Level scaling adjusts max affected mass/speed envelope.
-	- Acceptance: beam alters asteroid motion predictably without causing runaway physics.
-    
 ## P1 — After Core Combat Lands
 
 ### Boss Progression

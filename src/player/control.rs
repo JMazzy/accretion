@@ -15,7 +15,10 @@
 //! - [`aim_snap_system`] — snaps aim to ship forward after idle period
 //! - [`player_oob_damping_system`] — soft boundary enforcement
 
-use super::state::{AimDirection, AimIdleTimer, Player, PlayerIntent, PreferredGamepad};
+use super::state::{
+    AimDirection, AimIdleTimer, Player, PlayerIntent, PreferredGamepad, TractorBeamLevel,
+};
+use crate::asteroid::{Asteroid, AsteroidSize, Planet};
 use crate::config::PhysicsConfig;
 use bevy::input::gamepad::{GamepadAxis, GamepadButton, GamepadConnection, GamepadConnectionEvent};
 use bevy::prelude::*;
@@ -252,6 +255,90 @@ pub fn player_oob_damping_system(
         let factor = 1.0 - exceed * (1.0 - config.oob_damping);
         velocity.linvel *= factor;
         velocity.angvel *= factor;
+    }
+}
+
+/// Apply tractor beam force to nearby asteroids while `E` is held.
+///
+/// - Hold `E` to pull asteroids toward the player.
+/// - Hold `Alt` + `E` to push asteroids away from the player.
+///
+/// The beam only affects asteroids inside a forward cone around `AimDirection`
+/// and below level-scaled mass/speed thresholds to keep interactions stable.
+#[allow(clippy::type_complexity)]
+pub fn tractor_beam_force_system(
+    keys: Res<ButtonInput<KeyCode>>,
+    q_player: Query<&Transform, With<Player>>,
+    mut q_asteroids: Query<
+        (&Transform, &Velocity, &AsteroidSize, &mut ExternalForce),
+        (With<Asteroid>, Without<Planet>),
+    >,
+    aim: Res<AimDirection>,
+    beam_level: Res<TractorBeamLevel>,
+    config: Res<PhysicsConfig>,
+) {
+    if !keys.pressed(KeyCode::KeyE) {
+        return;
+    }
+
+    let Ok(player_transform) = q_player.single() else {
+        return;
+    };
+
+    let push_mode = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
+    let player_pos = player_transform.translation.truncate();
+    let beam_dir = if aim.0.length_squared() > 1e-4 {
+        aim.0.normalize_or_zero()
+    } else {
+        player_transform.rotation.mul_vec3(Vec3::Y).truncate()
+    };
+
+    let range = beam_level.range_at_level(&config);
+    let min_dist = config.tractor_beam_min_distance;
+    if range <= min_dist {
+        return;
+    }
+    let max_size = beam_level.max_target_size_at_level(&config);
+    let max_speed = beam_level.max_target_speed_at_level(&config);
+    let force_base = beam_level.force_at_level(&config);
+    let range_sq = range * range;
+    let min_dist_sq = min_dist * min_dist;
+
+    for (transform, velocity, size, mut external_force) in q_asteroids.iter_mut() {
+        if size.0 > max_size || velocity.linvel.length() > max_speed {
+            continue;
+        }
+
+        let asteroid_pos = transform.translation.truncate();
+        let to_target = asteroid_pos - player_pos;
+        let dist_sq = to_target.length_squared();
+        if dist_sq < min_dist_sq || dist_sq > range_sq {
+            continue;
+        }
+
+        let dist = dist_sq.sqrt();
+        let target_dir = to_target / dist;
+        if beam_dir.dot(target_dir) < config.tractor_beam_aim_cone_dot {
+            continue;
+        }
+
+        let toward_player = (player_pos - asteroid_pos).normalize_or_zero();
+        if toward_player == Vec2::ZERO {
+            continue;
+        }
+
+        let dist_alpha = ((dist - min_dist) / (range - min_dist)).clamp(0.0, 1.0);
+        let falloff = 1.0 - dist_alpha;
+        if falloff <= 0.0 {
+            continue;
+        }
+
+        let dir = if push_mode {
+            -toward_player
+        } else {
+            toward_player
+        };
+        external_force.force += dir * (force_base * falloff);
     }
 }
 

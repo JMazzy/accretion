@@ -12,6 +12,7 @@ use crate::menu::{GameState, SelectedScenario};
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::{
     MissileAmmo, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
+    TractorBeamLevel,
 };
 use crate::player::Player;
 
@@ -101,6 +102,7 @@ pub struct ResourceSnapshot {
     pub primary_weapon_level: u32,
     pub secondary_weapon_level: u32,
     pub ore_affinity_level: u32,
+    pub tractor_beam_level: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -246,6 +248,15 @@ fn migrate_snapshot_value(value: &mut toml::Value) -> Result<(), String> {
         table.insert("saved_at_unix".to_string(), toml::Value::Integer(0));
     }
 
+    if let Some(resources) = table
+        .get_mut("resources")
+        .and_then(toml::Value::as_table_mut)
+    {
+        if !resources.contains_key("tractor_beam_level") {
+            resources.insert("tractor_beam_level".to_string(), toml::Value::Integer(0));
+        }
+    }
+
     let version = table
         .get("version")
         .and_then(toml::Value::as_integer)
@@ -286,6 +297,7 @@ pub fn handle_save_slot_requests_system(
     primary_level: Res<PrimaryWeaponLevel>,
     secondary_level: Res<SecondaryWeaponLevel>,
     affinity_level: Res<OreAffinityLevel>,
+    tractor_level: Res<TractorBeamLevel>,
     q_player: Query<(&Transform, &Velocity, &PlayerHealth), With<Player>>,
     q_asteroids: Query<(&Transform, &Velocity, &AsteroidSize, &Vertices), With<Asteroid>>,
 ) {
@@ -334,6 +346,7 @@ pub fn handle_save_slot_requests_system(
                 primary_weapon_level: primary_level.level,
                 secondary_weapon_level: secondary_level.level,
                 ore_affinity_level: affinity_level.level,
+                tractor_beam_level: tractor_level.level,
             },
         };
 
@@ -361,6 +374,7 @@ pub fn apply_pending_loaded_snapshot_system(
     mut primary_level: ResMut<PrimaryWeaponLevel>,
     mut secondary_level: ResMut<SecondaryWeaponLevel>,
     mut affinity_level: ResMut<OreAffinityLevel>,
+    mut tractor_level: ResMut<TractorBeamLevel>,
 ) {
     let Some(snapshot) = pending.0.take() else {
         warn!("No pending save snapshot found on load transition");
@@ -395,6 +409,10 @@ pub fn apply_pending_loaded_snapshot_system(
         .resources
         .ore_affinity_level
         .min(OreAffinityLevel::MAX);
+    tractor_level.level = snapshot
+        .resources
+        .tractor_beam_level
+        .min(TractorBeamLevel::MAX);
 
     for asteroid in snapshot.asteroids {
         if asteroid.vertices.len() < 3 {

@@ -29,7 +29,7 @@ pub use combat::{
 pub use control::{
     aim_snap_system, apply_player_intent_system, gamepad_connection_system,
     gamepad_to_intent_system, keyboard_to_intent_system, player_intent_clear_system,
-    player_oob_damping_system,
+    player_oob_damping_system, tractor_beam_force_system,
 };
 pub use rendering::{
     attach_missile_mesh_system, attach_player_ship_mesh_system, attach_player_ui_system,
@@ -42,7 +42,7 @@ pub use rendering::{
 pub use state::{
     AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
     PlayerHealth, PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel,
-    SecondaryWeaponLevel,
+    SecondaryWeaponLevel, TractorBeamLevel,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

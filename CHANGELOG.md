@@ -1,5 +1,64 @@
 # Accretion Changelog
 
+## Tractor Beam Progression Pass — February 26, 2026
+
+### Added ore-shop tractor upgrades and save/load persistence for tractor level
+
+Follow-up pass on Tractor Beam MVP.
+
+**What changed**:
+- Added tractor upgrade economy constants in `src/constants.rs`:
+  - `TRACTOR_BEAM_MAX_LEVEL`
+  - `TRACTOR_BEAM_UPGRADE_BASE_COST`
+- Extended `TractorBeamLevel` in `src/player/state.rs` with upgrade APIs:
+  - `MAX`, `display_level()`, `is_maxed()`, `cost_for_next_level()`, `can_afford_next()`, `try_upgrade()`
+- Ore shop integration in `src/menu.rs`:
+  - Added `OreShopTractorUpgradeButton`.
+  - Added a fourth upgrade card (**TRACTOR**) showing level, range progression, and cost state.
+  - Added tractor-upgrade purchase handling and overlay refresh path in `ore_shop_button_system`.
+  - Reset `TractorBeamLevel` in `cleanup_game_world` alongside other upgrade resources.
+- Save/load integration in `src/save.rs`:
+  - Added `tractor_beam_level` to `ResourceSnapshot`.
+  - Save path now writes tractor level.
+  - Load path now restores tractor level (clamped to `TractorBeamLevel::MAX`).
+  - Migration hook now backfills missing `resources.tractor_beam_level = 0` for older save files.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
+## Tractor Beam MVP — February 26, 2026
+
+### Added hold-to-pull / alt-to-push asteroid interaction with stability gating
+
+Implemented backlog item **Tractor Beam MVP**.
+
+**What changed**:
+- Added new tractor beam runtime tuning constants in `src/constants.rs` and mirrored config fields in `src/config.rs`.
+- Added `tractor_beam_*` keys to `assets/physics.toml` for hot-reload tuning.
+- Added `TractorBeamLevel` resource in `src/player/state.rs` to provide level-scaled beam range/force and max affected size/speed envelope.
+- Added `tractor_beam_force_system` in `src/player/control.rs`:
+  - Hold `E` to pull asteroids toward the player.
+  - Hold `Alt + E` to push asteroids away.
+  - Applies only to non-planet asteroids within aim cone + range and below size/speed thresholds.
+  - Uses distance falloff and minimum distance gating for stable behavior.
+- Wired tractor system into `FixedUpdate` in `src/simulation.rs` after gravity force application.
+
+**Backlog update**:
+- Removed **Tractor Beam MVP** from pending `BACKLOG.md` items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
 ## Remove Gizmos Migration (Steps 3–6 + Epic Complete) — February 26, 2026
 
 ### Migrated remaining asteroid debug overlays to retained Mesh2d line layers

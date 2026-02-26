@@ -178,6 +178,38 @@ pub const OOB_DAMPING: f32 = 0.97;
 /// to `(1.0 - OOB_DAMPING) × 100%` at `OOB_RADIUS + OOB_RAMP_WIDTH`.
 pub const OOB_RAMP_WIDTH: f32 = 200.0;
 
+// ── Player: Tractor Beam ──────────────────────────────────────────────────────
+
+/// Base tractor beam interaction radius (world units).
+pub const TRACTOR_BEAM_RANGE_BASE: f32 = 280.0;
+
+/// Radius increase per tractor level.
+pub const TRACTOR_BEAM_RANGE_PER_LEVEL: f32 = 35.0;
+
+/// Base tractor beam force magnitude (N-equivalent) applied to affected asteroids.
+pub const TRACTOR_BEAM_FORCE_BASE: f32 = 8_000.0;
+
+/// Additional force magnitude per tractor level.
+pub const TRACTOR_BEAM_FORCE_PER_LEVEL: f32 = 1_200.0;
+
+/// Maximum asteroid size affected at tractor level 0.
+pub const TRACTOR_BEAM_MAX_TARGET_SIZE_BASE: u32 = 4;
+
+/// Additional max affected asteroid size per tractor level.
+pub const TRACTOR_BEAM_MAX_TARGET_SIZE_PER_LEVEL: u32 = 2;
+
+/// Maximum asteroid linear speed (u/s) that can be influenced at tractor level 0.
+pub const TRACTOR_BEAM_MAX_TARGET_SPEED_BASE: f32 = 140.0;
+
+/// Additional max affected asteroid speed (u/s) per tractor level.
+pub const TRACTOR_BEAM_MAX_TARGET_SPEED_PER_LEVEL: f32 = 20.0;
+
+/// Minimum interaction distance to avoid unstable near-zero distance pulls.
+pub const TRACTOR_BEAM_MIN_DISTANCE: f32 = 20.0;
+
+/// Dot-product threshold for beam targeting cone around current aim direction.
+pub const TRACTOR_BEAM_AIM_CONE_DOT: f32 = 0.25;
+
 // ── Player: Combat ────────────────────────────────────────────────────────────
 
 /// Speed (u/s) of fired projectiles.
@@ -421,3 +453,13 @@ pub const SECONDARY_WEAPON_MAX_LEVEL: u32 = 10;
 /// Level 1 costs 5, Level 2 costs 10, …, Level 10 costs 50.
 /// Total to max-level: 5 + 10 + … + 50 = 275 ore.
 pub const SECONDARY_WEAPON_UPGRADE_BASE_COST: u32 = 5;
+
+// ── Tractor Beam Upgrades ─────────────────────────────────────────────────────
+
+/// Maximum level the tractor beam can be upgraded to (1-indexed display; 0 = base).
+pub const TRACTOR_BEAM_MAX_LEVEL: u32 = 10;
+
+/// Ore cost for the next tractor upgrade = `TRACTOR_BEAM_UPGRADE_BASE_COST * next_level`.
+///
+/// Level 1 costs 5, Level 2 costs 10, …, Level 10 costs 50.
+pub const TRACTOR_BEAM_UPGRADE_BASE_COST: u32 = 5;

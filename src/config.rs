@@ -103,6 +103,18 @@ pub struct PhysicsConfig {
     pub oob_damping: f32,
     pub oob_ramp_width: f32,
 
+    // ── Player: Tractor Beam ─────────────────────────────────────────────────
+    pub tractor_beam_range_base: f32,
+    pub tractor_beam_range_per_level: f32,
+    pub tractor_beam_force_base: f32,
+    pub tractor_beam_force_per_level: f32,
+    pub tractor_beam_max_target_size_base: u32,
+    pub tractor_beam_max_target_size_per_level: u32,
+    pub tractor_beam_max_target_speed_base: f32,
+    pub tractor_beam_max_target_speed_per_level: f32,
+    pub tractor_beam_min_distance: f32,
+    pub tractor_beam_aim_cone_dot: f32,
+
     // ── Player: Combat ────────────────────────────────────────────────────────
     pub projectile_speed: f32,
     pub fire_cooldown: f32,
@@ -219,6 +231,17 @@ impl Default for PhysicsConfig {
             oob_radius: OOB_RADIUS,
             oob_damping: OOB_DAMPING,
             oob_ramp_width: OOB_RAMP_WIDTH,
+            // Player: Tractor Beam
+            tractor_beam_range_base: TRACTOR_BEAM_RANGE_BASE,
+            tractor_beam_range_per_level: TRACTOR_BEAM_RANGE_PER_LEVEL,
+            tractor_beam_force_base: TRACTOR_BEAM_FORCE_BASE,
+            tractor_beam_force_per_level: TRACTOR_BEAM_FORCE_PER_LEVEL,
+            tractor_beam_max_target_size_base: TRACTOR_BEAM_MAX_TARGET_SIZE_BASE,
+            tractor_beam_max_target_size_per_level: TRACTOR_BEAM_MAX_TARGET_SIZE_PER_LEVEL,
+            tractor_beam_max_target_speed_base: TRACTOR_BEAM_MAX_TARGET_SPEED_BASE,
+            tractor_beam_max_target_speed_per_level: TRACTOR_BEAM_MAX_TARGET_SPEED_PER_LEVEL,
+            tractor_beam_min_distance: TRACTOR_BEAM_MIN_DISTANCE,
+            tractor_beam_aim_cone_dot: TRACTOR_BEAM_AIM_CONE_DOT,
             // Player: Combat
             projectile_speed: PROJECTILE_SPEED,
             fire_cooldown: FIRE_COOLDOWN,

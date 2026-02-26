@@ -117,6 +117,38 @@ oob_damping = 0.97
 # oob_radius to (1.0 - oob_damping)*100% at oob_radius + oob_ramp_width.
 oob_ramp_width = 200.0
 
+# ── Player: Tractor Beam ─────────────────────────────────────────────────────
+
+# Base beam interaction radius (world units).
+tractor_beam_range_base = 280.0
+
+# Additional interaction radius per tractor level.
+tractor_beam_range_per_level = 35.0
+
+# Base tractor beam force magnitude.
+tractor_beam_force_base = 8000.0
+
+# Additional force per tractor level.
+tractor_beam_force_per_level = 1200.0
+
+# Max asteroid size affected at tractor level 0.
+tractor_beam_max_target_size_base = 4
+
+# Additional max affected size per tractor level.
+tractor_beam_max_target_size_per_level = 2
+
+# Max asteroid speed (u/s) affected at tractor level 0.
+tractor_beam_max_target_speed_base = 140.0
+
+# Additional max affected speed per tractor level.
+tractor_beam_max_target_speed_per_level = 20.0
+
+# Minimum distance where beam starts applying force.
+tractor_beam_min_distance = 20.0
+
+# Aim cone dot threshold (higher = narrower beam cone).
+tractor_beam_aim_cone_dot = 0.25
+
 # ── Player: Combat ────────────────────────────────────────────────────────────
 
 # Projectile muzzle speed (u/s).
