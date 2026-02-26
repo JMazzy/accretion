@@ -1,12 +1,12 @@
 # Accretion Backlog
 
-Planned features, improvements, and known limitations. Completed items are removed; see [CHANGELOG.md](CHANGELOG.md) for history.
+Planned features, improvements, and known limitations. Completed items are removed; see [FEATURES.md](FEATURES.md) and [CHANGELOG.md](CHANGELOG.md) for implemented history.
+
+Last updated: February 25, 2026.
 
 ## Essential Features
 
 - [ ] **Save/load system** — Save/load persistent game files
-- [ ] **Secondary Weapon Upgrades** — Increase missile power. Start on level 1 (which is the same as now). Each level chips off a larger number of size=1 asteroid fragments.
-- [ ] **Ore magnet upgrades** - With each increased level, the magnet pulls in ore faster and from further distances. Significantly "nerf" the starting magnet strength so it starts off very weak and needs to be upgraded to pull in ore from further away.
 - [ ] **Concave asteroid deformation** — Asteroid shapes are currently limited to be convex; concave craters approximated by hull; track per-vertex damage; move vertices inward and recompute hull
 - [ ] **Enemy ships** — Computer-controlled enemies which fire their own weapon and take damage from player weapons and asteroid collisions. Should have multiple "levels" which equate to health and attack power.
 - [ ] **Boss ships** — Large enemies with more powerful attacks (depends on having enemy ships first)

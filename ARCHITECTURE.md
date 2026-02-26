@@ -57,6 +57,16 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 - Composite asteroids formed when 2+ asteroids touch and move slowly
 - Local-space vertices enable correct rotation rendering and hull computation
 
+## Implemented Upgrade Systems
+
+Upgrades are implemented as ECS resources and purchased in the unified ore shop (`GameState::OreShop` in `src/menu.rs`).
+
+- **Primary weapon upgrades** (`PrimaryWeaponLevel` in `src/player/state.rs`): raises projectile full-destroy threshold by level; larger asteroids are chipped.
+- **Secondary weapon upgrades** (`SecondaryWeaponLevel` in `src/player/state.rs`): raises missile impact power; higher levels chip more size-1 units from larger targets.
+- **Ore magnet upgrades** (`OreAffinityLevel` in `src/mining.rs`): increases ore magnet radius and pull strength per level via `radius_at_level()` and `strength_at_level()`.
+- **Economy coupling**: all three upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
+- **Session scope**: upgrade resources reset when returning to `MainMenu`; persistent progression depends on the planned save/load system.
+
 ## Physics Rules
 
 ### Gravity System (`nbody_gravity_system`)
@@ -185,6 +195,8 @@ Key constant groups (see `src/constants.rs` for current values):
 | Player movement | `THRUST_FORCE`, `REVERSE_FORCE`, `ROTATION_SPEED` |
 | Player OOB | `OOB_RADIUS`, `OOB_DAMPING`, `OOB_RAMP_WIDTH` |
 | Player combat | `PROJECTILE_SPEED`, `FIRE_COOLDOWN`, `PROJECTILE_LIFETIME` |
+| Weapon upgrades | `PRIMARY_WEAPON_MAX_LEVEL`, `WEAPON_UPGRADE_BASE_COST`, `SECONDARY_WEAPON_MAX_LEVEL`, `SECONDARY_WEAPON_UPGRADE_BASE_COST` |
+| Ore economy & magnet upgrades | `ORE_HEAL_AMOUNT`, `ORE_MAGNET_BASE_RADIUS`, `ORE_MAGNET_BASE_STRENGTH`, `ORE_AFFINITY_MAX_LEVEL`, `ORE_AFFINITY_UPGRADE_BASE_COST` |
 | Player health | `PLAYER_MAX_HP`, `DAMAGE_SPEED_THRESHOLD`, `INVINCIBILITY_DURATION` |
 | Gamepad | `GAMEPAD_BRAKE_DAMPING`, `GAMEPAD_LEFT_DEADZONE`, etc. |
 | Asteroid geometry | `TRIANGLE_BASE_SIDE`, `SQUARE_BASE_HALF`, `POLYGON_BASE_RADIUS`, `HEPTAGON_BASE_RADIUS`, `OCTAGON_BASE_RADIUS`, `PLANETOID_BASE_RADIUS`, `PLANETOID_UNIT_SIZE` |

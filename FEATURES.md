@@ -93,10 +93,12 @@
 
 ### Ore Magnet
 
-- Ore pickups within `ore_magnet_radius` (default 250 u) of the player are automatically attracted toward the ship.
-- The pull uses a velocity lerp each frame: ore `linvel` smoothly transitions toward a vector pointing at the player at `ore_magnet_strength` u/s (default 120 u/s).
+- The ore magnet is **upgrade-driven** and starts intentionally weak at Level 1 (internal level 0).
+- Ore pickups within `ore_magnet_radius` (base 250 u) of the player are automatically attracted toward the ship.
+- The pull uses a velocity lerp each frame: ore `linvel` smoothly transitions toward a vector pointing at the player at `ore_magnet_strength` u/s (base 40 u/s).
+- Each ore-magnet upgrade level increases radius by +50 u and strength by +16 u/s (up to Level 10).
 - Ore outside the magnet radius drifts freely under its initial scatter velocity.
-- Both constants are runtime-tunable via `assets/physics.toml`.
+- Base constants are runtime-tunable via `assets/physics.toml`.
 
 ### Spending Ore
 
@@ -127,6 +129,16 @@ The primary projectile weapon can be upgraded up to **Level 10** using ore, acce
 - **Ore reward scaling**: fully-destroying a size-N asteroid drops N ore (vs. 1 before), so higher-level play generates proportionally more upgrade fuel.
 - **Shop UI**: opened from pause menu → UPGRADES. Shows current level, size range, ore balance, and upgrade cost. The buy button greys out when unaffordable or at max level.
 - **Session-only**: upgrades reset when returning to the main menu (saves are not yet implemented).
+
+### Secondary Weapon Upgrades (Missiles)
+
+Missiles have their own ore-based upgrade progression up to **Level 10**, purchased from the same **pause menu → UPGRADES** flow.
+
+- **Base behaviour (Level 1 / internal 0)**: missiles fully destroy small targets and chip larger targets.
+- **Upgrade scaling**: each level increases missile impact power so larger asteroids can be fully destroyed, and chips remove more size-1 units on heavy targets.
+- **Costs**: level cost scales linearly by upgrade tier (same progression shape as other ore upgrades).
+- **HUD/shop visibility**: current levels and upgrade affordability are shown in the upgrade UI.
+- **Session-only**: missile upgrades reset when returning to the main menu (until save/load exists).
 
 ## Visual Feedback
 
