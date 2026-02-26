@@ -172,16 +172,16 @@ projectile_collider_radius = 2.0
 missile_ammo_max = 5
 
 # Initial speed (u/s) when missiles spawn.
-missile_initial_speed = 120.0
+missile_initial_speed = 170.0
 
 # Maximum missile speed (u/s) reached after acceleration.
-missile_speed = 380.0
+missile_speed = 430.0
 
 # Missile linear acceleration (u/s²) until `missile_speed` is reached.
-missile_acceleration = 700.0
+missile_acceleration = 900.0
 
 # Minimum seconds between consecutive missile shots.
-missile_cooldown = 0.5
+missile_cooldown = 0.4
 
 # Seconds before a missile despawns automatically.
 missile_lifetime = 4.0
@@ -194,6 +194,10 @@ missile_collider_radius = 5.0
 
 # Legacy recharge constant (not used by current ore-based ammo economy).
 missile_recharge_secs = 12.0
+
+# Maximum number of split fragments missiles can produce on a single impact.
+# Actual piece count scales by missile level and is clamped by this value.
+missile_split_max_pieces = 12
 
 # ── Player: Health ────────────────────────────────────────────────────────────
 

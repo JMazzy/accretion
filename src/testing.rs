@@ -2,6 +2,7 @@
 
 use crate::asteroid::{spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Vertices};
 use crate::config::PhysicsConfig;
+use crate::simulation::MissileTelemetry;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::{ExternalForce, ReadMassProperties, Velocity};
 use std::io::Write;
@@ -855,6 +856,7 @@ pub fn orbit_pair_calibrate_and_track_system(
 pub fn test_logging_system(
     mut test_config: ResMut<TestConfig>,
     time: Res<Time>,
+    missile_telemetry: Res<MissileTelemetry>,
     q: Query<(Entity, &Transform, &Velocity, &Vertices, &ExternalForce), With<Asteroid>>,
 ) {
     if !test_config.enabled {
@@ -930,6 +932,43 @@ pub fn test_logging_system(
             test_config.frame_count, asteroid_count, test_config.initial_asteroid_count
         );
 
+        if missile_telemetry.shots_fired > 0 {
+            let shots = missile_telemetry.shots_fired as f32;
+            let hits = missile_telemetry.hits as f32;
+            let hit_rate = if shots > 0.0 {
+                100.0 * hits / shots
+            } else {
+                0.0
+            };
+            let outcome_total = missile_telemetry.instant_destroy_events
+                + missile_telemetry.split_events
+                + missile_telemetry.full_decompose_events;
+            let outcome_total_f = outcome_total.max(1) as f32;
+            let kill_events =
+                missile_telemetry.instant_destroy_events + missile_telemetry.full_decompose_events;
+            let frames_per_kill = if kill_events > 0 {
+                test_config.frame_count as f32 / kill_events as f32
+            } else {
+                f32::INFINITY
+            };
+            println!(
+                "  Missile telemetry | shots={} hits={} hit_rate={:.1}% outcomes[destroy={:.1}%, split={:.1}%, decompose={:.1}%] ttk_proxy_frames_per_kill={} mass[destroyed={}, decomposed={}]",
+                missile_telemetry.shots_fired,
+                missile_telemetry.hits,
+                hit_rate,
+                100.0 * missile_telemetry.instant_destroy_events as f32 / outcome_total_f,
+                100.0 * missile_telemetry.split_events as f32 / outcome_total_f,
+                100.0 * missile_telemetry.full_decompose_events as f32 / outcome_total_f,
+                if frames_per_kill.is_finite() {
+                    format!("{frames_per_kill:.1}")
+                } else {
+                    "n/a".to_string()
+                },
+                missile_telemetry.destroyed_mass_total,
+                missile_telemetry.decomposed_mass_total,
+            );
+        }
+
         // Collect positions for distance calculations
         let positions: Vec<(Entity, Vec2, Vec2, Vec2, f32)> = q
             .iter()
@@ -972,6 +1011,7 @@ pub fn test_logging_system(
 /// Verify test results at the end
 pub fn test_verification_system(
     test_config: Res<TestConfig>,
+    missile_telemetry: Res<MissileTelemetry>,
     q: Query<(&Transform, &Vertices), With<Asteroid>>,
     mut exit: MessageWriter<bevy::app::AppExit>,
 ) {
@@ -988,6 +1028,38 @@ pub fn test_verification_system(
     println!("Frames: {}", test_config.frame_count);
     println!("Initial asteroids: {}", test_config.initial_asteroid_count);
     println!("Final asteroids:   {}", final_count);
+    if missile_telemetry.shots_fired > 0 {
+        let shots = missile_telemetry.shots_fired as f32;
+        let hits = missile_telemetry.hits as f32;
+        let hit_rate = if shots > 0.0 {
+            100.0 * hits / shots
+        } else {
+            0.0
+        };
+        let kill_events =
+            missile_telemetry.instant_destroy_events + missile_telemetry.full_decompose_events;
+        let frames_per_kill = if kill_events > 0 {
+            test_config.frame_count as f32 / kill_events as f32
+        } else {
+            f32::INFINITY
+        };
+        println!(
+            "Missile telemetry: shots={} hits={} hit_rate={:.1}% destroy={} split={} decompose={} ttk_proxy_frames_per_kill={} mass_destroyed={} mass_decomposed={}",
+            missile_telemetry.shots_fired,
+            missile_telemetry.hits,
+            hit_rate,
+            missile_telemetry.instant_destroy_events,
+            missile_telemetry.split_events,
+            missile_telemetry.full_decompose_events,
+            if frames_per_kill.is_finite() {
+                format!("{frames_per_kill:.1}")
+            } else {
+                "n/a".to_string()
+            },
+            missile_telemetry.destroyed_mass_total,
+            missile_telemetry.decomposed_mass_total,
+        );
+    }
 
     // Print full timing report for benchmark tests
     if (test_config.test_name == "perf_benchmark"

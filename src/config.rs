@@ -132,6 +132,7 @@ pub struct PhysicsConfig {
     pub missile_max_dist: f32,
     pub missile_collider_radius: f32,
     pub missile_recharge_secs: f32,
+    pub missile_split_max_pieces: u32,
 
     // ── Player: Health ────────────────────────────────────────────────────────
     pub player_max_hp: f32,
@@ -258,6 +259,7 @@ impl Default for PhysicsConfig {
             missile_max_dist: MISSILE_MAX_DIST,
             missile_collider_radius: MISSILE_COLLIDER_RADIUS,
             missile_recharge_secs: MISSILE_RECHARGE_SECS,
+            missile_split_max_pieces: MISSILE_SPLIT_MAX_PIECES,
             // Player: Health
             player_max_hp: PLAYER_MAX_HP,
             damage_speed_threshold: DAMAGE_SPEED_THRESHOLD,

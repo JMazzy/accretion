@@ -1,5 +1,154 @@
 # Accretion Changelog
 
+## Missile Buff Balance + Telemetry Pass — February 26, 2026
+
+### Tuned missile cadence/velocity and added outcome-distribution frame telemetry
+
+Implemented backlog item **Missile buff balance + telemetry pass**.
+
+**What changed**:
+- Tuned missile defaults for stronger combat pacing:
+  - `MISSILE_INITIAL_SPEED`: `120.0 -> 170.0`
+  - `MISSILE_SPEED`: `380.0 -> 430.0`
+  - `MISSILE_ACCELERATION`: `700.0 -> 900.0`
+  - `MISSILE_COOLDOWN`: `0.5 -> 0.4`
+- Mirrored the same defaults in `assets/physics.toml` so runtime tuning starts from the buffed baseline.
+- Added `MissileTelemetry` resource in `src/simulation.rs` and periodic frame-log output (`missile_telemetry_log_system`) with:
+  - shots, hits, hit rate
+  - outcome distribution (destroy/split/decompose)
+  - mass totals (destroyed/decomposed)
+  - TTK proxy (`frames_per_kill`)
+- Instrumented missile systems in `src/player/combat.rs`:
+  - `missile_fire_system` records shots fired
+  - `missile_asteroid_hit_system` records hit outcomes + mass totals
+- Extended `src/testing.rs` test logs/final report to print missile telemetry metrics when missile activity is present.
+
+**Backlog update**:
+- Removed **Missile buff balance + telemetry pass** from pending `BACKLOG.md`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+## Missile Full Decomposition Rule — February 26, 2026
+
+### Added level-gated full decomposition into unit fragments
+
+Implemented backlog item **Missile full decomposition rule**.
+
+**What changed**:
+- Added `SecondaryWeaponLevel::can_fully_decompose_size(size)` in `src/player/state.rs`.
+- Updated `missile_asteroid_hit_system` in `src/player/combat.rs` with a new top-priority branch:
+  - when `display_level >= asteroid_size`, missile impact decomposes the asteroid into `size` unit fragments.
+  - decomposition uses deterministic radial placement/velocity around impact direction (no random spread), then despawns the source asteroid.
+- Kept scoring/drop ownership coherent with existing rules:
+  - decomposition counts as a split-style outcome (`split_total += 1`, hit-score multiplier only)
+  - no instant-destroy ore bonus/drop path is applied.
+- Added level-threshold test in `src/player/state.rs`:
+  - `missile_full_decompose_threshold_tracks_display_level`
+
+**Backlog update**:
+- Removed **Missile full decomposition rule** from pending `BACKLOG.md`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+- `cargo test missile_full_decompose_threshold_tracks_display_level` ✅
+
+## Missile Split Geometry Weighted by Impact Point — February 26, 2026
+
+### Added center-vs-edge impact weighting for missile split geometry
+
+Implemented backlog item **Missile split geometry weighted by impact point**.
+
+**What changed**:
+- Updated missile split logic in `src/player/combat.rs` to bias split-plane origin from impact location:
+  - center impacts keep split origin near centroid (near-equal fragments)
+  - edge impacts shift split origin toward impact side (asymmetric fragments)
+- Added `impact_weighted_split_origin(...)` helper in `src/player/combat.rs` with deterministic iteration decay to keep repeated splits stable.
+- Kept all split outputs on convex-hull validated paths (`normalized_fragment_hull`) so generated fragments remain simulation-safe.
+- Added focused tests in `src/player/combat.rs`:
+  - `impact_weighted_split_origin_center_hit_near_equal_split`
+  - `impact_weighted_split_origin_edge_hit_is_asymmetric`
+
+**Backlog update**:
+- Removed **Missile split geometry weighted by impact point** from pending `BACKLOG.md`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+- `cargo test impact_weighted_split_origin` ✅
+
+## Missile Split Scaling by Level — February 26, 2026
+
+### Added level-driven split fragment count with deterministic clamp behavior
+
+Implemented backlog item **Missile split scaling by level (pieces = level + 1)**.
+
+**What changed**:
+- Added `SecondaryWeaponLevel::split_piece_count(&PhysicsConfig)` in `src/player/state.rs`:
+  - Level 1 → 2 pieces, Level 2 → 3 pieces, Level 3 → 4 pieces, ...
+  - Piece count clamped by runtime config.
+- Added `MISSILE_SPLIT_MAX_PIECES` in `src/constants.rs` and mirrored it to:
+  - `PhysicsConfig::missile_split_max_pieces` in `src/config.rs`
+  - `missile_split_max_pieces` in `assets/physics.toml`
+- Updated `missile_asteroid_hit_system` in `src/player/combat.rs`:
+  - split path now targets level-scaled piece count instead of fixed 2 pieces
+  - deterministic iterative convex splitting of the largest fragment
+  - area-weighted mass partition across resulting fragments
+  - deterministic fallback that still spawns exactly the target piece count
+- Added tests:
+  - `missile_split_piece_count_scales_with_level`
+  - `missile_split_piece_count_respects_config_clamp`
+
+**Backlog update**:
+- Removed **Missile split scaling by level (pieces = level + 1)** from pending `BACKLOG.md`.
+- Cleared dependency tags from follow-up missile items that were blocked by this step.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+## Missile Split Model v1 — February 26, 2026
+
+### Replaced missile chip behavior with split-only impact flow
+
+Implemented backlog item **Missile split model v1 (replace chip path)**.
+
+**What changed**:
+- Updated `missile_asteroid_hit_system` in `src/player/combat.rs` to remove the chip/remnant branch for large targets.
+- Missile impacts now follow two paths only:
+  - full destroy when `AsteroidSize <= SecondaryWeaponLevel::destroy_threshold()`
+  - convex split when above threshold, producing two fragment asteroids with mass distributed by split area.
+- Added geometry-safe fallback in `src/player/combat.rs` so degenerate split cases still produce two valid fragments (no chip fallback).
+- Added production helpers in `src/player/combat.rs`:
+  - `polygon_area`
+  - `split_convex_polygon_world`
+- Updated missile upgrade behavior docs/comments in `src/player/state.rs`, `FEATURES.md`, and `ARCHITECTURE.md` to reflect split-based impacts.
+
+**Backlog update**:
+- Removed **Missile split model v1 (replace chip path)** from pending `BACKLOG.md` items.
+- Cleared dependency tags from split follow-up items now that the split foundation is complete.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
 ## Tractor Beam Progression Pass — February 26, 2026
 
 ### Added ore-shop tractor upgrades and save/load persistence for tractor level

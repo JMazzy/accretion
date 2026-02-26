@@ -49,6 +49,18 @@ pub struct SimulationStats {
     pub destroyed_total: u32,
 }
 
+/// Aggregated missile combat telemetry used for balancing and test logs.
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct MissileTelemetry {
+    pub shots_fired: u32,
+    pub hits: u32,
+    pub instant_destroy_events: u32,
+    pub split_events: u32,
+    pub full_decompose_events: u32,
+    pub destroyed_mass_total: u32,
+    pub decomposed_mass_total: u32,
+}
+
 /// Camera state for zoom control (pan is replaced by player-follow camera)
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct CameraState {
@@ -92,6 +104,7 @@ pub struct SimulationPlugin;
 impl Plugin for SimulationPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SimulationStats::default())
+            .insert_resource(MissileTelemetry::default())
             .insert_resource(OverlayState::default())
             .insert_resource(GravityScratch::default())
             .insert_resource(ProfilerStats::default())
@@ -178,6 +191,10 @@ impl Plugin for SimulationPlugin {
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                missile_telemetry_log_system.run_if(in_state(GameState::Playing)),
             )
             // Rebuild grid, run gravity, and count neighbors in FixedUpdate.
             // neighbor_counting_system was previously in Update (60 Hz) — moving it here
@@ -287,6 +304,61 @@ fn profiler_end_post_update_system(
     if let Some(mark) = clock.post_mark.take() {
         stats.post_update_ms = (Instant::now() - mark).as_secs_f32() * 1000.0;
     }
+}
+
+fn missile_telemetry_log_system(
+    mut frame_counter: Local<u32>,
+    mut last_logged_shots: Local<u32>,
+    telemetry: Res<MissileTelemetry>,
+) {
+    *frame_counter += 1;
+
+    if !frame_counter.is_multiple_of(120) {
+        return;
+    }
+
+    if telemetry.shots_fired == 0 || telemetry.shots_fired == *last_logged_shots {
+        return;
+    }
+
+    let shots = telemetry.shots_fired as f32;
+    let hits = telemetry.hits as f32;
+    let hit_rate = if shots > 0.0 {
+        100.0 * hits / shots
+    } else {
+        0.0
+    };
+
+    let outcomes_total =
+        telemetry.instant_destroy_events + telemetry.split_events + telemetry.full_decompose_events;
+    let outcomes_total_f = outcomes_total.max(1) as f32;
+
+    let kill_events = telemetry.instant_destroy_events + telemetry.full_decompose_events;
+    let frames_per_kill = if kill_events > 0 {
+        *frame_counter as f32 / kill_events as f32
+    } else {
+        f32::INFINITY
+    };
+
+    info!(
+        "[missile_telemetry] frame={} shots={} hits={} hit_rate={:.1}% outcomes{{destroy:{:.1}%, split:{:.1}%, decompose:{:.1}%}} mass{{destroyed:{}, decomposed:{}}} ttk_proxy={{frames_per_kill:{}}}",
+        *frame_counter,
+        telemetry.shots_fired,
+        telemetry.hits,
+        hit_rate,
+        100.0 * telemetry.instant_destroy_events as f32 / outcomes_total_f,
+        100.0 * telemetry.split_events as f32 / outcomes_total_f,
+        100.0 * telemetry.full_decompose_events as f32 / outcomes_total_f,
+        telemetry.destroyed_mass_total,
+        telemetry.decomposed_mass_total,
+        if frames_per_kill.is_finite() {
+            format!("{frames_per_kill:.1}")
+        } else {
+            "n/a".to_string()
+        }
+    );
+
+    *last_logged_shots = telemetry.shots_fired;
 }
 
 /// Lock and merge asteroids when they're slow and touching.

@@ -293,13 +293,13 @@ impl PrimaryWeaponLevel {
 ///
 /// Missiles become more destructive with upgrades:
 /// - At level N (0-indexed), the missile destroys asteroids ≤ size `2 + N`
-/// - For asteroids > size `2 + N`, it chips away `2 + N` units as size-1 fragments
+/// - For asteroids > size `2 + N`, it splits the asteroid into convex fragments
 ///
-/// Example progression (internal level → destroy threshold / chip size):
-/// - Level 0 (base): destroys 0–2, chips 2 units
-/// - Level 1: destroys 0–3, chips 3 units
-/// - Level 5: destroys 0–7, chips 7 units
-/// - Level 9 (max): destroys 0–11, chips 11 units
+/// Example progression (internal level → destroy threshold):
+/// - Level 0 (base): destroys 0–2
+/// - Level 1: destroys 0–3
+/// - Level 5: destroys 0–7
+/// - Level 9 (max): destroys 0–11
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SecondaryWeaponLevel {
     /// Internal 0-indexed level (0 = Level 1 / base, 9 = Level 10 / max).
@@ -400,11 +400,28 @@ impl SecondaryWeaponLevel {
         2 + self.level
     }
 
-    /// Number of units to chip when hitting asteroids above destroy threshold.
-    /// Each chipped unit becomes a size-1 fragment.
+    /// Split fragment count for impacts above [`Self::destroy_threshold`].
+    ///
+    /// Level mapping is 1-indexed for gameplay readability:
+    /// - Level 1 → 2 pieces
+    /// - Level 2 → 3 pieces
+    /// - Level 3 → 4 pieces
+    ///
+    /// The result is clamped by `config.missile_split_max_pieces`.
     #[inline]
-    pub fn chip_size(&self) -> u32 {
-        2 + self.level
+    pub fn split_piece_count(&self, config: &PhysicsConfig) -> u32 {
+        (self.display_level() + 1)
+            .max(2)
+            .min(config.missile_split_max_pieces.max(2))
+    }
+
+    /// Whether this missile level should fully decompose an asteroid of `size`
+    /// into unit fragments on impact.
+    ///
+    /// Rule: display level (1-indexed) must be at least the asteroid size.
+    #[inline]
+    pub fn can_fully_decompose_size(&self, size: u32) -> bool {
+        self.display_level() >= size
     }
 
     /// Whether the weapon can be upgraded further.
@@ -441,6 +458,43 @@ impl SecondaryWeaponLevel {
         *ore -= cost;
         self.level += 1;
         Some(cost)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missile_split_piece_count_scales_with_level() {
+        let config = PhysicsConfig::default();
+        let base = SecondaryWeaponLevel { level: 0 };
+        let lvl_two = SecondaryWeaponLevel { level: 1 };
+        let lvl_three = SecondaryWeaponLevel { level: 2 };
+
+        assert_eq!(base.split_piece_count(&config), 2);
+        assert_eq!(lvl_two.split_piece_count(&config), 3);
+        assert_eq!(lvl_three.split_piece_count(&config), 4);
+    }
+
+    #[test]
+    fn missile_split_piece_count_respects_config_clamp() {
+        let mut config = PhysicsConfig::default();
+        config.missile_split_max_pieces = 4;
+        let high_level = SecondaryWeaponLevel { level: 9 };
+
+        assert_eq!(high_level.split_piece_count(&config), 4);
+    }
+
+    #[test]
+    fn missile_full_decompose_threshold_tracks_display_level() {
+        let level_one = SecondaryWeaponLevel { level: 0 };
+        let level_five = SecondaryWeaponLevel { level: 4 };
+
+        assert!(level_one.can_fully_decompose_size(1));
+        assert!(!level_one.can_fully_decompose_size(2));
+        assert!(level_five.can_fully_decompose_size(5));
+        assert!(!level_five.can_fully_decompose_size(6));
     }
 }
 

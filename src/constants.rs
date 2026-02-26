@@ -234,18 +234,18 @@ pub const PROJECTILE_COLLIDER_RADIUS: f32 = 2.0;
 pub const MISSILE_AMMO_MAX: u32 = 5;
 
 /// Speed (u/s) of fired missiles — slower than bullets, heavier impact.
-pub const MISSILE_SPEED: f32 = 380.0;
+pub const MISSILE_SPEED: f32 = 430.0;
 
 /// Initial speed (u/s) of a newly fired missile.
 ///
 /// Missiles now start slower and accelerate toward `MISSILE_SPEED` in flight.
-pub const MISSILE_INITIAL_SPEED: f32 = 120.0;
+pub const MISSILE_INITIAL_SPEED: f32 = 170.0;
 
 /// Linear acceleration (u/s²) applied to missiles until they reach `MISSILE_SPEED`.
-pub const MISSILE_ACCELERATION: f32 = 700.0;
+pub const MISSILE_ACCELERATION: f32 = 900.0;
 
 /// Minimum seconds between consecutive missile shots.
-pub const MISSILE_COOLDOWN: f32 = 0.5;
+pub const MISSILE_COOLDOWN: f32 = 0.4;
 
 /// Seconds after which a missile is automatically despawned.
 pub const MISSILE_LIFETIME: f32 = 4.0;
@@ -444,9 +444,14 @@ pub const WEAPON_UPGRADE_BASE_COST: u32 = 5;
 
 /// Maximum level the secondary weapon (missile) can be upgraded to (1-indexed display; 0 = base).
 ///
-/// At level N the missile destroys asteroids of size ≤ (2 + N) and chips (2 + N) units
-/// for larger asteroids, each chipped unit becoming a size-1 fragment.
+/// At level N the missile destroys asteroids of size ≤ (2 + N).
+/// Larger asteroids enter the split path, where split piece count scales by level.
 pub const SECONDARY_WEAPON_MAX_LEVEL: u32 = 10;
+
+/// Upper bound on missile split fragment count used for stability/performance.
+///
+/// Actual split piece count is `min(level_display + 1, MISSILE_SPLIT_MAX_PIECES)`.
+pub const MISSILE_SPLIT_MAX_PIECES: u32 = 12;
 
 /// Ore cost for the next missile upgrade = `SECONDARY_WEAPON_UPGRADE_BASE_COST * next_level`.
 ///

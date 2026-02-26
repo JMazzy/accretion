@@ -183,6 +183,7 @@ pub fn missile_fire_system(
     aim: Res<AimDirection>,
     mut cooldown: ResMut<MissileCooldown>,
     mut ammo: ResMut<MissileAmmo>,
+    mut missile_telemetry: ResMut<crate::simulation::MissileTelemetry>,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
 ) {
@@ -214,6 +215,7 @@ pub fn missile_fire_system(
 
     cooldown.timer = config.missile_cooldown;
     ammo.count -= 1;
+    missile_telemetry.shots_fired += 1;
 
     let fire_dir = if aim.0.length_squared() > 0.01 {
         aim.0.normalize_or_zero()
@@ -316,9 +318,9 @@ pub fn missile_trail_particles_system(
 ///
 /// | Asteroid size | Effect |
 /// |---|---|
-/// | ≤ 3 | Immediate destroy + double destroy bonus |
-/// | 4–8 | Scatter into `n` unit fragments |
-/// | ≥ 9 | Scatter 4 unit fragments, chip mass by 3 |
+/// | `display_level >= size` | Full decomposition into unit fragments |
+/// | `<= destroy_threshold()` | Immediate destroy + double destroy bonus |
+/// | `> destroy_threshold()` | Split into level-scaled convex fragments (no chip path) |
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn missile_asteroid_hit_system(
     mut commands: Commands,
@@ -330,6 +332,7 @@ pub fn missile_asteroid_hit_system(
     q_missiles: Query<&Transform, With<Missile>>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
+    mut missile_telemetry: ResMut<crate::simulation::MissileTelemetry>,
     config: Res<PhysicsConfig>,
     missile_level: Res<super::SecondaryWeaponLevel>,
 ) {
@@ -381,15 +384,47 @@ pub fn missile_asteroid_hit_system(
         score.hits += 1;
         score.streak += 1;
         let multiplier = score.multiplier();
+        missile_telemetry.hits += 1;
 
         let destroy_threshold = missile_level.destroy_threshold();
-        let chip_count = missile_level.chip_size();
 
-        if n <= destroy_threshold {
+        if missile_level.can_fully_decompose_size(n) {
+            // ── Full decomposition into unit asteroids ───────────────────────
+            commands.entity(asteroid_entity).despawn();
+            stats.split_total += 1;
+            score.points += multiplier;
+            missile_telemetry.full_decompose_events += 1;
+            missile_telemetry.decomposed_mass_total += n;
+
+            let impact_dir = (missile_pos - pos).normalize_or_zero();
+            let impact_dir = if impact_dir == Vec2::ZERO {
+                Vec2::X
+            } else {
+                impact_dir
+            };
+            let base_angle = impact_dir.y.atan2(impact_dir.x);
+            for i in 0..n {
+                let angle = base_angle + std::f32::consts::TAU * (i as f32 / n as f32);
+                let dir = Vec2::new(angle.cos(), angle.sin());
+                let spawn_pos = pos + dir * 9.0;
+                let spawn_vel = vel + dir * 30.0;
+                spawn_fragment_of_mass(
+                    &mut commands,
+                    spawn_pos,
+                    spawn_vel,
+                    ang_vel,
+                    config.asteroid_density,
+                    1,
+                );
+            }
+            spawn_debris_particles(&mut commands, pos, vel, n.min(10));
+        } else if n <= destroy_threshold {
             // ── Instant destroy (small asteroids) ─────────────────────────────
             commands.entity(asteroid_entity).despawn();
             stats.destroyed_total += 1;
             score.destroyed += 1;
+            missile_telemetry.instant_destroy_events += 1;
+            missile_telemetry.destroyed_mass_total += n;
             // Missiles award double the destroy bonus for small targets.
             score.points += multiplier + 10 * multiplier;
 
@@ -402,11 +437,9 @@ pub fn missile_asteroid_hit_system(
             }
             spawn_debris_particles(&mut commands, pos, vel, n + 2);
         } else {
-            // ── Chip large asteroid into size-1 fragments ─────────────────────
+            // ── Split large asteroid into level-scaled convex fragments ───────
             score.points += multiplier;
-            let mut rng = rand::thread_rng();
-
-            // World-space hull for surface-point computation.
+            missile_telemetry.split_events += 1;
             let rot = transform.rotation;
             let world_verts: Vec<Vec2> = vertices
                 .0
@@ -414,143 +447,123 @@ pub fn missile_asteroid_hit_system(
                 .map(|v| pos + rot.mul_vec3(v.extend(0.0)).truncate())
                 .collect();
 
-            // Direction pointing outward from the asteroid toward the
-            // missile — this is the "hit side" of the surface.
-            let impact_outward = (missile_pos - pos).normalize_or_zero();
-            let impact_outward = if impact_outward == Vec2::ZERO {
+            let split_axis = (missile_pos - pos).normalize_or_zero();
+            let split_axis = if split_axis == Vec2::ZERO {
                 Vec2::X
             } else {
-                impact_outward
+                split_axis
             };
 
-            // Spawn chip_count size-1 fragments radiating around the impact direction.
-            let base_angle = impact_outward.y.atan2(impact_outward.x);
-            for i in 0..chip_count {
-                // Distribute fragments evenly around the impact direction.
-                let spread: f32 = if chip_count > 1 {
-                    135.0 // ±67.5° spread when multiple fragments
-                } else {
-                    0.0
-                };
-                let angle = if chip_count <= 1 {
-                    base_angle
-                } else {
-                    base_angle + (i as f32 / (chip_count - 1) as f32 - 0.5) * spread.to_radians()
-                };
-                let dir = Vec2::new(angle.cos(), angle.sin());
+            let target_pieces = missile_level.split_piece_count(&config).min(n).max(2);
+            let mut fragment_hulls: Vec<Vec<Vec2>> = vec![world_verts.clone()];
+            let mut split_attempt = 0_u32;
 
-                // Ray from asteroid center outward — find where it exits
-                // the convex hull so we can spawn at the surface.
-                let surface_pt = if world_verts.len() >= 3 {
-                    let nv = world_verts.len();
-                    let mut best_t = f32::MAX;
-                    for j in 0..nv {
-                        let a = world_verts[j];
-                        let b = world_verts[(j + 1) % nv];
-                        let edge = b - a;
-                        let denom = dir.x * edge.y - dir.y * edge.x;
-                        if denom.abs() < 1e-6 {
-                            continue;
-                        }
-                        let diff = a - pos;
-                        let t = (diff.x * edge.y - diff.y * edge.x) / denom;
-                        let s = (diff.x * dir.y - diff.y * dir.x) / denom;
-                        if t > 0.0 && (0.0..=1.0).contains(&s) && t < best_t {
-                            best_t = t;
-                        }
+            while fragment_hulls.len() < target_pieces as usize {
+                let Some((largest_idx, largest_hull)) = fragment_hulls
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, a), (_, b)| polygon_area(a).total_cmp(&polygon_area(b)))
+                    .map(|(idx, hull)| (idx, hull.clone()))
+                else {
+                    break;
+                };
+
+                let centroid =
+                    largest_hull.iter().copied().sum::<Vec2>() / largest_hull.len() as f32;
+                let perp_axis = Vec2::new(-split_axis.y, split_axis.x).normalize_or_zero();
+                let spiral_axis = Vec2::from_angle(0.73 * (split_attempt + 1) as f32);
+                let candidate_axes = [split_axis, perp_axis, spiral_axis];
+
+                let mut split_result: Option<(Vec<Vec2>, Vec<Vec2>)> = None;
+                for axis in candidate_axes {
+                    if axis.length_squared() < 1e-5 {
+                        continue;
                     }
-                    if best_t < f32::MAX {
-                        pos + dir * best_t
+                    let split_origin = impact_weighted_split_origin(
+                        &largest_hull,
+                        centroid,
+                        axis,
+                        missile_pos,
+                        split_attempt,
+                    );
+                    let (front_raw, back_raw) =
+                        split_convex_polygon_world(&largest_hull, split_origin, axis);
+                    let Some(front_hull) = normalized_fragment_hull(&front_raw) else {
+                        continue;
+                    };
+                    let Some(back_hull) = normalized_fragment_hull(&back_raw) else {
+                        continue;
+                    };
+                    split_result = Some((front_hull, back_hull));
+                    break;
+                }
+
+                let Some((front_hull, back_hull)) = split_result else {
+                    break;
+                };
+
+                fragment_hulls.swap_remove(largest_idx);
+                fragment_hulls.push(front_hull);
+                fragment_hulls.push(back_hull);
+                split_attempt += 1;
+            }
+
+            commands.entity(asteroid_entity).despawn();
+            stats.split_total += 1;
+
+            let areas: Vec<f32> = fragment_hulls
+                .iter()
+                .map(|hull| polygon_area(hull))
+                .collect();
+            let masses = area_weighted_mass_partition(&areas, n, target_pieces as usize);
+
+            if fragment_hulls.len() == target_pieces as usize {
+                for (hull_world, mass) in fragment_hulls.into_iter().zip(masses.into_iter()) {
+                    let centroid =
+                        hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
+                    let local: Vec<Vec2> = hull_world.iter().map(|v| *v - centroid).collect();
+                    let target_area = mass as f32 / config.asteroid_density;
+                    let local = rescale_vertices_to_area(&local, target_area);
+                    let grey = 0.4 + rand::random::<f32>() * 0.3;
+                    let frag_ent = spawn_asteroid_with_vertices(
+                        &mut commands,
+                        centroid,
+                        &local,
+                        Color::srgb(grey, grey, grey),
+                        mass,
+                    );
+
+                    let kick_dir = (centroid - pos).normalize_or_zero();
+                    let kick_dir = if kick_dir == Vec2::ZERO {
+                        split_axis
                     } else {
-                        let outer = vertices
-                            .0
-                            .iter()
-                            .map(|v| v.length())
-                            .fold(0.0_f32, f32::max);
-                        pos + dir * outer
-                    }
-                } else {
-                    missile_pos
-                };
-
-                // Place the fragment just beyond the surface and eject it
-                // outward from the impact with some random spread.
-                let frag_vel = vel
-                    + dir * 45.0
-                    + Vec2::new(rng.gen_range(-20.0..20.0), rng.gen_range(-20.0..20.0));
-                spawn_unit_fragment(
-                    &mut commands,
-                    surface_pt + dir * 6.0,
-                    frag_vel,
-                    ang_vel,
-                    config.asteroid_density,
-                );
-            }
-
-            // Calculate remaining asteroid mass after chipping.
-            let remaining_mass = n.saturating_sub(chip_count);
-
-            if remaining_mass == 0 {
-                // Asteroid completely destroyed by missile.
-                commands.entity(asteroid_entity).despawn();
-                stats.destroyed_total += 1;
-                score.destroyed += 1;
+                        kick_dir
+                    };
+                    commands.entity(frag_ent).insert(Velocity {
+                        linvel: vel + kick_dir * 25.0,
+                        angvel: ang_vel,
+                    });
+                }
             } else {
-                // Asteroid survives with reduced mass — bevel and respawn.
-                // Cut a flat facet at the most prominent vertex in the direction
-                // of the shot (the vertex furthest from centroid toward impact).
-                let local_verts: Vec<Vec2> = if !vertices.0.is_empty() {
-                    let n_verts = vertices.0.len();
-                    // Pick the vertex with the largest local radius as the bevel target.
-                    let tip_idx = vertices
-                        .0
-                        .iter()
-                        .enumerate()
-                        .max_by(|(_, a), (_, b)| {
-                            a.length()
-                                .partial_cmp(&b.length())
-                                .unwrap_or(std::cmp::Ordering::Equal)
-                        })
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
-                    let prev_idx = (tip_idx + n_verts - 1) % n_verts;
-                    let next_idx = (tip_idx + 1) % n_verts;
-                    let tip = vertices.0[tip_idx];
-                    let cut_a = tip + (vertices.0[prev_idx] - tip) * 0.30;
-                    let cut_b = tip + (vertices.0[next_idx] - tip) * 0.30;
-                    let mut bevelled: Vec<Vec2> = Vec::with_capacity(n_verts + 1);
-                    for (i, &v) in vertices.0.iter().enumerate() {
-                        if i == tip_idx {
-                            bevelled.push(cut_a);
-                            bevelled.push(cut_b);
-                        } else {
-                            bevelled.push(v);
-                        }
-                    }
-                    let hull = compute_convex_hull_from_points(&bevelled).unwrap_or(bevelled);
-                    let c = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
-                    hull.iter().map(|v| *v - c).collect()
-                } else {
-                    canonical_vertices_for_mass(remaining_mass)
-                };
-                let target_area = remaining_mass as f32 / config.asteroid_density;
-                let local = rescale_vertices_to_area(&local_verts, target_area);
-                let grey = 0.4 + rand::random::<f32>() * 0.3;
-                let new_ent = spawn_asteroid_with_vertices(
-                    &mut commands,
-                    pos,
-                    &local,
-                    Color::srgb(grey, grey, grey),
-                    remaining_mass,
-                );
-                commands.entity(asteroid_entity).despawn();
-                stats.split_total += 1;
-                commands.entity(new_ent).insert(Velocity {
-                    linvel: vel,
-                    angvel: ang_vel,
-                });
+                // Geometry fallback: still keep split-only semantics and target piece count.
+                let fallback_masses = even_mass_partition(n, target_pieces as usize);
+                for (idx, mass) in fallback_masses.into_iter().enumerate() {
+                    let angle = std::f32::consts::TAU * idx as f32 / target_pieces as f32;
+                    let dir = (split_axis + Vec2::from_angle(angle)).normalize_or_zero();
+                    let dir = if dir == Vec2::ZERO { split_axis } else { dir };
+                    let spawn_pos = pos + dir * 10.0;
+                    spawn_fragment_of_mass(
+                        &mut commands,
+                        spawn_pos,
+                        vel + dir * 28.0,
+                        ang_vel,
+                        config.asteroid_density,
+                        mass,
+                    );
+                }
             }
-            spawn_debris_particles(&mut commands, pos, vel, chip_count.min(8));
+
+            spawn_debris_particles(&mut commands, pos, vel, n.min(8));
         }
     }
 }
@@ -929,9 +942,228 @@ pub fn projectile_missile_planet_hit_system(
 
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 
+/// Returns polygon area via shoelace formula (absolute value).
+fn polygon_area(v: &[Vec2]) -> f32 {
+    let n = v.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut area2 = 0.0_f32;
+    for i in 0..n {
+        let j = (i + 1) % n;
+        area2 += v[i].x * v[j].y - v[j].x * v[i].y;
+    }
+    area2.abs() * 0.5
+}
+
+/// Split a convex polygon (world-space vertices) with a plane through `origin`
+/// whose normal is `axis`.
+fn split_convex_polygon_world(verts: &[Vec2], origin: Vec2, axis: Vec2) -> (Vec<Vec2>, Vec<Vec2>) {
+    let mut front: Vec<Vec2> = Vec::new();
+    let mut back: Vec<Vec2> = Vec::new();
+    let n = verts.len();
+    for i in 0..n {
+        let a = verts[i];
+        let b = verts[(i + 1) % n];
+        let da = (a - origin).dot(axis);
+        let db = (b - origin).dot(axis);
+        if da >= 0.0 {
+            front.push(a);
+        } else {
+            back.push(a);
+        }
+        if (da > 0.0 && db < 0.0) || (da < 0.0 && db > 0.0) {
+            let t = da / (da - db);
+            let p = a + (b - a) * t;
+            front.push(p);
+            back.push(p);
+        }
+    }
+    (front, back)
+}
+
+fn normalized_fragment_hull(raw: &[Vec2]) -> Option<Vec<Vec2>> {
+    if raw.len() < 3 {
+        return None;
+    }
+    let hull = compute_convex_hull_from_points(raw)?;
+    if hull.len() < 3 || polygon_area(&hull) <= 1e-4 {
+        return None;
+    }
+    Some(hull)
+}
+
+/// Compute a split-plane origin biased by impact position.
+///
+/// Center hits produce near-centroid origins (more equal splits).
+/// Edge hits bias the plane toward the impact side (more asymmetric splits).
+fn impact_weighted_split_origin(
+    hull: &[Vec2],
+    centroid: Vec2,
+    axis: Vec2,
+    impact_point: Vec2,
+    split_iteration: u32,
+) -> Vec2 {
+    if hull.len() < 3 || axis.length_squared() < 1e-6 {
+        return centroid;
+    }
+
+    let mut min_proj = f32::MAX;
+    let mut max_proj = -f32::MAX;
+    for v in hull {
+        let p = v.dot(axis);
+        min_proj = min_proj.min(p);
+        max_proj = max_proj.max(p);
+    }
+
+    let span = max_proj - min_proj;
+    if span <= 1e-4 {
+        return centroid;
+    }
+
+    let impact_proj = impact_point.dot(axis).clamp(min_proj, max_proj);
+    let rel = ((impact_proj - min_proj) / span).clamp(0.0, 1.0);
+    let edge_bias = (rel - 0.5) * 2.0;
+    let half_span = span * 0.5;
+
+    // Strongest on the first split, then decays as recursive splits continue.
+    let iteration_decay = 1.0 / (split_iteration as f32 + 1.0);
+    let max_offset = half_span * 0.45 * iteration_decay;
+    centroid + axis * (edge_bias * max_offset)
+}
+
+fn even_mass_partition(total_mass: u32, piece_count: usize) -> Vec<u32> {
+    if piece_count == 0 {
+        return Vec::new();
+    }
+    let pieces = piece_count as u32;
+    let base = total_mass / pieces;
+    let remainder = total_mass % pieces;
+    let mut masses = vec![base; piece_count];
+    for mass in masses.iter_mut().take(remainder as usize) {
+        *mass += 1;
+    }
+    masses
+}
+
+fn area_weighted_mass_partition(areas: &[f32], total_mass: u32, piece_count: usize) -> Vec<u32> {
+    if piece_count == 0 {
+        return Vec::new();
+    }
+    if total_mass <= piece_count as u32 {
+        return vec![1; piece_count];
+    }
+
+    let safe_areas: Vec<f32> = if areas.len() == piece_count {
+        areas.iter().map(|a| a.max(1e-4)).collect()
+    } else {
+        vec![1.0; piece_count]
+    };
+
+    let mut masses = vec![1_u32; piece_count];
+    let remaining = total_mass - piece_count as u32;
+    let area_sum = safe_areas.iter().sum::<f32>().max(1e-4);
+
+    let mut used = 0_u32;
+    let mut fractional: Vec<(usize, f32)> = Vec::with_capacity(piece_count);
+    for (idx, area) in safe_areas.iter().enumerate() {
+        let exact = remaining as f32 * (*area / area_sum);
+        let whole = exact.floor() as u32;
+        masses[idx] += whole;
+        used += whole;
+        fractional.push((idx, exact - whole as f32));
+    }
+
+    let mut leftovers = remaining.saturating_sub(used) as usize;
+    fractional.sort_by(|(i_a, frac_a), (i_b, frac_b)| {
+        frac_b.total_cmp(frac_a).then_with(|| i_a.cmp(i_b))
+    });
+    for (idx, _) in fractional {
+        if leftovers == 0 {
+            break;
+        }
+        masses[idx] += 1;
+        leftovers -= 1;
+    }
+
+    masses
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn impact_weighted_split_origin_center_hit_near_equal_split() {
+        let square = vec![
+            Vec2::new(-10.0, -10.0),
+            Vec2::new(10.0, -10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(-10.0, 10.0),
+        ];
+        let centroid = Vec2::ZERO;
+        let axis = Vec2::X;
+        let origin = impact_weighted_split_origin(&square, centroid, axis, Vec2::ZERO, 0);
+
+        let (a_raw, b_raw) = split_convex_polygon_world(&square, origin, axis);
+        let a = compute_convex_hull_from_points(&a_raw).expect("front hull");
+        let b = compute_convex_hull_from_points(&b_raw).expect("back hull");
+        let area_a = polygon_area(&a);
+        let area_b = polygon_area(&b);
+        let ratio = area_a / (area_a + area_b);
+
+        assert!(
+            (ratio - 0.5).abs() < 0.08,
+            "center impact should produce near-equal split, ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn impact_weighted_split_origin_edge_hit_is_asymmetric() {
+        let square = vec![
+            Vec2::new(-10.0, -10.0),
+            Vec2::new(10.0, -10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(-10.0, 10.0),
+        ];
+        let centroid = Vec2::ZERO;
+        let axis = Vec2::X;
+        let origin = impact_weighted_split_origin(&square, centroid, axis, Vec2::new(10.0, 0.0), 0);
+
+        let (a_raw, b_raw) = split_convex_polygon_world(&square, origin, axis);
+        let a = compute_convex_hull_from_points(&a_raw).expect("front hull");
+        let b = compute_convex_hull_from_points(&b_raw).expect("back hull");
+        let area_a = polygon_area(&a);
+        let area_b = polygon_area(&b);
+        let ratio = area_a / (area_a + area_b);
+
+        assert!(
+            (ratio - 0.5).abs() > 0.15,
+            "edge impact should produce asymmetric split, ratio={ratio}"
+        );
+    }
+
+    #[test]
+    fn missile_split_helper_preserves_square_area() {
+        let square = vec![
+            Vec2::new(-10.0, -10.0),
+            Vec2::new(10.0, -10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(-10.0, 10.0),
+        ];
+
+        let (front_raw, back_raw) = split_convex_polygon_world(&square, Vec2::ZERO, Vec2::X);
+        let front = compute_convex_hull_from_points(&front_raw).expect("front split hull");
+        let back = compute_convex_hull_from_points(&back_raw).expect("back split hull");
+
+        let total = polygon_area(&square);
+        let split_total = polygon_area(&front) + polygon_area(&back);
+
+        assert!(
+            (total - split_total).abs() < 1e-3,
+            "split area should be preserved (total={total}, split_total={split_total})"
+        );
+    }
 
     // ── split_convex_polygon ──────────────────────────────────────────────────
 
@@ -1459,17 +1691,6 @@ mod tests {
             "bevelled hull must produce a valid collider"
         );
     }
-}
-
-/// Spawn a single unit-size (triangle) asteroid fragment at `pos` with the given velocity.
-fn spawn_unit_fragment(
-    commands: &mut Commands,
-    pos: Vec2,
-    velocity: Vec2,
-    angvel: f32,
-    density: f32,
-) {
-    spawn_fragment_of_mass(commands, pos, velocity, angvel, density, 1);
 }
 
 /// Spawn an asteroid fragment of arbitrary `mass` at `pos` with the given velocity.

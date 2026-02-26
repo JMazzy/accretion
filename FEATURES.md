@@ -152,8 +152,15 @@ The primary projectile weapon can be upgraded up to **Level 10** using ore, acce
 
 Missiles have their own ore-based upgrade progression up to **Level 10**, purchased from the same **pause menu → UPGRADES** flow.
 
-- **Base behaviour (Level 1 / internal 0)**: missiles fully destroy small targets and chip larger targets.
-- **Upgrade scaling**: each level increases missile impact power so larger asteroids can be fully destroyed, and chips remove more size-1 units on heavy targets.
+- **Base behaviour (Level 1 / internal 0)**: missiles fully destroy small targets and split larger targets into convex fragments.
+- **Upgrade scaling**:
+  - destroy threshold: `destroy_threshold = 2 + internal_level`
+  - split fragment count on heavy impacts: `pieces = display_level + 1` (Level 1 → 2, Level 2 → 3, Level 3 → 4, ...)
+  - split piece count is clamped by `missile_split_max_pieces` for stability/performance.
+- **Full decomposition rule**: when `display_level >= asteroid_size`, the impact decomposes the asteroid fully into unit fragments (deterministic radial spread) instead of using the normal destroy/split branch.
+- **Impact-point weighting**: split geometry is biased by impact location — center impacts trend toward near-equal fragment masses, while edge impacts bias toward asymmetric splits.
+- **Balance tuning (buff pass)**: default missiles now launch faster, accelerate harder, and fire more frequently (lower cooldown) to improve parity with upgraded blaster pacing.
+- **Telemetry metrics**: frame-log output now tracks missile outcome distribution and effectiveness proxy metrics (`destroy/split/decompose` ratios plus `frames_per_kill` proxy) for repeatable tuning passes.
 - **Costs**: level cost scales linearly by upgrade tier (same progression shape as other ore upgrades).
 - **HUD/shop visibility**: current levels and upgrade affordability are shown in the upgrade UI.
 - **Persistence**: missile level is saved/restored in save slots.

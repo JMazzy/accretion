@@ -63,7 +63,8 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 Upgrades are implemented as ECS resources and purchased in the unified ore shop (`GameState::OreShop` in `src/menu.rs`).
 
 - **Primary weapon upgrades** (`PrimaryWeaponLevel` in `src/player/state.rs`): raises projectile full-destroy threshold by level; larger asteroids are chipped.
-- **Secondary weapon upgrades** (`SecondaryWeaponLevel` in `src/player/state.rs`): raises missile impact power; higher levels chip more size-1 units from larger targets.
+- **Secondary weapon upgrades** (`SecondaryWeaponLevel` in `src/player/state.rs`): raises missile full-destroy threshold and increases split fragment count (`pieces = display_level + 1`, clamped by `missile_split_max_pieces`) for targets above threshold. If `display_level >= asteroid_size`, impacts fully decompose into unit fragments. Split geometry is impact-weighted: center hits trend toward equal-area fragments, edge hits produce asymmetric mass distributions.
+- **Missile telemetry** (`MissileTelemetry` in `src/simulation.rs`): tracks shots/hits, outcome counts (destroy/split/decompose), and mass-based totals. Periodic frame logs expose outcome distribution and a simple `frames_per_kill` TTK proxy for balancing passes.
 - **Ore magnet upgrades** (`OreAffinityLevel` in `src/mining.rs`): increases ore magnet radius and pull strength per level via `radius_at_level()` and `strength_at_level()`.
 - **Tractor beam scaling** (`TractorBeamLevel` in `src/player/state.rs`): scales beam force/range plus max affected asteroid size/speed envelope.
 - **Economy coupling**: weapon/missile/magnet/tractor upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
