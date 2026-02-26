@@ -18,8 +18,6 @@ Planned features, improvements, and known limitations. Completed items are remov
 ## Enhancements
 
 - [ ] **Performance** — Determine next steps for performance improvements; implement the most impactful one and add the rest to the backlog.
-- [ ] **Primary Weapon Projectile** - Update the shape of the projectile to be elongated in the direction of travel like a sci-fi "plasma pulse" or "blaster bolt".
-- [ ] **Missile Model** - Missiles have a model with a rocket-like shape pointing in the direction of travel (instead of a ball).
 - [ ] **Missile Particles** - Missiles shoot particles in the opposite direction of movement.
 - [ ] **Missile Movement** - Missiles start slow and accelerate until impact
 - [ ] **Remove Gizmos** — Remove remaining usage of Gizmos in favor of `Mesh2d` for everything

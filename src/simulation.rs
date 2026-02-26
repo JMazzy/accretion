@@ -116,7 +116,7 @@ impl Plugin for SimulationPlugin {
                         attach_player_ui_system,          // Spawn health bar + aim indicator
                         attach_projectile_mesh_system,    // Attach Mesh2d to new projectiles
                         attach_missile_mesh_system,       // Attach Mesh2d to new missiles
-                        sync_projectile_rotation_system,  // Update projectile rotation to match velocity
+                        sync_projectile_rotation_system, // Update projectile rotation to match velocity
                         sync_player_and_projectile_mesh_visibility_system, // Propagate wireframe_only
                     )
                         .chain(),

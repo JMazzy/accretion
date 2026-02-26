@@ -1,5 +1,41 @@
 # Accretion Changelog
 
+## Fix: Projectile spawn position bug — February 25, 2026
+
+### Projectiles and missiles appeared at world origin instead of from player ship
+
+**Root cause**: The `attach_projectile_mesh_system` and `attach_missile_mesh_system` were inserting a new `Transform::from_rotation(rotation)` component, which overwrote the existing `Transform` that contained the correct spawn position. This caused all weapon shots to appear at (0, 0) instead of offset from the player ship.
+
+**Fix**: Modified both systems to query `&mut Transform` and update only the `rotation` field, preserving the existing translation:
+- Changed query from `Query<(Entity, &Velocity), Added<...>>` to `Query<(Entity, &Velocity, &mut Transform), Added<...>>`
+- Changed from `.insert(Transform::from_rotation(rotation))` to `transform.rotation = Quat::from_rotation_z(angle)`
+
+**Files changed**: [src/player/rendering.rs](src/player/rendering.rs#L204-L247) — both `attach_projectile_mesh_system` and `attach_missile_mesh_system`.
+
+**Build verification**: `cargo clippy -- -D warnings`, `cargo build --release` — zero errors/warnings.
+
+---
+
+## Missile Visual Model — February 25, 2026
+
+### Missiles now render as rocket-shaped meshes oriented in the direction of travel
+
+Replaced the simple disc mesh with a rocket-shaped polygon featuring a pointed nose, cylindrical body, and two triangular fins.
+
+**Implementation**:
+- Added `rocket_mesh()` function in [src/player/rendering.rs](src/player/rendering.rs#L115-L140) to generate an 8-vertex rocket polygon oriented along local +Y
+- Updated `attach_missile_mesh_system` to:
+  - Query `Velocity` component on newly-spawned missiles (via `Added<Missile>`)
+  - Create rocket mesh with configurable dimensions (6u body width, 12u body length, 6u nose, 4u fins)
+  - Rotate the mesh to align with velocity direction (same approach as elongated projectiles)
+- Removed unused `disc_mesh()` function to eliminate dead code warning
+
+**Visual result**: Missiles now clearly show their direction of travel with a distinct rocket silhouette (orange fill), distinguishing them from the yellow capsule-shaped primary weapon projectiles.
+
+**Build verification**: `cargo check`, `cargo clippy -- -D warnings`, `cargo build --release` — all pass with zero errors/warnings.
+
+---
+
 ## Primary Weapon Upgrades — February 25, 2026
 
 ### Ore-based upgrade system for the primary projectile weapon

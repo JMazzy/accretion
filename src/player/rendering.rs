@@ -111,14 +111,31 @@ fn ship_vertices() -> Vec<Vec2> {
     ]
 }
 
-/// Approximate a disc as a regular N-gon polygon mesh (reuses `filled_polygon_mesh`).
-fn disc_mesh(radius: f32, segments: usize) -> Mesh {
-    let verts: Vec<Vec2> = (0..segments)
-        .map(|i| {
-            let angle = (i as f32) * std::f32::consts::TAU / (segments as f32);
-            Vec2::new(angle.cos() * radius, angle.sin() * radius)
-        })
-        .collect();
+/// Creates a rocket-shaped mesh oriented along local +Y (upward).
+///
+/// The rocket has a pointed nose, cylindrical body, and two triangular fins.
+/// Apply rotation via [`Transform`] to orient it in the direction of travel.
+fn rocket_mesh(body_width: f32, body_length: f32, nose_length: f32, fin_size: f32) -> Mesh {
+    let verts = vec![
+        // Nose tip (top)
+        Vec2::new(0.0, body_length / 2.0 + nose_length),
+        // Body outline (left side going down, then right side going up)
+        // Left edge of nose base
+        Vec2::new(-body_width / 2.0, body_length / 2.0),
+        // Left fin outer point
+        Vec2::new(-body_width / 2.0 - fin_size, -body_length / 2.0),
+        // Left fin inner (back of body)
+        Vec2::new(-body_width / 2.0, -body_length / 2.0 + fin_size),
+        // Center back (between fins)
+        Vec2::new(0.0, -body_length / 2.0),
+        // Right fin inner
+        Vec2::new(body_width / 2.0, -body_length / 2.0 + fin_size),
+        // Right fin outer point
+        Vec2::new(body_width / 2.0 + fin_size, -body_length / 2.0),
+        // Right edge of nose base
+        Vec2::new(body_width / 2.0, body_length / 2.0),
+    ];
+
     filled_polygon_mesh(&verts)
 }
 
@@ -129,7 +146,7 @@ fn disc_mesh(radius: f32, segments: usize) -> Mesh {
 fn elongated_projectile_mesh(radius: f32, length: f32, segments: usize) -> Mesh {
     let half_segments = segments / 2;
     let mut verts = Vec::new();
-    
+
     // Top semicircle (angles from 0 to π)
     for i in 0..=half_segments {
         let angle = (i as f32) * std::f32::consts::PI / (half_segments as f32);
@@ -137,15 +154,16 @@ fn elongated_projectile_mesh(radius: f32, length: f32, segments: usize) -> Mesh 
         let y = angle.sin() * radius + length / 2.0;
         verts.push(Vec2::new(x, y));
     }
-    
+
     // Bottom semicircle (angles from π to 2π)
     for i in 0..=half_segments {
-        let angle = std::f32::consts::PI + (i as f32) * std::f32::consts::PI / (half_segments as f32);
+        let angle =
+            std::f32::consts::PI + (i as f32) * std::f32::consts::PI / (half_segments as f32);
         let x = angle.cos() * radius;
         let y = angle.sin() * radius - length / 2.0;
         verts.push(Vec2::new(x, y));
     }
-    
+
     filled_polygon_mesh(&verts)
 }
 
@@ -185,7 +203,7 @@ pub fn attach_player_ship_mesh_system(
 /// The mesh is oriented along +Y; a separate system rotates it to match velocity.
 pub fn attach_projectile_mesh_system(
     mut commands: Commands,
-    query: Query<(Entity, &Velocity), Added<Projectile>>,
+    mut query: Query<(Entity, &Velocity, &mut Transform), Added<Projectile>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     overlay: Res<OverlayState>,
@@ -193,47 +211,57 @@ pub fn attach_projectile_mesh_system(
     const PROJ_RADIUS: f32 = 2.0;
     const PROJ_LENGTH: f32 = 10.0;
     let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.85, 0.1)));
-    for (entity, velocity) in query.iter() {
+    for (entity, velocity, mut transform) in query.iter_mut() {
         let mesh_handle = meshes.add(elongated_projectile_mesh(PROJ_RADIUS, PROJ_LENGTH, 16));
         let visibility = if overlay.wireframe_only {
             Visibility::Hidden
         } else {
             Visibility::Visible
         };
-        
+
         // Orient the projectile mesh in the direction of travel
         let direction = velocity.linvel.normalize_or_zero();
         let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
-        let rotation = Quat::from_rotation_z(angle);
-        
+        transform.rotation = Quat::from_rotation_z(angle);
+
         commands.entity(entity).insert((
             Mesh2d(mesh_handle),
             MeshMaterial2d(mat_handle.clone()),
             visibility,
-            Transform::from_rotation(rotation),
         ));
     }
 }
 
-/// Attach a filled disc `Mesh2d` to every newly-fired missile.
+/// Attach a filled rocket-shaped `Mesh2d` to every newly-fired missile.
 ///
-/// Missiles are rendered as a larger orange disc to distinguish them from bullets.
+/// Missiles are rendered as an orange rocket with a pointed nose and fins,
+/// oriented in the direction of travel.
 pub fn attach_missile_mesh_system(
     mut commands: Commands,
-    query: Query<Entity, Added<Missile>>,
+    mut query: Query<(Entity, &Velocity, &mut Transform), Added<Missile>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     overlay: Res<OverlayState>,
 ) {
-    const MISSILE_RADIUS: f32 = 5.5;
+    const BODY_WIDTH: f32 = 6.0;
+    const BODY_LENGTH: f32 = 12.0;
+    const NOSE_LENGTH: f32 = 6.0;
+    const FIN_SIZE: f32 = 4.0;
+
     let mat_handle = materials.add(ColorMaterial::from_color(Color::srgb(1.0, 0.45, 0.05)));
-    for entity in query.iter() {
-        let mesh_handle = meshes.add(disc_mesh(MISSILE_RADIUS, 14));
+    for (entity, velocity, mut transform) in query.iter_mut() {
+        let mesh_handle = meshes.add(rocket_mesh(BODY_WIDTH, BODY_LENGTH, NOSE_LENGTH, FIN_SIZE));
         let visibility = if overlay.wireframe_only {
             Visibility::Hidden
         } else {
             Visibility::Visible
         };
+
+        // Orient the rocket mesh in the direction of travel
+        let direction = velocity.linvel.normalize_or_zero();
+        let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
+        transform.rotation = Quat::from_rotation_z(angle);
+
         commands.entity(entity).insert((
             Mesh2d(mesh_handle),
             MeshMaterial2d(mat_handle.clone()),
