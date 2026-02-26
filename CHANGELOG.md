@@ -1,5 +1,48 @@
 # Accretion Changelog
 
+## Fix: GameFont resource initialization order — February 25, 2026
+
+### Fixed panic on startup due to GameFont not existing when menu systems run
+
+**Root cause**: `setup_main_menu` runs on `OnEnter(MainMenu)` (the default state), which can execute before the `Startup` schedule completes. The `load_game_font` system in `Startup` was creating the `GameFont` resource, but menu setup systems needed it immediately.
+
+**Error**:
+```
+Parameter `Res<'_, GameFont>` failed validation: Resource does not exist
+```
+
+**Fix**:
+- Made `GameFont` derive `Default` ([src/graphics.rs](src/graphics.rs#L5))
+- Insert `GameFont::default()` resource early in [src/main.rs](src/main.rs#L91) before state initialization
+- Modified `load_game_font` to update the existing resource instead of creating it
+
+This ensures the resource exists before any menu systems access it, while the actual font handle is populated during the `Startup` schedule.
+
+**Build verification**: `cargo clippy -- -D warnings`, `cargo build --release` — zero errors/warnings.
+
+---
+
+## Custom Font Integration — February 25, 2026
+
+### Added Tektur font throughout the game UI
+
+Integrated the Tektur variable font (from `assets/fonts/Tektur/`) to replace Bevy's default font across all text in the game.
+
+**Implementation**:
+- Added `GameFont` resource in [src/graphics.rs](src/graphics.rs#L6-L16) to hold the loaded font handle
+- Created `load_game_font` startup system to load the font from `assets/fonts/Tektur/Tektur-VariableFont_wdth,wght.ttf`
+- Updated all `TextFont` instances (58 total) across [src/rendering.rs](src/rendering.rs) and [src/menu.rs](src/menu.rs) to use `font: font.0.clone()`
+- Modified setup systems to accept `font: Res<GameFont>` parameter:
+  - Rendering: `setup_hud_score`, `setup_lives_hud`, `setup_missile_hud`, `setup_ore_hud`, `setup_stats_text`, `setup_debug_panel`
+  - Menus: `setup_main_menu`, `setup_scenario_select`, `setup_pause_menu`, `setup_ore_shop`, `setup_game_over`
+  - Helpers: `spawn_toggle_row`, `spawn_ore_shop_overlay`, `ore_shop_button_system`
+
+**Visual result**: All text in the game (menus, HUDs, buttons, overlays) now renders with the distinctive Tektur typeface, giving the game a cohesive futuristic aesthetic.
+
+**Build verification**: `cargo clippy -- -D warnings`, `cargo build --release` — zero errors/warnings.
+
+---
+
 ## Fix: Projectile spawn position bug — February 25, 2026
 
 ### Projectiles and missiles appeared at world origin instead of from player ship

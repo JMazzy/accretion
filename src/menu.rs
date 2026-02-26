@@ -30,6 +30,7 @@ use bevy::prelude::*;
 use bevy_rapier2d::prelude::RapierConfiguration;
 
 use crate::config::PhysicsConfig;
+use crate::graphics::GameFont;
 use crate::mining::PlayerOre;
 use crate::player::{
     state::{MissileAmmo, PlayerHealth},
@@ -339,7 +340,7 @@ fn hint_color() -> Color {
 /// │          v0.1.0  ·  Bevy 0.17               │
 /// └─────────────────────────────────────────────┘
 /// ```
-pub fn setup_main_menu(mut commands: Commands) {
+pub fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
     // ── Full-screen background ────────────────────────────────────────────────
     commands
         .spawn((
@@ -359,6 +360,7 @@ pub fn setup_main_menu(mut commands: Commands) {
             root.spawn((
                 Text::new("ASTEROID SIMULATOR"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 56.0,
                     ..default()
                 },
@@ -371,6 +373,7 @@ pub fn setup_main_menu(mut commands: Commands) {
             root.spawn((
                 Text::new("A gravitational aggregation simulation"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 18.0,
                     ..default()
                 },
@@ -398,6 +401,7 @@ pub fn setup_main_menu(mut commands: Commands) {
                 btn.spawn((
                     Text::new("START GAME"),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -426,6 +430,7 @@ pub fn setup_main_menu(mut commands: Commands) {
                 btn.spawn((
                     Text::new("QUIT"),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -439,6 +444,7 @@ pub fn setup_main_menu(mut commands: Commands) {
             root.spawn((
                 Text::new("v0.1.0  ·  Bevy 0.17"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 12.0,
                     ..default()
                 },
@@ -573,7 +579,7 @@ fn back_text() -> Color {
 /// │              [ BACK ]                         │
 /// └───────────────────────────────────────────────┘
 /// ```
-pub fn setup_scenario_select(mut commands: Commands) {
+pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
     commands
         .spawn((
             Node {
@@ -592,6 +598,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
             root.spawn((
                 Text::new("SCENARIOS & SAVES"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 42.0,
                     ..default()
                 },
@@ -603,6 +610,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
             root.spawn((
                 Text::new("Choose a scenario to play"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 16.0,
                     ..default()
                 },
@@ -635,6 +643,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                 card.spawn((
                     Text::new("FIELD"),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -647,6 +656,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                          The original chaotic asteroid field.",
                     ),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -680,6 +690,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                 card.spawn((
                     Text::new("ORBIT"),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -692,6 +703,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                          fields of smaller asteroids in near-circular orbits.",
                     ),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -725,6 +737,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                 card.spawn((
                     Text::new("COMETS"),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -737,6 +750,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                          They fragment on impact — dodge and shoot before they escape.",
                     ),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -770,6 +784,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                 card.spawn((
                     Text::new("SHOWER"),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 22.0,
                         ..default()
                     },
@@ -782,6 +797,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                          pull them into growing clusters in real time.",
                     ),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 13.0,
                         ..default()
                     },
@@ -810,6 +826,7 @@ pub fn setup_scenario_select(mut commands: Commands) {
                 btn.spawn((
                     Text::new("BACK"),
                     TextFont {
+                    font: font.0.clone(),
                         font_size: 16.0,
                         ..default()
                     },
@@ -1105,7 +1122,7 @@ fn ore_shop_item_text() -> Color {
 /// │ ░░░░░   └───────────────────────┘   ░░░░░░ │
 /// └─────────────────────────────────────────────┘
 /// ```
-pub fn setup_pause_menu(mut commands: Commands) {
+pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
     // ── Full-screen dim overlay ───────────────────────────────────────────────
     commands
         .spawn((
@@ -1144,6 +1161,7 @@ pub fn setup_pause_menu(mut commands: Commands) {
                     card.spawn((
                         Text::new("— PAUSED —"),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 38.0,
                             ..default()
                         },
@@ -1171,6 +1189,7 @@ pub fn setup_pause_menu(mut commands: Commands) {
                         btn.spawn((
                             Text::new("RESUME"),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -1197,6 +1216,7 @@ pub fn setup_pause_menu(mut commands: Commands) {
                         btn.spawn((
                             Text::new("DEBUG OVERLAYS"),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -1225,6 +1245,7 @@ pub fn setup_pause_menu(mut commands: Commands) {
                         btn.spawn((
                             Text::new("MAIN MENU"),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -1238,6 +1259,7 @@ pub fn setup_pause_menu(mut commands: Commands) {
                     card.spawn((
                         Text::new("ESC → resume  ·  Tab → ore shop"),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 12.0,
                             ..default()
                         },
@@ -1280,6 +1302,7 @@ fn spawn_ore_shop_overlay(
     ammo: u32,
     ammo_max: u32,
     weapon_level: &PrimaryWeaponLevel,
+    font: &GameFont,
 ) {
     let ore_text = format!("Ore available: {ore}");
 
@@ -1358,6 +1381,7 @@ fn spawn_ore_shop_overlay(
                     card.spawn((
                         Text::new("⬡  ORE SHOP"),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 32.0,
                             ..default()
                         },
@@ -1373,6 +1397,7 @@ fn spawn_ore_shop_overlay(
                     card.spawn((
                         Text::new(ore_text),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 16.0,
                             ..default()
                         },
@@ -1404,6 +1429,7 @@ fn spawn_ore_shop_overlay(
                         btn.spawn((
                             Text::new(heal_label),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 15.0,
                                 ..default()
                             },
@@ -1431,6 +1457,7 @@ fn spawn_ore_shop_overlay(
                         btn.spawn((
                             Text::new(missile_label),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 15.0,
                                 ..default()
                             },
@@ -1497,6 +1524,7 @@ fn spawn_ore_shop_overlay(
                         card.spawn((
                             Text::new("── WEAPON ──"),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 13.0,
                                 ..default()
                             },
@@ -1505,6 +1533,7 @@ fn spawn_ore_shop_overlay(
                         card.spawn((
                             Text::new(level_text),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 15.0,
                                 ..default()
                             },
@@ -1513,6 +1542,7 @@ fn spawn_ore_shop_overlay(
                         card.spawn((
                             Text::new(range_text),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 12.0,
                                 ..default()
                             },
@@ -1521,6 +1551,7 @@ fn spawn_ore_shop_overlay(
                         card.spawn((
                             Text::new(cost_status),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 13.0,
                                 ..default()
                             },
@@ -1550,6 +1581,7 @@ fn spawn_ore_shop_overlay(
                             btn.spawn((
                                 Text::new(upg_label),
                                 TextFont {
+                    font: font.0.clone(),
                                     font_size: 15.0,
                                     ..default()
                                 },
@@ -1582,6 +1614,7 @@ fn spawn_ore_shop_overlay(
                         btn.spawn((
                             Text::new("CLOSE"),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 16.0,
                                 ..default()
                             },
@@ -1592,6 +1625,7 @@ fn spawn_ore_shop_overlay(
                     card.spawn((
                         Text::new("Press Tab or ESC to close"),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 12.0,
                             ..default()
                         },
@@ -1609,6 +1643,7 @@ pub fn setup_ore_shop(
     ammo: Res<MissileAmmo>,
     config: Res<PhysicsConfig>,
     weapon_level: Res<PrimaryWeaponLevel>,
+    font: Res<GameFont>,
 ) {
     let (hp, max_hp) = q_health
         .single()
@@ -1623,6 +1658,7 @@ pub fn setup_ore_shop(
         ammo.count,
         config.missile_ammo_max,
         &weapon_level,
+        &font,
     );
 }
 
@@ -1655,6 +1691,7 @@ pub fn ore_shop_button_system(
     mut weapon_level: ResMut<PrimaryWeaponLevel>,
     mut next_state: ResMut<NextState<GameState>>,
     return_state: Res<ShopReturnState>,
+    font: Res<GameFont>,
 ) {
     // ── Close (ESC / Tab / button) ────────────────────────────────────────────
     let wants_close = keys.just_pressed(KeyCode::Escape)
@@ -1694,6 +1731,7 @@ pub fn ore_shop_button_system(
                     ammo_count,
                     ammo_max,
                     &weapon_level,
+                    &font,
                 );
                 return;
             }
@@ -1725,6 +1763,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_level,
+            &font,
         );
         return;
     }
@@ -1753,6 +1792,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_level,
+            &font,
         );
     }
 }
@@ -1933,7 +1973,7 @@ pub fn pause_menu_button_system(
 ///
 /// Shows final score and a "PLAY AGAIN" button that re-spawns the player
 /// with a fresh set of lives without resetting the asteroid field.
-pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>) {
+pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>, font: Res<GameFont>) {
     commands
         .spawn((
             Node {
@@ -1969,6 +2009,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>) {
                     card.spawn((
                         Text::new("GAME OVER"),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 46.0,
                             ..default()
                         },
@@ -1985,6 +2026,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>) {
                             score.destroyed
                         )),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 16.0,
                             ..default()
                         },
@@ -2012,6 +2054,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>) {
                         btn.spawn((
                             Text::new("PLAY AGAIN"),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -2038,6 +2081,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>) {
                         btn.spawn((
                             Text::new("QUIT"),
                             TextFont {
+                    font: font.0.clone(),
                                 font_size: 18.0,
                                 ..default()
                             },
@@ -2050,6 +2094,7 @@ pub fn setup_game_over(mut commands: Commands, score: Res<PlayerScore>) {
                     card.spawn((
                         Text::new("Press Enter to play again"),
                         TextFont {
+                    font: font.0.clone(),
                             font_size: 12.0,
                             ..default()
                         },

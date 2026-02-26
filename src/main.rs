@@ -83,6 +83,9 @@ fn main() {
     // Insert PhysicsConfig with compiled defaults; load_physics_config will
     // overwrite it from assets/physics.toml (if present) in the Startup schedule.
     .insert_resource(PhysicsConfig::default())
+    // Insert GameFont resource early so menu systems can access it; the actual
+    // font handle will be loaded during Startup via load_game_font.
+    .insert_resource(graphics::GameFont::default())
     // pixels_per_meter(1.0) keeps world units identical to old physics behaviour
     // (scale = 1.0 was the default in bevy_rapier2d 0.18).  Setting this to any
     // larger value shrinks collider mass in physics-space quadratically and causes
@@ -95,6 +98,7 @@ fn main() {
         Startup,
         (
             config::load_physics_config,
+            graphics::load_game_font,
             graphics::setup_camera.after(config::load_physics_config),
             setup_physics_config,
         ),

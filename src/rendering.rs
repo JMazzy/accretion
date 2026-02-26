@@ -39,6 +39,7 @@
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
+use crate::graphics::GameFont;
 use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
 use crate::player::{PlayerLives, PlayerScore, PrimaryWeaponLevel};
@@ -239,7 +240,7 @@ pub fn sync_boundary_ring_visibility_system(
 // ── Startup: score HUD ────────────────────────────────────────────────────────
 
 /// Spawn the permanent top-left score HUD (always visible).
-pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>) {
+pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
     commands
         .spawn((
             Node {
@@ -254,6 +255,7 @@ pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>) {
             parent.spawn((
                 Text::new("Score: 0"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: config.stats_font_size,
                     ..default()
                 },
@@ -271,7 +273,7 @@ pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>) {
 ///  Lives: ♥ ♥ ♥
 ///  RESPAWNING IN 2.4s   ← hidden while alive
 /// ```
-pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
+pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
     let row_h = config.stats_font_size + 6.0;
     commands
         .spawn((
@@ -290,6 +292,7 @@ pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
             parent.spawn((
                 Text::new("Lives: * * *"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: config.stats_font_size,
                     ..default()
                 },
@@ -299,6 +302,7 @@ pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
             parent.spawn((
                 Text::new(""),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: config.stats_font_size - 2.0,
                     ..default()
                 },
@@ -346,7 +350,7 @@ pub fn lives_hud_display_system(
 }
 
 /// Startup: spawn the missile-ammo indicator HUD (row 3, below lives HUD).
-pub fn setup_missile_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
+pub fn setup_missile_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
     let row_h = config.stats_font_size + 6.0;
     commands
         .spawn((
@@ -362,6 +366,7 @@ pub fn setup_missile_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
             parent.spawn((
                 Text::new("Missiles: M M M M M"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: config.stats_font_size,
                     ..default()
                 },
@@ -393,7 +398,7 @@ pub fn missile_hud_display_system(
 }
 
 /// Startup: ore-count HUD (row 4, below missiles).
-pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
+pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
     let row_h = config.stats_font_size + 6.0;
     commands
         .spawn((
@@ -409,6 +414,7 @@ pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>) {
             parent.spawn((
                 Text::new("Ore: 0"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: config.stats_font_size,
                     ..default()
                 },
@@ -451,7 +457,7 @@ pub fn ore_hud_display_system(
 }
 
 /// Startup: stats overlay text — Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
-pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
+pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
     let row_h = config.stats_font_size + 6.0;
     // Position below score (row 0), lives HUD (rows 1-2), missile HUD (row 3), ore HUD (row 4).
     commands
@@ -469,6 +475,7 @@ pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
             parent.spawn((
                 Text::new("Live: 0 | Culled: 0 | Merged: 0 | Split: 0 | Destroyed: 0"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: config.stats_font_size,
                     ..default()
                 },
@@ -483,7 +490,7 @@ pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>) {
 ///
 /// The panel appears in the top-right corner and provides per-layer toggle
 /// buttons for all gizmo overlays plus a wireframe-only fallback mode.
-pub fn setup_debug_panel(mut commands: Commands) {
+pub fn setup_debug_panel(mut commands: Commands, font: Res<GameFont>) {
     // Each entry: (toggle variant, initial "active" state) — must match OverlayState::default().
     let defaults: &[(OverlayToggle, bool)] = &[
         (OverlayToggle::Boundary, false),
@@ -519,6 +526,7 @@ pub fn setup_debug_panel(mut commands: Commands) {
             panel.spawn((
                 Text::new("Debug Overlays"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 13.0,
                     ..default()
                 },
@@ -528,6 +536,7 @@ pub fn setup_debug_panel(mut commands: Commands) {
             panel.spawn((
                 Text::new("──────────────────────────────"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 9.0,
                     ..default()
                 },
@@ -535,12 +544,13 @@ pub fn setup_debug_panel(mut commands: Commands) {
             ));
 
             for &(toggle, initial) in defaults {
-                spawn_toggle_row(panel, toggle, initial);
+                spawn_toggle_row(panel, toggle, initial, &font);
             }
 
             panel.spawn((
                 Text::new("──────────────────────────────"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 9.0,
                     ..default()
                 },
@@ -550,6 +560,7 @@ pub fn setup_debug_panel(mut commands: Commands) {
             panel.spawn((
                 Text::new("Tip: toggle in pause menu (ESC)"),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 10.0,
                     ..default()
                 },
@@ -559,7 +570,12 @@ pub fn setup_debug_panel(mut commands: Commands) {
 }
 
 /// Spawn one toggle row: `[ON | OFF]  Label text`.
-fn spawn_toggle_row(parent: &mut ChildSpawnerCommands<'_>, toggle: OverlayToggle, initial: bool) {
+fn spawn_toggle_row(
+    parent: &mut ChildSpawnerCommands<'_>,
+    toggle: OverlayToggle,
+    initial: bool,
+    font: &GameFont,
+) {
     parent
         .spawn(Node {
             flex_direction: FlexDirection::Row,
@@ -586,6 +602,7 @@ fn spawn_toggle_row(parent: &mut ChildSpawnerCommands<'_>, toggle: OverlayToggle
                 btn.spawn((
                     Text::new(if initial { "ON" } else { "OFF" }),
                     TextFont {
+                        font: font.0.clone(),
                         font_size: 10.0,
                         ..default()
                     },
@@ -596,6 +613,7 @@ fn spawn_toggle_row(parent: &mut ChildSpawnerCommands<'_>, toggle: OverlayToggle
             row.spawn((
                 Text::new(toggle.label()),
                 TextFont {
+                    font: font.0.clone(),
                     font_size: 12.0,
                     ..default()
                 },
