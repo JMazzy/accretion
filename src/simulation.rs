@@ -28,13 +28,15 @@ use crate::player::{
 use crate::rendering::{
     debug_panel_button_system, gizmo_rendering_system, hud_score_display_system,
     lives_hud_display_system, missile_hud_display_system, ore_hud_display_system,
-    physics_inspector_display_system, stats_display_system, sync_boundary_ring_visibility_system,
-    sync_physics_inspector_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
+    physics_inspector_display_system, profiler_display_system, stats_display_system,
+    sync_boundary_ring_visibility_system, sync_physics_inspector_visibility_system,
+    sync_profiler_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+use std::time::Instant;
 
 /// Tracks simulation statistics: active asteroids, culled count, merged count, split count, destroyed count
 #[derive(Resource, Default, Clone, Copy, Debug)]
@@ -50,6 +52,24 @@ pub struct SimulationStats {
 #[derive(Resource, Default, Clone, Copy, Debug)]
 pub struct CameraState {
     pub zoom: f32,
+}
+
+/// Per-schedule timing breakdown for in-game profiler display.
+#[derive(Resource, Default, Clone, Copy, Debug)]
+pub struct ProfilerStats {
+    pub update_group1_ms: f32,
+    pub update_group2a_ms: f32,
+    pub update_group2b_ms: f32,
+    pub update_total_ms: f32,
+    pub fixed_update_ms: f32,
+    pub post_update_ms: f32,
+}
+
+#[derive(Resource, Default)]
+struct ProfilerClock {
+    update_mark: Option<Instant>,
+    fixed_mark: Option<Instant>,
+    post_mark: Option<Instant>,
 }
 
 /// Per-frame scratch buffers reused across `neighbor_counting_system` to eliminate
@@ -73,6 +93,8 @@ impl Plugin for SimulationPlugin {
         app.insert_resource(SimulationStats::default())
             .insert_resource(OverlayState::default())
             .insert_resource(GravityScratch::default())
+            .insert_resource(ProfilerStats::default())
+            .insert_resource(ProfilerClock::default())
             .insert_resource(CameraState { zoom: 1.0 })
             .insert_resource(AimDirection::default())
             .insert_resource(AimIdleTimer::default())
@@ -87,6 +109,7 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 Update,
                 (
+                    profiler_begin_update_system,
                     // ── Group 1: physics bookkeeping + input pipeline ─────────
                     (
                         stats_counting_system, // Count asteroids for stats
@@ -101,6 +124,7 @@ impl Plugin for SimulationPlugin {
                         mouse_aim_system,          // Mouse cursor updates AimDirection
                     )
                         .chain(),
+                    profiler_mark_after_group1_system,
                     // ── Group 2a: input / camera / mesh attachment ───────────
                     (
                         projectile_fire_system,           // Space/click/right-stick fires
@@ -123,12 +147,14 @@ impl Plugin for SimulationPlugin {
                         sync_player_and_projectile_mesh_visibility_system, // Propagate wireframe_only
                     )
                         .chain(),
+                    profiler_mark_after_group2a_system,
                     // ── Group 2b: overlay sync + player logic + stats ────────
                     (
                         sync_boundary_ring_visibility_system, // Show/hide boundary ring
                         gizmo_rendering_system,               // Render gizmo overlays
                         sync_stats_overlay_visibility_system, // Show/hide stats overlay
                         sync_physics_inspector_visibility_system, // Show/hide physics inspector
+                        sync_profiler_visibility_system,      // Show/hide profiler overlay
                         player_gizmo_system, // Render ship outline (aim/hbar now Mesh2d)
                         sync_player_health_bar_system, // Update health bar position + colour
                         sync_aim_indicator_system, // Update aim arrow orientation + visibility
@@ -138,12 +164,14 @@ impl Plugin for SimulationPlugin {
                         ore_hud_display_system, // Refresh ore count HUD
                         stats_display_system, // Render stats overlay text
                         physics_inspector_display_system, // Render physics inspector text
+                        profiler_display_system, // Render profiler text
                         player_oob_damping_system, // Slow player outside boundary
                         player_collision_damage_system, // Player takes damage from asteroids
                         player_respawn_system, // Re-spawn ship after countdown
                         cleanup_player_ui_system, // Despawn UI on player death
                     )
                         .chain(),
+                    profiler_mark_after_group2b_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -154,9 +182,14 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 FixedUpdate,
                 (
-                    rebuild_spatial_grid_system,
-                    nbody_gravity_system,
-                    neighbor_counting_system,
+                    profiler_begin_fixed_update_system,
+                    (
+                        rebuild_spatial_grid_system,
+                        nbody_gravity_system,
+                        neighbor_counting_system,
+                    )
+                        .chain(),
+                    profiler_end_fixed_update_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -168,9 +201,14 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 PostUpdate,
                 (
-                    asteroid_formation_system,
-                    projectile_asteroid_hit_system,
-                    missile_asteroid_hit_system,
+                    profiler_begin_post_update_system,
+                    (
+                        asteroid_formation_system,
+                        projectile_asteroid_hit_system,
+                        missile_asteroid_hit_system,
+                    )
+                        .chain(),
+                    profiler_end_post_update_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -178,6 +216,71 @@ impl Plugin for SimulationPlugin {
             // debug_panel_button_system runs outside the Playing gate so the debug
             // overlay toggles remain functional while the game is paused.
             .add_systems(Update, debug_panel_button_system);
+    }
+}
+
+fn profiler_begin_update_system(mut clock: ResMut<ProfilerClock>) {
+    clock.update_mark = Some(Instant::now());
+}
+
+fn profiler_mark_after_group1_system(
+    mut clock: ResMut<ProfilerClock>,
+    mut stats: ResMut<ProfilerStats>,
+) {
+    if let Some(mark) = clock.update_mark {
+        let now = Instant::now();
+        stats.update_group1_ms = (now - mark).as_secs_f32() * 1000.0;
+        clock.update_mark = Some(now);
+    }
+}
+
+fn profiler_mark_after_group2a_system(
+    mut clock: ResMut<ProfilerClock>,
+    mut stats: ResMut<ProfilerStats>,
+) {
+    if let Some(mark) = clock.update_mark {
+        let now = Instant::now();
+        stats.update_group2a_ms = (now - mark).as_secs_f32() * 1000.0;
+        clock.update_mark = Some(now);
+    }
+}
+
+fn profiler_mark_after_group2b_system(
+    mut clock: ResMut<ProfilerClock>,
+    mut stats: ResMut<ProfilerStats>,
+) {
+    if let Some(mark) = clock.update_mark {
+        let now = Instant::now();
+        stats.update_group2b_ms = (now - mark).as_secs_f32() * 1000.0;
+        stats.update_total_ms =
+            stats.update_group1_ms + stats.update_group2a_ms + stats.update_group2b_ms;
+        clock.update_mark = Some(now);
+    }
+}
+
+fn profiler_begin_fixed_update_system(mut clock: ResMut<ProfilerClock>) {
+    clock.fixed_mark = Some(Instant::now());
+}
+
+fn profiler_end_fixed_update_system(
+    mut clock: ResMut<ProfilerClock>,
+    mut stats: ResMut<ProfilerStats>,
+) {
+    if let Some(mark) = clock.fixed_mark.take() {
+        stats.fixed_update_ms = (Instant::now() - mark).as_secs_f32() * 1000.0;
+    }
+}
+
+fn profiler_begin_post_update_system(mut clock: ResMut<ProfilerClock>) {
+    clock.post_mark = Some(Instant::now());
+}
+
+fn profiler_end_post_update_system(
+    mut clock: ResMut<ProfilerClock>,
+    mut stats: ResMut<ProfilerStats>,
+) {
+    if let Some(mark) = clock.post_mark.take() {
+        stats.post_update_ms = (Instant::now() - mark).as_secs_f32() * 1000.0;
     }
 }
 

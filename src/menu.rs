@@ -2737,6 +2737,7 @@ pub fn cleanup_game_world(
             With<crate::rendering::HudScoreDisplay>,
             With<crate::rendering::StatsTextDisplay>,
             With<crate::rendering::PhysicsInspectorDisplay>,
+            With<crate::rendering::ProfilerDisplay>,
             With<crate::rendering::DebugPanel>,
             With<crate::rendering::LivesHudDisplay>,
             With<crate::rendering::MissileHudDisplay>,

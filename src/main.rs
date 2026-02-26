@@ -1,3 +1,4 @@
+use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use bevy_rapier2d::prelude::*;
@@ -93,6 +94,7 @@ fn main() {
     // larger value shrinks collider mass in physics-space quadratically and causes
     // ExternalForce to produce runaway acceleration at the same numeric values.
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
+    .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_resource(player::PlayerFireCooldown::default())
     .insert_resource(player::PrimaryWeaponLevel::default())
     .insert_resource(player::SecondaryWeaponLevel::default())
@@ -124,6 +126,7 @@ fn main() {
             rendering::setup_ore_hud,
             rendering::setup_stats_text,
             rendering::setup_physics_inspector_text,
+            rendering::setup_profiler_text,
             rendering::setup_debug_panel,
         ),
     )
@@ -140,6 +143,7 @@ fn main() {
             rendering::setup_ore_hud,
             rendering::setup_stats_text,
             rendering::setup_physics_inspector_text,
+            rendering::setup_profiler_text,
             rendering::setup_debug_panel,
         ),
     );

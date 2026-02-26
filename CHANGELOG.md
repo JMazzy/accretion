@@ -1,5 +1,41 @@
 # Accretion Changelog
 
+## Profiler Integration — February 26, 2026
+
+### Added in-game profiler overlay with frame-time and schedule breakdowns
+
+Implemented backlog item **Profiler integration**.
+
+**What changed**:
+- Enabled Bevy frame-time diagnostics plugin in `src/main.rs` (`FrameTimeDiagnosticsPlugin`).
+- Added profiler timing resources in `src/simulation.rs`:
+  - `ProfilerStats` (Update group breakdown + FixedUpdate/PostUpdate timings)
+  - internal `ProfilerClock` marker timestamps
+- Added schedule marker systems in `src/simulation.rs` to capture timings around:
+  - Update Group 1 / 2A / 2B
+  - FixedUpdate chain
+  - PostUpdate chain
+- Added profiler overlay support in `src/rendering.rs`:
+  - `OverlayState::show_profiler`
+  - `OverlayToggle::Profiler`
+  - `ProfilerDisplay` UI node
+  - `setup_profiler_text`
+  - `sync_profiler_visibility_system`
+  - `profiler_display_system`
+- Added **Profiler** toggle row to the debug panel.
+- Added cleanup coverage for profiler UI in `cleanup_game_world` (`src/menu.rs`).
+
+**Backlog update**:
+- Removed **Profiler integration** from pending `BACKLOG.md` items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
 ## Debug Grid Visualization — February 26, 2026
 
 ### Added spatial partition KD-tree split-cell overlay in debug panel

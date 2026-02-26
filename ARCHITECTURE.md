@@ -313,6 +313,7 @@ Physics constants are defined in `src/constants.rs` as compile-time defaults and
 
 #### Test & Developer Tooling
 - **Automated regression baseline**: Store golden frame-log snapshots in `tests/golden/` and compare on each test run, automatically catching physics constant drift
+- ~~**Profiler integration**: Frame-time diagnostics plus in-game schedule timing breakdown for Update / FixedUpdate / PostUpdate~~ ✅ Completed
 - ~~**In-game physics inspector**: Toggle an overlay showing entity IDs, velocities, and contact counts on-screen for live debugging without restarting in test mode~~ ✅ Completed
 - ~~**Debug spatial grid visualization**: Toggle KD-tree split-cell line rendering to inspect spatial partition behavior in real time~~ ✅ Completed
 - ~~**Hot-reload constants**: Watch `assets/physics.toml` for changes at runtime and apply updated constants on the fly~~ ✅ Completed

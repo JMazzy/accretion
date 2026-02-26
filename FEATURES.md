@@ -204,6 +204,17 @@ Live: XX | Culled: YY | Merged: ZZ
 - Renders KD-tree split-cell lines used by the `SpatialGrid` neighbor index.
 - Uses world-space bounds that match the active simulation area (`CULL_DISTANCE`) for consistent cell context.
 
+### Profiler Overlay
+
+- A new **Profiler** overlay can be toggled from the in-game debug panel.
+- Shows frame-time diagnostics (`FRAME_TIME`, `FPS`) plus per-schedule timing breakdown:
+  - Update Group 1 (input/core ECS)
+  - Update Group 2A (mesh/camera sync)
+  - Update Group 2B (overlay/player systems)
+  - FixedUpdate timing (physics/grid/gravity)
+  - PostUpdate timing (contact/impact processing)
+- Intended as a lightweight in-game performance aid for tuning simulation and rendering behavior.
+
 ### Culling Boundary Visualization
 
 - **Visual**: Yellow circle with `CULL_DISTANCE` radius at origin
@@ -394,6 +405,7 @@ Open from the pause menu (**DEBUG OVERLAYS** button). Appears in the top-right c
 | Ship Outline          | OFF     | HP-tinted polygon edges + nose indicator over the ship fill     |
 | Projectile Outline    | OFF     | Yellow gizmo circles over projectile disc fills                  |
 | Spatial Grid          | OFF     | KD-tree split-cell lines for spatial partition debugging         |
+| Profiler              | OFF     | Frame ms/FPS and Update/Fixed/Post timing breakdown             |
 | Stats Overlay         | OFF     | Live/Culled/Merged/Split/Destroyed simulation counters           |
 | Physics Inspector     | OFF     | Entity IDs, velocities, and active contact counts                |
 

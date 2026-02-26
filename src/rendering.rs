@@ -44,8 +44,9 @@ use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{PlayerLives, PlayerScore, PrimaryWeaponLevel};
-use crate::simulation::SimulationStats;
+use crate::simulation::{ProfilerStats, SimulationStats};
 use crate::spatial_partition::SpatialGrid;
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::{ReadRapierContext, Velocity};
@@ -78,6 +79,8 @@ pub struct OverlayState {
     pub show_projectile_outline: bool,
     /// Draw spatial partition split-cell lines from the KD-tree index.
     pub show_debug_grid: bool,
+    /// Show in-game profiler timings overlay.
+    pub show_profiler: bool,
     /// Show the simulation statistics overlay (Live/Culled/Merged/Split/Destroyed).
     pub show_stats: bool,
     /// Show the physics inspector overlay (entity IDs, velocities, contacts).
@@ -122,6 +125,10 @@ pub struct OreHudDisplay;
 #[derive(Component)]
 pub struct PhysicsInspectorDisplay;
 
+/// Marker for the profiler text node.
+#[derive(Component)]
+pub struct ProfilerDisplay;
+
 /// Tags a toggle button in the debug panel with the overlay field it controls.
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OverlayToggle {
@@ -134,6 +141,7 @@ pub enum OverlayToggle {
     AimIndicator,
     ProjectileOutline,
     DebugGrid,
+    Profiler,
     StatsOverlay,
     PhysicsInspector,
 }
@@ -151,6 +159,7 @@ impl OverlayToggle {
             Self::AimIndicator => state.show_aim_indicator,
             Self::ProjectileOutline => state.show_projectile_outline,
             Self::DebugGrid => state.show_debug_grid,
+            Self::Profiler => state.show_profiler,
             Self::StatsOverlay => state.show_stats,
             Self::PhysicsInspector => state.show_physics_inspector,
         }
@@ -170,6 +179,7 @@ impl OverlayToggle {
                 state.show_projectile_outline = !state.show_projectile_outline;
             }
             Self::DebugGrid => state.show_debug_grid = !state.show_debug_grid,
+            Self::Profiler => state.show_profiler = !state.show_profiler,
             Self::StatsOverlay => state.show_stats = !state.show_stats,
             Self::PhysicsInspector => {
                 state.show_physics_inspector = !state.show_physics_inspector;
@@ -189,6 +199,7 @@ impl OverlayToggle {
             Self::AimIndicator => "Aim Indicator",
             Self::ProjectileOutline => "Projectile Outline",
             Self::DebugGrid => "Spatial Grid",
+            Self::Profiler => "Profiler",
             Self::StatsOverlay => "Stats Overlay",
             Self::PhysicsInspector => "Physics Inspector",
         }
@@ -536,6 +547,37 @@ pub fn setup_physics_inspector_text(
         });
 }
 
+/// Startup: spawn profiler text overlay (hidden by default).
+pub fn setup_profiler_text(
+    mut commands: Commands,
+    config: Res<PhysicsConfig>,
+    font: Res<GameFont>,
+) {
+    let row_h = config.stats_font_size + 6.0;
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(10.0),
+                top: Val::Px(10.0 + row_h * 12.0),
+                ..default()
+            },
+            ProfilerDisplay,
+            Visibility::Hidden,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Profiler\n(waiting for timing samples...)"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: (config.stats_font_size - 3.0).max(10.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(0.88, 0.95, 0.75)),
+            ));
+        });
+}
+
 // ── Startup: debug panel ──────────────────────────────────────────────────────
 
 /// Spawn the debug overlay panel (hidden until the user presses ESC).
@@ -554,6 +596,7 @@ pub fn setup_debug_panel(mut commands: Commands, font: Res<GameFont>) {
         (OverlayToggle::ShipOutline, false),
         (OverlayToggle::ProjectileOutline, false),
         (OverlayToggle::DebugGrid, false),
+        (OverlayToggle::Profiler, false),
         (OverlayToggle::StatsOverlay, false),
         (OverlayToggle::PhysicsInspector, false),
     ];
@@ -753,6 +796,24 @@ pub fn sync_physics_inspector_visibility_system(
     }
 }
 
+/// Show or hide the profiler overlay based on [`OverlayState`].
+pub fn sync_profiler_visibility_system(
+    overlay: Res<OverlayState>,
+    mut query: Query<&mut Visibility, With<ProfilerDisplay>>,
+) {
+    if !overlay.is_changed() {
+        return;
+    }
+    let vis = if overlay.show_profiler {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    for mut v in query.iter_mut() {
+        *v = vis;
+    }
+}
+
 // ── Update: stats text ────────────────────────────────────────────────────────
 
 /// Refresh the stats text content each frame.
@@ -849,6 +910,46 @@ pub fn physics_inspector_display_system(
     }
 
     let display = lines.join("\n");
+    for children in parent_query.iter() {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                *text = Text::new(display.clone());
+            }
+        }
+    }
+}
+
+/// Refresh profiler text with frame-time and schedule timing breakdown.
+pub fn profiler_display_system(
+    overlay: Res<OverlayState>,
+    profiler: Res<ProfilerStats>,
+    diagnostics: Res<DiagnosticsStore>,
+    parent_query: Query<&Children, With<ProfilerDisplay>>,
+    mut text_query: Query<&mut Text>,
+) {
+    if !overlay.show_profiler {
+        return;
+    }
+
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(0.0);
+    let frame_ms = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FRAME_TIME)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(0.0);
+
+    let display = format!(
+        "Profiler\nFrame: {frame_ms:.2} ms ({fps:.1} FPS)\n\nECS/Update\n  Group1(Input+Core): {g1:.2} ms\n  Group2A(Mesh+Camera): {g2a:.2} ms\n  Group2B(Overlay+Player): {g2b:.2} ms\n  Update Total: {ut:.2} ms\n\nPhysics\n  FixedUpdate: {fx:.2} ms\n  PostUpdate: {po:.2} ms",
+        g1 = profiler.update_group1_ms,
+        g2a = profiler.update_group2a_ms,
+        g2b = profiler.update_group2b_ms,
+        ut = profiler.update_total_ms,
+        fx = profiler.fixed_update_ms,
+        po = profiler.post_update_ms,
+    );
+
     for children in parent_query.iter() {
         for child in children.iter() {
             if let Ok(mut text) = text_query.get_mut(child) {
