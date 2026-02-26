@@ -468,24 +468,26 @@ pub fn missile_asteroid_hit_system(
                     break;
                 };
 
-                let centroid =
-                    largest_hull.iter().copied().sum::<Vec2>() / largest_hull.len() as f32;
-                let perp_axis = Vec2::new(-split_axis.y, split_axis.x).normalize_or_zero();
-                let spiral_axis = Vec2::from_angle(0.73 * (split_attempt + 1) as f32);
-                let candidate_axes = [split_axis, perp_axis, spiral_axis];
+                let Some((split_origin, base_normal)) =
+                    impact_radiating_split_basis(&largest_hull, missile_pos, split_axis)
+                else {
+                    break;
+                };
+
+                let spread = 0.42 * (split_attempt as f32 + 1.0);
+                let base_angle = base_normal.to_angle();
+                let candidate_axes = [
+                    base_normal,
+                    Vec2::from_angle(base_angle + spread),
+                    Vec2::from_angle(base_angle - spread),
+                    Vec2::new(-base_normal.y, base_normal.x).normalize_or_zero(),
+                ];
 
                 let mut split_result: Option<(Vec<Vec2>, Vec<Vec2>)> = None;
                 for axis in candidate_axes {
                     if axis.length_squared() < 1e-5 {
                         continue;
                     }
-                    let split_origin = impact_weighted_split_origin(
-                        &largest_hull,
-                        centroid,
-                        axis,
-                        missile_pos,
-                        split_attempt,
-                    );
                     let (front_raw, back_raw) =
                         split_convex_polygon_world(&largest_hull, split_origin, axis);
                     let Some(front_hull) = normalized_fragment_hull(&front_raw) else {
@@ -993,43 +995,69 @@ fn normalized_fragment_hull(raw: &[Vec2]) -> Option<Vec<Vec2>> {
     Some(hull)
 }
 
-/// Compute a split-plane origin biased by impact position.
+fn closest_point_on_segment(a: Vec2, b: Vec2, p: Vec2) -> Vec2 {
+    let ab = b - a;
+    let ab_len_sq = ab.length_squared();
+    if ab_len_sq <= 1e-8 {
+        return a;
+    }
+    let t = ((p - a).dot(ab) / ab_len_sq).clamp(0.0, 1.0);
+    a + ab * t
+}
+
+fn closest_point_on_hull(hull: &[Vec2], p: Vec2) -> Option<Vec2> {
+    if hull.len() < 2 {
+        return None;
+    }
+
+    let mut best = None::<(Vec2, f32)>;
+    for i in 0..hull.len() {
+        let a = hull[i];
+        let b = hull[(i + 1) % hull.len()];
+        let c = closest_point_on_segment(a, b, p);
+        let d2 = c.distance_squared(p);
+        match best {
+            Some((_, best_d2)) if d2 >= best_d2 => {}
+            _ => best = Some((c, d2)),
+        }
+    }
+    best.map(|(point, _)| point)
+}
+
+/// Build split parameters so cut lines visually radiate from the impact side.
 ///
-/// Center hits produce near-centroid origins (more equal splits).
-/// Edge hits bias the plane toward the impact side (more asymmetric splits).
-fn impact_weighted_split_origin(
+/// - `split_origin`: impact point projected to hull, nudged inward.
+/// - `base_normal`: normal perpendicular to the inward ray from impact to centroid.
+fn impact_radiating_split_basis(
     hull: &[Vec2],
-    centroid: Vec2,
-    axis: Vec2,
     impact_point: Vec2,
-    split_iteration: u32,
-) -> Vec2 {
-    if hull.len() < 3 || axis.length_squared() < 1e-6 {
-        return centroid;
+    fallback_axis: Vec2,
+) -> Option<(Vec2, Vec2)> {
+    if hull.len() < 3 {
+        return None;
     }
 
-    let mut min_proj = f32::MAX;
-    let mut max_proj = -f32::MAX;
-    for v in hull {
-        let p = v.dot(axis);
-        min_proj = min_proj.min(p);
-        max_proj = max_proj.max(p);
+    let centroid = hull.iter().copied().sum::<Vec2>() / hull.len() as f32;
+    let edge_hit = closest_point_on_hull(hull, impact_point).unwrap_or(centroid);
+
+    let mut inward = (centroid - edge_hit).normalize_or_zero();
+    if inward == Vec2::ZERO {
+        inward = fallback_axis.normalize_or_zero();
+    }
+    if inward == Vec2::ZERO {
+        inward = Vec2::Y;
     }
 
-    let span = max_proj - min_proj;
-    if span <= 1e-4 {
-        return centroid;
+    let split_origin = edge_hit + inward * 1.5;
+    let mut base_normal = Vec2::new(-inward.y, inward.x).normalize_or_zero();
+    if base_normal == Vec2::ZERO {
+        base_normal = fallback_axis.normalize_or_zero();
+    }
+    if base_normal == Vec2::ZERO {
+        base_normal = Vec2::X;
     }
 
-    let impact_proj = impact_point.dot(axis).clamp(min_proj, max_proj);
-    let rel = ((impact_proj - min_proj) / span).clamp(0.0, 1.0);
-    let edge_bias = (rel - 0.5) * 2.0;
-    let half_span = span * 0.5;
-
-    // Strongest on the first split, then decays as recursive splits continue.
-    let iteration_decay = 1.0 / (split_iteration as f32 + 1.0);
-    let max_offset = half_span * 0.45 * iteration_decay;
-    centroid + axis * (edge_bias * max_offset)
+    Some((split_origin, base_normal))
 }
 
 fn even_mass_partition(total_mass: u32, piece_count: usize) -> Vec<u32> {
@@ -1094,52 +1122,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn impact_weighted_split_origin_center_hit_near_equal_split() {
+    fn impact_radiating_split_basis_anchors_near_impact_edge() {
         let square = vec![
             Vec2::new(-10.0, -10.0),
             Vec2::new(10.0, -10.0),
             Vec2::new(10.0, 10.0),
             Vec2::new(-10.0, 10.0),
         ];
-        let centroid = Vec2::ZERO;
-        let axis = Vec2::X;
-        let origin = impact_weighted_split_origin(&square, centroid, axis, Vec2::ZERO, 0);
-
-        let (a_raw, b_raw) = split_convex_polygon_world(&square, origin, axis);
-        let a = compute_convex_hull_from_points(&a_raw).expect("front hull");
-        let b = compute_convex_hull_from_points(&b_raw).expect("back hull");
-        let area_a = polygon_area(&a);
-        let area_b = polygon_area(&b);
-        let ratio = area_a / (area_a + area_b);
+        let impact = Vec2::new(20.0, 2.0);
+        let (origin, _) = impact_radiating_split_basis(&square, impact, Vec2::X)
+            .expect("split basis should exist for convex hull");
 
         assert!(
-            (ratio - 0.5).abs() < 0.08,
-            "center impact should produce near-equal split, ratio={ratio}"
+            origin.x > 7.0,
+            "origin should stay near impact-side edge, got x={}",
+            origin.x
+        );
+        assert!(
+            origin.y > -9.5 && origin.y < 9.5,
+            "origin should stay inside hull y-bounds, got y={}",
+            origin.y
         );
     }
 
     #[test]
-    fn impact_weighted_split_origin_edge_hit_is_asymmetric() {
+    fn impact_radiating_split_basis_aligns_cut_with_impact_ray() {
         let square = vec![
             Vec2::new(-10.0, -10.0),
             Vec2::new(10.0, -10.0),
             Vec2::new(10.0, 10.0),
             Vec2::new(-10.0, 10.0),
         ];
-        let centroid = Vec2::ZERO;
-        let axis = Vec2::X;
-        let origin = impact_weighted_split_origin(&square, centroid, axis, Vec2::new(10.0, 0.0), 0);
 
-        let (a_raw, b_raw) = split_convex_polygon_world(&square, origin, axis);
-        let a = compute_convex_hull_from_points(&a_raw).expect("front hull");
-        let b = compute_convex_hull_from_points(&b_raw).expect("back hull");
-        let area_a = polygon_area(&a);
-        let area_b = polygon_area(&b);
-        let ratio = area_a / (area_a + area_b);
+        let impact = Vec2::new(20.0, 0.0);
+        let (origin, normal) = impact_radiating_split_basis(&square, impact, Vec2::X)
+            .expect("split basis should exist for convex hull");
+
+        let centroid = square.iter().copied().sum::<Vec2>() / square.len() as f32;
+        let impact_ray = (centroid - origin).normalize_or_zero();
+        let cut_direction = Vec2::new(-normal.y, normal.x).normalize_or_zero();
+        let alignment = impact_ray.dot(cut_direction).abs();
 
         assert!(
-            (ratio - 0.5).abs() > 0.15,
-            "edge impact should produce asymmetric split, ratio={ratio}"
+            alignment > 0.9,
+            "cut direction should align with impact ray (alignment={alignment})"
         );
     }
 
