@@ -45,6 +45,7 @@ use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{PlayerLives, PlayerScore, PrimaryWeaponLevel};
 use crate::simulation::SimulationStats;
+use crate::spatial_partition::SpatialGrid;
 use bevy::ecs::hierarchy::ChildSpawnerCommands;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::{ReadRapierContext, Velocity};
@@ -75,6 +76,8 @@ pub struct OverlayState {
     pub show_aim_indicator: bool,
     /// Draw gizmo circle outlines over the `Mesh2d` projectile fills.
     pub show_projectile_outline: bool,
+    /// Draw spatial partition split-cell lines from the KD-tree index.
+    pub show_debug_grid: bool,
     /// Show the simulation statistics overlay (Live/Culled/Merged/Split/Destroyed).
     pub show_stats: bool,
     /// Show the physics inspector overlay (entity IDs, velocities, contacts).
@@ -130,6 +133,7 @@ pub enum OverlayToggle {
     ShipOutline,
     AimIndicator,
     ProjectileOutline,
+    DebugGrid,
     StatsOverlay,
     PhysicsInspector,
 }
@@ -146,6 +150,7 @@ impl OverlayToggle {
             Self::ShipOutline => state.show_ship_outline,
             Self::AimIndicator => state.show_aim_indicator,
             Self::ProjectileOutline => state.show_projectile_outline,
+            Self::DebugGrid => state.show_debug_grid,
             Self::StatsOverlay => state.show_stats,
             Self::PhysicsInspector => state.show_physics_inspector,
         }
@@ -164,6 +169,7 @@ impl OverlayToggle {
             Self::ProjectileOutline => {
                 state.show_projectile_outline = !state.show_projectile_outline;
             }
+            Self::DebugGrid => state.show_debug_grid = !state.show_debug_grid,
             Self::StatsOverlay => state.show_stats = !state.show_stats,
             Self::PhysicsInspector => {
                 state.show_physics_inspector = !state.show_physics_inspector;
@@ -182,6 +188,7 @@ impl OverlayToggle {
             Self::ShipOutline => "Ship Outline",
             Self::AimIndicator => "Aim Indicator",
             Self::ProjectileOutline => "Projectile Outline",
+            Self::DebugGrid => "Spatial Grid",
             Self::StatsOverlay => "Stats Overlay",
             Self::PhysicsInspector => "Physics Inspector",
         }
@@ -546,6 +553,7 @@ pub fn setup_debug_panel(mut commands: Commands, font: Res<GameFont>) {
         (OverlayToggle::AimIndicator, false),
         (OverlayToggle::ShipOutline, false),
         (OverlayToggle::ProjectileOutline, false),
+        (OverlayToggle::DebugGrid, false),
         (OverlayToggle::StatsOverlay, false),
         (OverlayToggle::PhysicsInspector, false),
     ];
@@ -900,6 +908,8 @@ pub fn gizmo_rendering_system(
     query: Query<(&Transform, &Vertices, &GravityForce, &Velocity), With<Asteroid>>,
     stats: Res<SimulationStats>,
     config: Res<PhysicsConfig>,
+    grid: Res<SpatialGrid>,
+    mut split_lines: Local<Vec<(Vec2, Vec2)>>,
     overlay: Res<OverlayState>,
 ) {
     // ── Wireframe outlines (semi-transparent additive overlay) ─────────────────
@@ -945,6 +955,17 @@ pub fn gizmo_rendering_system(
                 gizmos.line_2d(pos, tip, Color::srgb(0.2, 0.8, 1.0));
                 gizmos.circle_2d(tip, 1.5, Color::srgb(0.2, 0.8, 1.0));
             }
+        }
+    }
+
+    // ── Spatial partition split cells (KD-tree) ─────────────────────────────
+    if overlay.show_debug_grid {
+        let half = config.cull_distance;
+        let min = Vec2::new(-half, -half);
+        let max = Vec2::new(half, half);
+        grid.collect_debug_split_lines(min, max, &mut split_lines);
+        for (a, b) in split_lines.iter().copied() {
+            gizmos.line_2d(a, b, Color::srgba(0.35, 0.95, 0.35, 0.45));
         }
     }
 

@@ -141,6 +141,72 @@ impl SpatialGrid {
         idx
     }
 
+    // ── Debug visualization API ─────────────────────────────────────────────
+
+    /// Collect KD-tree split lines for debug rendering.
+    ///
+    /// `min`/`max` define the world-space bounding rectangle used as the root
+    /// region for recursive KD split visualization.
+    pub fn collect_debug_split_lines(&self, min: Vec2, max: Vec2, out: &mut Vec<(Vec2, Vec2)>) {
+        out.clear();
+        if self.root == NULL_IDX {
+            return;
+        }
+        self.collect_debug_split_lines_recursive(self.root, min, max, 0, out);
+    }
+
+    fn collect_debug_split_lines_recursive(
+        &self,
+        idx: u32,
+        min: Vec2,
+        max: Vec2,
+        depth: usize,
+        out: &mut Vec<(Vec2, Vec2)>,
+    ) {
+        if idx == NULL_IDX {
+            return;
+        }
+
+        let node = &self.nodes[idx as usize];
+        let axis = depth & 1;
+
+        if axis == 0 {
+            let x = node.pos.x;
+            out.push((Vec2::new(x, min.y), Vec2::new(x, max.y)));
+            self.collect_debug_split_lines_recursive(
+                node.left,
+                min,
+                Vec2::new(x, max.y),
+                depth + 1,
+                out,
+            );
+            self.collect_debug_split_lines_recursive(
+                node.right,
+                Vec2::new(x, min.y),
+                max,
+                depth + 1,
+                out,
+            );
+        } else {
+            let y = node.pos.y;
+            out.push((Vec2::new(min.x, y), Vec2::new(max.x, y)));
+            self.collect_debug_split_lines_recursive(
+                node.left,
+                min,
+                Vec2::new(max.x, y),
+                depth + 1,
+                out,
+            );
+            self.collect_debug_split_lines_recursive(
+                node.right,
+                Vec2::new(min.x, y),
+                max,
+                depth + 1,
+                out,
+            );
+        }
+    }
+
     // ── Insert / build API (used by tests only) ───────────────────────────────
 
     /// Clear the index, ready for a new set of inserts.

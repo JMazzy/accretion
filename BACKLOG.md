@@ -2,7 +2,7 @@
 
 Planned features, improvements, and known limitations. Completed items are removed; see [FEATURES.md](FEATURES.md) and [CHANGELOG.md](CHANGELOG.md) for implemented history.
 
-Last updated: February 25, 2026.
+Last updated: February 26, 2026.
 
 ## Essential Features
 
@@ -24,7 +24,6 @@ Last updated: February 25, 2026.
 
 - [ ] **Profiler integration** — Frame-time breakdown (physics, rendering, ECS)
 - [ ] **Replay/playback system** — Record and replay sessions
-- [ ] **Debug grid visualization** — Draw spatial partition cells
 - [ ] **Golden test baselines** — Frame-log snapshots in `tests/golden/`; diff on runs
 
 ## Upgrade Bevy versions When Available

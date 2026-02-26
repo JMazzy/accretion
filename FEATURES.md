@@ -198,6 +198,12 @@ Live: XX | Culled: YY | Merged: ZZ
   - A small sample of asteroid entity IDs with position/velocity/contact counts
 - Useful for live debugging of contact/velocity behavior without restarting in test mode.
 
+### Spatial Grid Overlay
+
+- A new **Spatial Grid** debug overlay can be toggled from the in-game debug panel.
+- Renders KD-tree split-cell lines used by the `SpatialGrid` neighbor index.
+- Uses world-space bounds that match the active simulation area (`CULL_DISTANCE`) for consistent cell context.
+
 ### Culling Boundary Visualization
 
 - **Visual**: Yellow circle with `CULL_DISTANCE` radius at origin
@@ -387,7 +393,9 @@ Open from the pause menu (**DEBUG OVERLAYS** button). Appears in the top-right c
 | Aim Indicator         | OFF     | Orange line + dot showing current fire direction                 |
 | Ship Outline          | OFF     | HP-tinted polygon edges + nose indicator over the ship fill     |
 | Projectile Outline    | OFF     | Yellow gizmo circles over projectile disc fills                  |
+| Spatial Grid          | OFF     | KD-tree split-cell lines for spatial partition debugging         |
 | Stats Overlay         | OFF     | Live/Culled/Merged/Split/Destroyed simulation counters           |
+| Physics Inspector     | OFF     | Entity IDs, velocities, and active contact counts                |
 
 ## UI/UX Notes
 

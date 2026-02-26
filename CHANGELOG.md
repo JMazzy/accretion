@@ -1,5 +1,30 @@
 # Accretion Changelog
 
+## Debug Grid Visualization — February 26, 2026
+
+### Added spatial partition KD-tree split-cell overlay in debug panel
+
+Implemented backlog item **Debug grid visualization**.
+
+**What changed**:
+- Added `OverlayState::show_debug_grid` and `OverlayToggle::DebugGrid` in `src/rendering.rs`.
+- Added a **Spatial Grid** toggle row to the in-game debug overlay panel.
+- Added KD-tree debug API in `src/spatial_partition.rs`:
+  - `SpatialGrid::collect_debug_split_lines`
+  - recursive split-line traversal over tree regions
+- Extended `gizmo_rendering_system` to draw split-cell lines when the toggle is enabled.
+
+**Backlog update**:
+- Removed **Debug grid visualization** from pending `BACKLOG.md` items.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+
+---
+
 ## Physics Inspector Overlay — February 26, 2026
 
 ### Added in-game physics inspector toggle with IDs, velocities, and contacts
