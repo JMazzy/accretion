@@ -14,14 +14,49 @@ Last updated: February 26, 2026.
 
 ### Gameplay Foundation (Combat + AI)
 
-- [ ] 
+- [ ] **Tractor control mode: ship-forward cone + Z/X semantics**
+	- Decouple tractor targeting from primary-weapon aim direction.
+	- Beam origin/direction should be based on ship forward with a configurable front cone.
+	- Keyboard controls:
+		- `Z` only → pull toward ship
+		- `X` only → push away from ship
+		- `Z`+`X` → hold/freeze relative to ship (bounded/stable behavior only)
+	- Acceptance: tractor behavior is deterministic and control mapping is consistent across frames (no oscillation/jitter spikes).
 
-- [ ] **Missile Buff**
-    - Missiles work and look good but feel very weak compared to an even moderately upgraded primary weapon. This aims to fix that.
-    - Change missile behavior to act opposite to what the primary weapon does - instead of chipping, it _splits_ asteroids.
-    - Leveling - level 1 splits the asteroid in two pieces (one cut), additional levels lead to additional pieces (level 2 -> 3 pieces, level 3 -> 4 pieces, etc.)
-    - Split piece size is based on impact point. Impact straight on leads to near-equal halves, impact to one side leads to different size pieces.
-    - If level >= size of asteroid, the result should be total decomposition into unit asteroids.
+- [ ] **Tractor hold/freeze stability pass** `depends on Tractor control mode: ship-forward cone + Z/X semantics`
+	- Define freeze behavior mathematically (target offset + damping/velocity clamp) so it remains predictable under gravity.
+	- Add explicit safeguards for mass/speed/range limits while frozen.
+	- Acceptance: frozen asteroids remain controllable without runaway acceleration or physics explosions in stress scenarios.
+
+- [ ] **Tractor beam particles (light blue force-direction VFX)** `depends on Tractor control mode: ship-forward cone + Z/X semantics`
+	- Emit light-blue particles along the applied force direction (inward/outward).
+	- Show directional distinction for pull/push and visually indicate freeze mode.
+	- Acceptance: particles are readable at normal zoom and do not materially degrade frame-time.
+
+- [ ] **Missile split model v1 (replace chip path)**
+	- Replace missile chip behavior with split-based destruction behavior.
+	- Preserve existing collision/event ownership and score integrity.
+	- Acceptance: missiles never invoke chip logic; impacts always enter split/decompose flow.
+
+- [ ] **Missile split scaling by level (pieces = level + 1)** `depends on Missile split model v1 (replace chip path)`
+	- Level 1 → 2 pieces, Level 2 → 3 pieces, Level 3 → 4 pieces, etc.
+	- Piece count must be clamped for stability/performance at high levels.
+	- Acceptance: per-level piece count is correct and deterministic under repeated test runs.
+
+- [ ] **Missile split geometry weighted by impact point** `depends on Missile split model v1 (replace chip path)`
+	- Center hits produce near-equal splits; edge hits produce asymmetric mass distribution.
+	- Keep resulting polygons valid/convex and physics-stable.
+	- Acceptance: impact-side weighting is observable and generated fragments remain simulation-safe.
+
+- [ ] **Missile full decomposition rule** `depends on Missile split scaling by level (pieces = level + 1)`
+	- If missile level >= asteroid size, decompose fully into unit asteroids.
+	- Ensure decomposition path respects existing ore/scoring/drop rules.
+	- Acceptance: qualifying impacts always produce full unit decomposition and no orphan/invalid entities.
+
+- [ ] **Missile buff balance + telemetry pass** `depends on Missile split scaling by level (pieces = level + 1)`
+	- Tune damage cadence and perceived power versus upgraded blaster.
+	- Add/validate frame-log metrics for missile outcome distribution (split/decompose/TTK proxy).
+	- Acceptance: missiles feel competitively strong versus mid-tier blaster without trivializing combat.
 
 - [ ] **Enemy ships: foundation + spawning**
 	- Add enemy entity type, rendering, HP, and basic movement/targeting toward player.
