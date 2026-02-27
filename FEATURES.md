@@ -12,7 +12,7 @@
 | **D**                       | Rotate ship right                                                              |
 | **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
-| **C**                       | Fire ion-cannon shot forward from ship nose (stuns enemy ships on hit)         |
+| **C**                       | Fire ion-cannon shot in the current aim direction (stuns enemy ships on hit)    |
 | **Hold Q**                   | Tractor beam pull (ship-forward cone targets nearby asteroids)                   |
 | **Hold E**                   | Tractor beam push (same cone and envelope, opposite force direction)             |
 | **Hold Q + E**               | Tractor beam freeze (damps relative motion to hold target offsets stably)        |

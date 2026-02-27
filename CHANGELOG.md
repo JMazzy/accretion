@@ -1,5 +1,24 @@
 # Accretion Changelog
 
+## Weapon Pass: Ion Cannon Retune + Aim Parity (P0) — February 27, 2026
+
+### Larger ion shot, faster cadence, and unified aim-direction firing
+
+**What changed**:
+- Updated `ion_cannon_fire_system` in `src/player/ion_cannon.rs`:
+  - Ion firing direction now uses shared `AimDirection` (same direction source as primary weapon), with ship-forward fallback only when aim is absent.
+  - Spawn offset and velocity now follow this unified aim direction.
+- Retuned ion shot presentation/interaction:
+  - Increased ion shot mesh size in `attach_ion_cannon_shot_mesh_system`.
+  - Increased ion shot collider radius (`ION_CANNON_SHOT_COLLIDER_RADIUS`) in `src/constants.rs`.
+  - Reduced ion cooldown (`ION_CANNON_COOLDOWN_SECS`) in `src/constants.rs`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Test Mode Stability + Scenario Menu Copy Refresh — February 27, 2026
 
 ### Fixed unfocused test timeout behavior and aligned scenario descriptions with refreshed functionality

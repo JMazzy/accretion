@@ -590,7 +590,7 @@ pub const ION_CANNON_BASE_STUN_SECS: f32 = 3.0;
 pub const ION_CANNON_STUN_SECS_PER_LEVEL: f32 = 1.0;
 
 /// Cooldown (seconds) between Ion Cannon activations.
-pub const ION_CANNON_COOLDOWN_SECS: f32 = 3.0;
+pub const ION_CANNON_COOLDOWN_SECS: f32 = 2.0;
 
 /// Speed (u/s) of an ion-cannon shot.
 pub const ION_CANNON_SHOT_SPEED: f32 = 340.0;
@@ -602,7 +602,7 @@ pub const ION_CANNON_SHOT_LIFETIME: f32 = 3.0;
 pub const ION_CANNON_SHOT_MAX_DIST: f32 = 2200.0;
 
 /// Collider radius (u) of an ion-cannon shot.
-pub const ION_CANNON_SHOT_COLLIDER_RADIUS: f32 = 8.0;
+pub const ION_CANNON_SHOT_COLLIDER_RADIUS: f32 = 11.0;
 
 // ── Tractor Beam Upgrades ─────────────────────────────────────────────────────
 

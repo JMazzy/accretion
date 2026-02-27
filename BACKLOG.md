@@ -76,7 +76,7 @@ Last updated: February 27, 2026.
 
 ### Weapon Enhancements
 
-- [ ] **Ion cannon retune + aim parity with primary weapon**
+- [x] **Ion cannon retune + aim parity with primary weapon**
 	- Increase ion shot visual/collider size.
 	- Reduce ion cannon cooldown.
 	- Change ion firing direction source to match primary weapon aiming direction.

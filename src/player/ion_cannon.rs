@@ -1,4 +1,4 @@
-use super::state::{IonCannonLevel, Player};
+use super::state::{AimDirection, IonCannonLevel, Player};
 use crate::asteroid_rendering::filled_polygon_mesh;
 use crate::enemy::{Enemy, EnemyStun, EnemyTier};
 use crate::particles::spawn_ion_particles;
@@ -52,6 +52,7 @@ pub fn ion_cannon_fire_system(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    aim: Res<AimDirection>,
     mut cooldown: ResMut<IonCannonCooldown>,
     q_player: Query<&Transform, With<Player>>,
 ) {
@@ -65,16 +66,17 @@ pub fn ion_cannon_fire_system(
         return;
     };
 
-    let forward = player_transform
-        .rotation
-        .mul_vec3(Vec3::Y)
-        .truncate()
-        .normalize_or_zero();
-    if forward == Vec2::ZERO {
+    let ship_forward = player_transform.rotation.mul_vec3(Vec3::Y).truncate();
+    let fire_dir = if aim.0.length_squared() > 0.01 {
+        aim.0.normalize_or_zero()
+    } else {
+        ship_forward.normalize_or_zero()
+    };
+    if fire_dir == Vec2::ZERO {
         return;
     }
 
-    let spawn_pos = player_transform.translation.truncate() + forward * 14.0;
+    let spawn_pos = player_transform.translation.truncate() + fire_dir * 14.0;
 
     commands.spawn((
         IonCannonShot {
@@ -86,7 +88,7 @@ pub fn ion_cannon_fire_system(
         Visibility::default(),
         RigidBody::KinematicVelocityBased,
         Velocity {
-            linvel: forward * crate::constants::ION_CANNON_SHOT_SPEED,
+            linvel: fire_dir * crate::constants::ION_CANNON_SHOT_SPEED,
             angvel: 0.0,
         },
         Collider::ball(crate::constants::ION_CANNON_SHOT_COLLIDER_RADIUS),
@@ -218,8 +220,8 @@ pub fn attach_ion_cannon_shot_mesh_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    const ION_RADIUS: f32 = 2.0;
-    const ION_LENGTH: f32 = 10.0;
+    const ION_RADIUS: f32 = 3.0;
+    const ION_LENGTH: f32 = 14.0;
 
     let vertices = elongated_projectile_vertices(ION_RADIUS, ION_LENGTH, 16);
     let mesh = meshes.add(filled_polygon_mesh(&vertices));
