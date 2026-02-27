@@ -25,7 +25,7 @@ The "Accretion" project is an ECS-based **asteroid simulation engine** built on 
   - `src/spatial_partition.rs` - Spatial grid for O(N·K) neighbor lookup
   - `src/graphics.rs` - Camera/rendering setup
   - `src/player/` - Player ship, controls, combat, rendering
-  - `src/testing.rs` - Automated test scenarios
+   - `src/testing.rs` + `src/testing/` - Automated test framework and scenarios
 - **Entity Types**: All asteroids are unified entities with local-space vertices.
   - Spawn as triangles or polygons depending on configuration.
   - Composite asteroids formed when 2+ asteroids touch and merge.

@@ -19,19 +19,12 @@ mod rendering;
 mod save;
 mod simulation;
 mod spatial_partition;
+mod test_mode;
 mod testing;
 
 use config::PhysicsConfig;
 use menu::{GameState, SelectedScenario};
-use testing::{
-    spawn_test_all_three, spawn_test_baseline_100, spawn_test_culling_verification,
-    spawn_test_enemy_combat_scripted, spawn_test_gentle_approach, spawn_test_gravity,
-    spawn_test_gravity_boundary, spawn_test_high_speed_collision, spawn_test_kdtree_only,
-    spawn_test_large_small_pair, spawn_test_mixed_size_asteroids, spawn_test_near_miss,
-    spawn_test_orbit_pair, spawn_test_passing_asteroid, spawn_test_perf_benchmark,
-    spawn_test_soft_boundary_only, spawn_test_three_triangles, spawn_test_tidal_only,
-    spawn_test_two_triangles, TestConfig,
-};
+use testing::TestConfig;
 
 /// Spawn the initial asteroid world for the chosen scenario.
 ///
@@ -67,6 +60,32 @@ fn setup_physics_config(mut config: Query<&mut RapierConfiguration>) {
     for mut cfg in config.iter_mut() {
         cfg.gravity = Vec2::ZERO;
     }
+}
+
+fn add_playing_transition_hud_systems(app: &mut App) {
+    add_playing_transition_hud_systems_for(app, GameState::ScenarioSelect);
+    add_playing_transition_hud_systems_for(app, GameState::LoadGameMenu);
+}
+
+fn add_playing_transition_hud_systems_for(app: &mut App, exited: GameState) {
+    app.add_systems(
+        OnTransition {
+            exited,
+            entered: GameState::Playing,
+        },
+        (
+            rendering::setup_boundary_ring,
+            rendering::setup_debug_line_layers,
+            rendering::setup_hud_score,
+            rendering::setup_lives_hud,
+            rendering::setup_missile_hud,
+            rendering::setup_ore_hud,
+            rendering::setup_stats_text,
+            rendering::setup_physics_inspector_text,
+            rendering::setup_profiler_text,
+            rendering::setup_debug_panel,
+        ),
+    );
 }
 
 fn main() {
@@ -114,44 +133,11 @@ fn main() {
         ),
     )
     .add_systems(Update, config::hot_reload_physics_config)
-    // Game-world setup: runs only on the ScenarioSelect → Playing transition (not on
-    // Paused → Playing resume), so world entities and HUD are spawned exactly once per session.
-    .add_systems(
-        OnTransition {
-            exited: GameState::ScenarioSelect,
-            entered: GameState::Playing,
-        },
-        (
-            rendering::setup_boundary_ring,
-            rendering::setup_debug_line_layers,
-            rendering::setup_hud_score,
-            rendering::setup_lives_hud,
-            rendering::setup_missile_hud,
-            rendering::setup_ore_hud,
-            rendering::setup_stats_text,
-            rendering::setup_physics_inspector_text,
-            rendering::setup_profiler_text,
-            rendering::setup_debug_panel,
-        ),
-    )
-    .add_systems(
-        OnTransition {
-            exited: GameState::LoadGameMenu,
-            entered: GameState::Playing,
-        },
-        (
-            rendering::setup_boundary_ring,
-            rendering::setup_debug_line_layers,
-            rendering::setup_hud_score,
-            rendering::setup_lives_hud,
-            rendering::setup_missile_hud,
-            rendering::setup_ore_hud,
-            rendering::setup_stats_text,
-            rendering::setup_physics_inspector_text,
-            rendering::setup_profiler_text,
-            rendering::setup_debug_panel,
-        ),
-    );
+    // Game-world setup: runs only on transitions into Playing so world entities and HUD are
+    // spawned exactly once per session.
+    ;
+
+    add_playing_transition_hud_systems(&mut app);
 
     // ── State and simulation ──────────────────────────────────────────────────
 
@@ -211,118 +197,7 @@ fn main() {
     // ── Test-mode wiring ──────────────────────────────────────────────────────
 
     if let Some(test_name) = test_mode {
-        let test_config = TestConfig {
-            enabled: true,
-            ..Default::default()
-        };
-        app.insert_resource(test_config);
-
-        // Add startup system based on test name
-        match test_name.as_str() {
-            "two_triangles" => app.add_systems(
-                Startup,
-                spawn_test_two_triangles.after(config::load_physics_config),
-            ),
-            "three_triangles" => app.add_systems(
-                Startup,
-                spawn_test_three_triangles.after(config::load_physics_config),
-            ),
-            "gravity" => app.add_systems(
-                Startup,
-                spawn_test_gravity.after(config::load_physics_config),
-            ),
-            "high_speed_collision" => app.add_systems(
-                Startup,
-                spawn_test_high_speed_collision.after(config::load_physics_config),
-            ),
-            "near_miss" => app.add_systems(
-                Startup,
-                spawn_test_near_miss.after(config::load_physics_config),
-            ),
-            "gentle_approach" => app.add_systems(
-                Startup,
-                spawn_test_gentle_approach.after(config::load_physics_config),
-            ),
-            "culling_verification" => app.add_systems(
-                Startup,
-                spawn_test_culling_verification.after(config::load_physics_config),
-            ),
-            "mixed_size_asteroids" => app.add_systems(
-                Startup,
-                spawn_test_mixed_size_asteroids.after(config::load_physics_config),
-            ),
-            "large_small_pair" => app.add_systems(
-                Startup,
-                spawn_test_large_small_pair.after(config::load_physics_config),
-            ),
-            "gravity_boundary" => app.add_systems(
-                Startup,
-                spawn_test_gravity_boundary.after(config::load_physics_config),
-            ),
-            "passing_asteroid" => app.add_systems(
-                Startup,
-                spawn_test_passing_asteroid.after(config::load_physics_config),
-            ),
-            "perf_benchmark" => app.add_systems(
-                Startup,
-                spawn_test_perf_benchmark.after(config::load_physics_config),
-            ),
-            "baseline_100" => app.add_systems(
-                Startup,
-                spawn_test_baseline_100.after(config::load_physics_config),
-            ),
-            "tidal_only" => app.add_systems(
-                Startup,
-                spawn_test_tidal_only.after(config::load_physics_config),
-            ),
-            "soft_boundary_only" => app.add_systems(
-                Startup,
-                spawn_test_soft_boundary_only.after(config::load_physics_config),
-            ),
-            "kdtree_only" => app.add_systems(
-                Startup,
-                spawn_test_kdtree_only.after(config::load_physics_config),
-            ),
-            "all_three" => app.add_systems(
-                Startup,
-                spawn_test_all_three.after(config::load_physics_config),
-            ),
-            "orbit_pair" => app.add_systems(
-                Startup,
-                spawn_test_orbit_pair.after(config::load_physics_config),
-            ),
-            "enemy_combat_scripted" => app.add_systems(
-                Startup,
-                (player::spawn_player, spawn_test_enemy_combat_scripted)
-                    .chain()
-                    .after(config::load_physics_config),
-            ),
-            _ => app.add_systems(
-                Startup,
-                spawn_test_two_triangles.after(config::load_physics_config),
-            ),
-        };
-
-        app.add_systems(
-            Update,
-            testing::enemy_combat_script_system.run_if(in_state(GameState::Playing)),
-        );
-
-        // Test systems must run AFTER asteroid_formation_system in PostUpdate
-        // Ensure formations happen before we verify
-        app.add_systems(
-            PostUpdate,
-            (
-                testing::test_logging_system,
-                testing::orbit_pair_calibrate_and_track_system,
-                testing::enemy_combat_observer_system,
-                testing::test_verification_system,
-            )
-                .chain()
-                .after(simulation::asteroid_formation_system),
-        );
-
-        println!("Running test: {}", test_name);
+        test_mode::configure_test_mode(&mut app, &test_name);
     }
 
     app.run();

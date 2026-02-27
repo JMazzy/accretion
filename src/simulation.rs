@@ -152,20 +152,20 @@ impl Plugin for SimulationPlugin {
                             missile_fire_system,                 // X/right-click fires a missile
                             ion_cannon_fire_system,              // C fires a forward ion shot
                             missile_acceleration_system,         // Missiles ramp toward max speed
-                            missile_trail_particles_system,      // Exhaust particles opposite velocity
-                            ion_shot_particles_system,           // Ion shot particle trail
-                            stunned_enemy_particles_system,      // Stunned enemy particle feedback
-                            aim_snap_system,                     // Snap aim after idle timeout
-                            despawn_old_projectiles_system,      // Expire old projectiles
-                            despawn_old_missiles_system,         // Expire old missiles
+                            missile_trail_particles_system, // Exhaust particles opposite velocity
+                            ion_shot_particles_system,      // Ion shot particle trail
+                            stunned_enemy_particles_system, // Stunned enemy particle feedback
+                            aim_snap_system,                // Snap aim after idle timeout
+                            despawn_old_projectiles_system, // Expire old projectiles
+                            despawn_old_missiles_system,    // Expire old missiles
                             despawn_old_ion_cannon_shots_system, // Expire old ion shots
-                            user_input_system,                   // Mouse wheel zoom
+                            user_input_system,              // Mouse wheel zoom
                         )
                             .chain(),
                         (
-                            camera_follow_system,                // Camera tracks player
-                            camera_zoom_system,                  // Apply zoom scale
-                            attach_asteroid_mesh_system,         // Attach Mesh2d to new asteroids
+                            camera_follow_system,                              // Camera tracks player
+                            camera_zoom_system,                                // Apply zoom scale
+                            attach_asteroid_mesh_system, // Attach Mesh2d to new asteroids
                             sync_asteroid_render_mode_system, // Swap fill/outline mesh on wireframe_only toggle
                             attach_player_ship_mesh_system,   // Attach Mesh2d to player ship
                             attach_player_ui_system,          // Spawn health bar + aim indicator

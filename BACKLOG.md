@@ -2,7 +2,7 @@
 
 Planned features, improvements, and known limitations. Completed items are removed; see [FEATURES.md](FEATURES.md) and [CHANGELOG.md](CHANGELOG.md) for implemented history.
 
-Last updated: February 26, 2026.
+Last updated: February 27, 2026.
 
 ## Planning Notes
 
@@ -12,18 +12,9 @@ Last updated: February 26, 2026.
 
 ## P0 — Next Implementation Candidates
 
-### Gameplay Foundation (Combat + AI)
+No open P0 items currently.
 
-- [ ] **Ion Cannon MVP**
-	- Add stun status effect for enemies only; level scaling controls minimum enemy tier affected.
-	- Add upgrade progression and HUD feedback for stun duration/effectiveness.
-	- Acceptance: cannon applies temporary disable correctly across enemy tiers.
-	- Progress (started):
-		- [x] Initial stun status + enemy disable wiring implemented.
-		- [x] Initial upgrade path + HUD feedback implemented.
-		- [ ] Balance pass and acceptance validation across tiers.
-
-## P1 — After Core Combat Lands
+## P1 — Next Queue
 
 ### Boss Progression
 

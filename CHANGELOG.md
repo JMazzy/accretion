@@ -1,5 +1,140 @@
 # Accretion Changelog
 
+## Menu Maintainability Refactor (Phase 6) — February 27, 2026
+
+### Began deeper `menu.rs` decomposition into focused internal modules
+
+**What changed**:
+- Added `src/menu/common.rs` and moved shared menu UI helper functions there:
+  - color/style primitives used across menu screens
+  - spacing helpers and save timestamp formatting helper
+- Added `src/menu/game_over.rs` and moved game-over screen systems there:
+  - `setup_game_over`
+  - `cleanup_game_over`
+  - `game_over_button_system`
+- Added `src/menu/load_game.rs` and moved load-game screen systems there:
+  - `setup_load_game_menu`
+  - `cleanup_load_game_menu`
+  - `load_game_menu_button_system`
+- Added `src/menu/scenario_select.rs` and moved scenario-select screen systems there:
+  - `setup_scenario_select`
+  - `cleanup_scenario_select`
+  - `scenario_select_button_system`
+- Added `src/menu/pause.rs` and moved pause-related systems there:
+  - `pause_physics` (re-exported through `menu.rs` to preserve external call sites)
+  - `resume_physics`
+  - `toggle_pause_system`
+  - `pause_resume_input_system`
+  - `toggle_ore_shop_system`
+  - `setup_pause_menu`
+  - `cleanup_pause_menu`
+  - `pause_menu_button_system`
+- Added `src/menu/ore_shop.rs` and moved ore-shop systems there:
+  - `setup_ore_shop`
+  - `cleanup_ore_shop`
+  - `ore_shop_button_system`
+- Moved ore-shop overlay builder out of `menu.rs` into ore-shop module:
+  - `spawn_ore_shop_overlay`
+- Added dedicated cleanup module for main-menu transition teardown:
+  - `cleanup_game_world`
+- Added `src/menu/main_menu.rs` and moved remaining main-menu systems out of `menu.rs`:
+  - `setup_main_menu_when_font_ready`
+  - `cleanup_main_menu`
+  - `menu_button_system`
+- Reorganized split menu modules under `src/menu/` for maintainability:
+  - `types.rs`, `common.rs`, `main_menu.rs`, `game_over.rs`, `load_game.rs`, `scenario_select.rs`, `pause.rs`, `ore_shop.rs`, `cleanup.rs`
+- Removed obsolete top-level split module files (`src/menu_*.rs`) after migration to `src/menu/`.
+- Updated `src/menu.rs` to wire these modules via internal imports while preserving plugin registration order and behavior.
+- Synced docs to current menu/state flow after extraction:
+  - `ARCHITECTURE.md` module structure now reflects `src/menu/` folderized modules and full `GameState` set.
+  - `FEATURES.md` pause/menu controls now reflect `MAIN MENU` action and `Tab` ore-shop access from paused gameplay.
+- Updated `FEATURES.md` ore spending section to match implementation (consumables purchased via Ore Shop buttons; removed stale direct H/M and DPad wording).
+- Updated a remaining `FEATURES.md` missile-ammo note to reference Ore Shop replenishment instead of stale `M`/DPad controls.
+- Marked `MIGRATION_PLAN.md` as a historical reference document to avoid confusion with current dependency versions.
+- Updated `README.md` project structure to include current `menu` and `testing` module split (`src/menu/`, `src/test_mode.rs`, `src/testing/`).
+- Updated `BACKLOG.md` for consistency with shipped features: removed completed Ion Cannon MVP entry, refreshed last-updated date, and normalized priority section wording.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
+## Menu Maintainability Refactor (Phase 5) — February 27, 2026
+
+### Extracted menu states/resources/markers from large `menu.rs`
+
+**What changed**:
+- Added `src/menu/types.rs` containing menu state enums/resources and UI marker component types:
+  - `GameState`, `ShopReturnState`, `SelectedScenario`
+  - Main menu / load menu / scenario / pause / ore shop / game-over marker components
+- Updated `src/menu.rs` to import and re-export those definitions via an internal `menu_types` module.
+- Kept `MainMenuPlugin` and all menu systems in `src/menu.rs` unchanged in behavior and scheduling.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
+## Player Combat Maintainability Refactor (Phase 4) — February 27, 2026
+
+### Extracted combat geometry/partition helpers from large `player/combat.rs`
+
+**What changed**:
+- Added `src/player/combat_helpers.rs` with extracted internal helper functions used by missile split/chip logic:
+  - polygon area and convex split helpers
+  - impact-radiating split basis helpers
+  - even/area-weighted mass partition helpers
+- Updated `src/player/combat.rs` to import these helpers via an internal module path while preserving all combat system signatures and behavior.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
+## Testing Scenario Refactor (Phase 3) — February 27, 2026
+
+### Split test scenario spawners into focused modules
+
+**What changed**:
+- Added `src/testing/scenarios_core.rs` for merge/gravity/collision/culling/passing scenario spawn functions.
+- Added `src/testing/scenarios_performance.rs` for benchmark scenario spawners (`perf_benchmark`, `baseline_100`, `tidal_only`, `soft_boundary_only`, `kdtree_only`, `all_three`).
+- Added `src/testing/scenarios_orbit.rs` for `orbit_pair` scenario spawn and orbit calibration tracking system.
+- Reworked `src/testing.rs` into a pure façade that wires modules and re-exports the same public API expected by test-mode setup.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
+## Testing Module Maintainability Refactor (Phase 2) — February 27, 2026
+
+### Split large `testing.rs` into focused internal modules
+
+**What changed**:
+- Added `src/testing/types.rs` for test resources/components/markers (`TestConfig`, orbit/script markers, scripted-observation resources).
+- Added `src/testing/scripted_enemy_combat.rs` for deterministic enemy-combat scripted spawn + runtime observer systems.
+- Added `src/testing/verification.rs` for frame logging and final verification/reporting logic.
+- Updated `src/testing.rs` to act as a façade: scenario spawn/orbit setup remains in place while extracted modules are re-exported to keep external call sites unchanged.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
+## App Bootstrap Maintainability Refactor — February 26, 2026
+
+### Reduced startup wiring coupling in main entrypoint
+
+**What changed**:
+- Extracted test-mode wiring from `src/main.rs` into `src/test_mode.rs` via `configure_test_mode`.
+- Centralized repeated Playing-transition HUD setup in `src/main.rs` using helper functions to avoid duplicated system registration blocks.
+- Kept behavior unchanged while isolating responsibilities: app shell setup remains in `main`, test routing now lives in a dedicated module.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
 ## Ore Drop Regression Fix (Unit Asteroids) — February 26, 2026
 
 ### Restored ore drops for small terminal missile destroys

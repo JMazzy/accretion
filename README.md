@@ -65,5 +65,10 @@ cargo check
 - `src/main.rs` - Binary entry point
 - `src/lib.rs` - Library root
 - `src/asteroid.rs` - Core asteroid types and simulation
+- `src/menu.rs` + `src/menu/` - Game state orchestration and menu UI modules
+- `src/test_mode.rs` - Test-mode wiring from `main`
+- `src/testing.rs` + `src/testing/` - Test façade + scenario/verification modules
 - `tests/` - Integration tests
 - `examples/` - Example programs
+
+For detailed architecture and controls, see [ARCHITECTURE.md](ARCHITECTURE.md) and [FEATURES.md](FEATURES.md).

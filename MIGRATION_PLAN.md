@@ -1,5 +1,8 @@
 # Bevy 0.13 → 0.15+ Migration Plan
 
+> Historical document: this plan captured an earlier migration step and is kept for reference.
+> For the current authoritative dependency versions and architecture, see `Cargo.toml` and `ARCHITECTURE.md`.
+
 ## Executive Summary
 
 Upgrade from Bevy 0.13 / Rapier2D 0.18 to Bevy 0.15+ / Rapier2D 0.21+ to access latest features, performance improvements, and security updates. Estimated effort: 4–6 hours across 3 phases.

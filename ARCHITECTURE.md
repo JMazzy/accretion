@@ -24,7 +24,8 @@ src/
 ├── constants.rs          - All tuneable physics and gameplay constants (compile-time defaults)
 ├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup and hot-reloaded at runtime
 ├── enemy.rs              - Enemy components, deterministic spawning, seek movement, enemy mesh attachment
-├── menu.rs               - GameState enum (MainMenu / ScenarioSelect / Playing / Paused / GameOver), SelectedScenario resource, MainMenuPlugin, splash screen + scenario-select + pause menu UI
+├── menu.rs               - Menu/state orchestration façade: GameState enum (MainMenu / LoadGameMenu / ScenarioSelect / Playing / Paused / OreShop / GameOver), SelectedScenario + ShopReturnState resources, MainMenuPlugin wiring
+├── menu/                 - Focused menu modules (`types`, `common`, `main_menu`, `load_game`, `scenario_select`, `pause`, `ore_shop`, `game_over`, `cleanup`)
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
 ├── spatial_partition.rs  - KD-tree spatial index for O(K + log N) neighbour lookup (replaces flat grid)
@@ -33,7 +34,8 @@ src/
 ├── save.rs               - Slot-based save/load snapshot schema, TOML I/O, and world restore systems
 ├── player/               - Player ship entity, WASD controls, projectile firing, Mesh2d ship/projectile rendering, camera follow
 ├── graphics.rs           - Camera setup for 2D rendering
-├── testing.rs            - Automated test scenarios for physics validation
+├── testing.rs            - Test API façade (re-exports scenarios/types/verification)
+├── testing/              - Test implementation modules (`scenarios_core`, `scenarios_orbit`, `scenarios_performance`, `scripted_enemy_combat`, `types`, `verification`)
 └── lib.rs                - Library exports
 ```
 
@@ -289,7 +291,7 @@ Built-in scenarios are variants of `SelectedScenario` (in `menu.rs`) and spawned
 
 - **Trigger**: `ACCRETION_TEST=<test_name>` environment variable
 - **Runs**: Single test scenario for exact reproducibility
-- **Framework**: Custom spawning functions in `src/testing.rs`
+- **Framework**: Custom spawning functions exported via `src/testing.rs` and implemented in `src/testing/` modules
 - **Player isolation**: In test mode the player entity is **not spawned** — player systems run but find no `Player` component and are no-ops. This ensures asteroid-only tests are not affected by the player ship's collider (radius = `PLAYER_COLLIDER_RADIUS`) or its input/damage systems.
 
 ### Available Tests

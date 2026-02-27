@@ -18,6 +18,7 @@
 | **Hold Q + E**               | Tractor beam freeze (damps relative motion to hold target offsets stably)        |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
+| **Tab**                     | Open / close ore shop (from Playing or Paused)                                |
 | **Pause menu Save buttons** | Save current run to slot 1/2/3                                                 |
 
 - **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
@@ -122,20 +123,20 @@
 
 ### Spending Ore
 
-Ore has two consumable uses, replacing the old passive regeneration systems:
+Ore consumables and upgrades are purchased from the **Ore Shop** overlay (open with **Tab** while playing or paused):
 
-| Action | Key | Gamepad | Cost | Effect |
-|--------|-----|---------|------|--------|
-| Heal | `H` | DPad Up | 1 ore | Restore `ore_heal_amount` HP (default 30), capped at max HP |
-| Restock missile | `M` | DPad Down | 1 ore | +1 missile, capped at `missile_ammo_max` |
+| Action | Cost | Effect |
+|--------|------|--------|
+| Heal | 1 ore | Restore `ore_heal_amount` HP (default 30), capped at max HP |
+| Restock missile | 1 ore | +1 missile, capped at `missile_ammo_max` |
 
 - Ore is **not spent** if the corresponding stat is already full.
 - The ore HUD row now shows all progression levels in one compact line, e.g. `Ore: 12 | Blaster: 3 | Missile: 2 | Tractor: 1 | Ion: 2 (2.1s, T≤1)`.
-- Passive HP regen and passive missile recharge have been **removed**; ore spending is the only way to replenish them.
+- Passive HP regen and passive missile recharge have been **removed**; ore-shop spending is the only way to replenish them.
 
 ### Primary Weapon Upgrades
 
-The primary projectile weapon can be upgraded up to **Level 10** using ore, accessed from the **pause menu → UPGRADES**.
+The primary projectile weapon can be upgraded up to **Level 10** using ore via the **Ore Shop** (open with **Tab** during gameplay or while paused).
 
 | Level | Fully destroys size… | Ore cost to reach |
 |-------|---------------------|-------------------|
@@ -147,12 +148,12 @@ The primary projectile weapon can be upgraded up to **Level 10** using ore, acce
 
 - **Above threshold**: any asteroid larger than the current destroy-size is *chipped* — one vertex is removed and a size-1 fragment is ejected. No single hit can destroy more than half the target.
 - **Ore reward scaling**: fully-destroying a size-N asteroid drops N ore (vs. 1 before), so higher-level play generates proportionally more upgrade fuel.
-- **Shop UI**: opened from pause menu → UPGRADES. Shows current level, size range, ore balance, and upgrade cost. The buy button greys out when unaffordable or at max level.
+- **Shop UI**: the Ore Shop overlay shows current level, size range, ore balance, and upgrade cost. The buy button greys out when unaffordable or at max level.
 - **Persistence**: weapon level is saved/restored in save slots.
 
 ### Secondary Weapon Upgrades (Missiles)
 
-Missiles have their own ore-based upgrade progression up to **Level 10**, purchased from the same **pause menu → UPGRADES** flow.
+Missiles have their own ore-based upgrade progression up to **Level 10**, purchased from the same **Ore Shop** flow.
 
 - **Base behaviour (Level 1 / internal 0)**: missiles fully destroy small targets and split larger targets into convex fragments.
 - **Upgrade scaling**:
@@ -242,7 +243,7 @@ Score: 42  (30 hits, 12 destroyed)
 
 **Hit-streak multiplier** — consecutive hits without missing build a streak; the multiplier increases at thresholds (×2 at 5, ×3 at 10, ×4 at 20, ×5 at 40). Missing a shot or dying resets the streak.
 
-**Missile ammo** — starts at 5; replenished by spending ore (`M` key / DPad Down, 1 ore = 1 missile). HUD row 3 shows current ammo (`M M M - -`).
+**Missile ammo** — starts at 5; replenished via Ore Shop missile restock (1 ore = 1 missile). HUD row 3 shows current ammo (`M M M - -`).
 
 ### On-Screen Statistics Display
 
@@ -466,7 +467,9 @@ Press **ESC** during gameplay to pause the simulation. The pause menu appears as
 | ----------------- | ------------------------------------------------------- |
 | **RESUME**        | Resume simulation (also triggered by pressing ESC again)|
 | **DEBUG OVERLAYS**| Toggle the floating debug overlay panel (top-right)     |
-| **QUIT**          | Exit the application                                    |
+| **MAIN MENU**     | Return to main menu (cleans up current game world)      |
+
+While paused, pressing **Tab** opens the ore shop overlay without resuming simulation.
 
 While paused, Rapier's physics pipeline is fully disabled — all asteroids, velocities, and forces are frozen in place until the game is resumed.
 
