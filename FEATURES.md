@@ -8,20 +8,21 @@
 | --------------------------- | ------------------------------------------------------------------------------ |
 | **W**                       | Thrust forward (ship-facing direction)                                         |
 | **S**                       | Thrust backward                                                                |
-| **A**                       | Rotate ship left                                                               |
-| **D**                       | Rotate ship right                                                              |
+| **A**                       | Strafe left                                                                    |
+| **D**                       | Strafe right                                                                   |
 | **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
 | **C**                       | Fire a large ion shot in the current aim direction (fast recharge, stuns enemies on hit) |
-| **Hold Q**                   | Tractor beam pull (30° total cone centered on current aim direction)             |
-| **Hold E**                   | Tractor beam push (same aim-aligned cone and envelope, opposite force direction) |
-| **Hold Q + E**               | Tractor beam freeze (damps relative motion to hold target offsets stably)        |
+| **Q**                       | Toggle tractor hold mode on/off                                                |
+| **Hold E**                  | While hold mode is on: pull/hold targets (stops before ship collision)         |
+| **R**                       | While hold mode is on: throw targets outward and disengage hold mode           |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
 | **Tab**                     | Open / close ore shop (from Playing or Paused)                                |
 | **Pause menu Save buttons** | Save current run to slot 1/2/3                                                 |
 
-- **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
+- **Cursor-facing ship**: ship heading continuously follows mouse aim direction.
+- **Aiming is decoupled from thrust/strafe axes**: projectiles, ion, and tractor target along shared `AimDirection`, while movement uses forward/reverse thrust plus strafe.
 - **Ion + tractor aim parity**: ion shots and tractor targeting use the same active `AimDirection` as the primary weapon (ship-forward only as fallback when aim is unavailable).
 - An **orange aim indicator** (line + dot) extends from the ship in the current fire direction. It is shown by default and can be hidden via the debug panel (*Aim Indicator* toggle).
 - **Aim idle snap**: if no mouse movement, gamepad left stick, or right stick input is received for 1 second, the aim direction automatically resets to the ship's forward (+Y).
@@ -30,14 +31,18 @@
 
 | Input           | Action                                                                 |
 | --------------- | ---------------------------------------------------------------------- |
-| **Left stick**  | Rotate ship toward stick direction at fixed speed, then thrust forward |
-| **Right stick** | Aim and auto-fire projectiles in stick direction                       |
-| **West button** | Fire missile in current aim direction (X on Xbox, Square on PS)       |
-| **B button**    | Brake — applies strong velocity damping each frame while held          |
+| **Right stick** | Controls facing/aim direction                                          |
+| **Left stick**  | Omnidirectional strafe (lower authority than thrust)                   |
+| **RT / LT**     | Forward / reverse thrust (analog where available)                      |
+| **A (South)**   | Fire blaster                                                           |
+| **B (East)**    | Fire missile                                                           |
+| **Y (North)**   | Fire ion cannon                                                        |
+| **X (West)**    | Toggle tractor hold mode                                               |
+| **LB**          | While hold mode is on: pull/hold targets                               |
+| **RB**          | While hold mode is on: throw targets and disengage                     |
 
-- **Left stick movement**: the ship rotates at a fixed angular speed until aligned with the stick direction, then applies forward thrust proportional to stick magnitude. Thrust is suppressed while rotating sharply (above the heading correction threshold in `src/constants.rs`) to avoid fighting the turn.
-- **B button brake**: while held, multiplies both linear and angular velocity by `GAMEPAD_BRAKE_DAMPING` every frame, bringing the ship to a near-stop in roughly half a second at 60 fps. Forward thrust is independent and can still be applied simultaneously via the left stick.
-- **Right stick auto-fire**: once the right stick exceeds `GAMEPAD_FIRE_THRESHOLD` deflection, projectiles auto-fire at the fire cooldown rate. Pulling the stick further does not change fire rate.
+- **Right-stick facing**: the ship rotates toward right-stick heading using the same steering model used for mouse-facing.
+- **Left-stick strafe**: lateral motion is world-space and intentionally weaker than thrust authority for readable handling.
 - **Dead zones**: left stick below `GAMEPAD_LEFT_DEADZONE`, right stick below `GAMEPAD_RIGHT_DEADZONE` are ignored to prevent drift.
 
 ### Initial World
@@ -171,31 +176,28 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
 
 ### Tractor Beam (MVP)
 
-- Hold **Q** to pull asteroids toward the ship.
-- Hold **E** to push asteroids away from the ship.
-- Hold **Q + E** to enter freeze mode, which holds asteroids at a bounded target offset relative to the ship.
-- Beam targeting is constrained by a configurable front cone around **ship forward** (independent from weapon aim direction) and a distance envelope.
+- Press **Q** (keyboard) / **X** (gamepad) to toggle tractor hold mode.
+- While hold mode is engaged, hold **E** / **LB** to pull asteroids and hold them outside the collision envelope.
+- While hold mode is engaged, press **R** / **RB** to throw affected asteroids outward and disengage hold mode.
+- Beam targeting is constrained by a configurable cone around active **AimDirection** (ship-forward only fallback when aim is unavailable) and a distance envelope.
 - Tractor beam has its own ore-shop upgrade card (**TRACTOR**) up to Level 10.
 - Each level increases beam range/force and expands the max affected size/speed envelope.
 - Stability safeguards prevent runaway behavior:
   - ignores asteroids below a minimum interaction distance
   - ignores asteroids above a level-scaled max size
   - ignores asteroids already moving above a level-scaled speed threshold
-- Freeze mode uses a spring-damper hold model with explicit clamps:
-  - target offset is captured on freeze engage and clamped by `tractor_beam_freeze_max_hold_offset`
-  - force combines offset correction + relative-velocity damping, then is capped by `tractor_beam_freeze_force_multiplier`
-  - additional frozen-mode target guards apply (`tractor_beam_freeze_max_target_size_multiplier`, `tractor_beam_freeze_max_target_speed_multiplier`)
+- Hold-zone stabilization uses damping + anti-collision bias to keep targets from collapsing into the ship while pull is held.
 - Tractor beam now emits directional **light-blue particles** along applied force direction:
   - pull: cyan-leaning streaks toward ship
   - push: deeper blue streaks away from ship
-  - freeze: brighter aqua-white particles with softer spread for hold-state readability
+  - hold-zone stabilization: brighter aqua-white particles with softer spread for hold-state readability
 - Emission is burst-throttled in fixed-step updates to preserve frame-time under dense asteroid fields.
 - Beam force/range and all envelope limits are runtime-tunable via `assets/physics.toml` (`tractor_beam_*` keys).
 - **Persistence**: tractor beam level is saved/restored in save slots.
 
 ### Ion Cannon (MVP)
 
-- Press **C** to fire an ion shot from the front of the ship, aligned to ship heading.
+- Press **C** (keyboard) / **Y** (gamepad) to fire an ion shot in current aim direction.
 - Ion shots are rendered as light-blue elongated projectiles (same style family as primary shots).
 - Ion shots emit continuous light-blue particles while in flight.
 - On hit, ion shots apply enemy-only stun when enemy tier is within the current ion-level effectiveness cap.

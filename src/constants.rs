@@ -148,6 +148,10 @@ pub const THRUST_FORCE: f32 = 25_000.0;
 /// Intentionally weaker than `THRUST_FORCE`.
 pub const REVERSE_FORCE: f32 = 12_500.0;
 
+/// Lateral strafe force (N) applied from A/D and gamepad left-stick strafing.
+/// Intentionally lower authority than forward thrust for readable ship handling.
+pub const STRAFE_FORCE: f32 = 16_000.0;
+
 /// Fixed angular velocity (rad/s) applied while A / D are held.
 pub const ROTATION_SPEED: f32 = 3.0;
 

@@ -26,9 +26,10 @@ use crate::player::{
     sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
     sync_player_health_bar_system, sync_projectile_outline_visibility_system,
     sync_projectile_rotation_system, sync_ship_outline_visibility_and_color_system,
-    tractor_beam_force_system, AimDirection, AimIdleTimer, IonCannonCooldown, IonCannonLevel,
-    MissileAmmo, MissileCooldown, Player, PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities,
-    PreferredGamepad, TractorBeamLevel,
+    tractor_beam_force_system, tractor_hold_toggle_system, AimDirection, AimIdleTimer,
+    IonCannonCooldown, IonCannonLevel, MissileAmmo, MissileCooldown, Player, PlayerIntent,
+    PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad, TractorBeamLevel,
+    TractorHoldState,
 };
 use crate::rendering::{
     debug_panel_button_system, hud_score_display_system, lives_hud_display_system,
@@ -151,6 +152,7 @@ impl Plugin for SimulationPlugin {
             .insert_resource(PlayerScore::default())
             .insert_resource(PlayerLives::default())
             .insert_resource(TractorBeamLevel::default())
+            .insert_resource(TractorHoldState::default())
             .insert_resource(IonCannonLevel::default())
             .insert_resource(IonCannonCooldown::default())
             .insert_resource(MissileAmmo::default())
@@ -167,9 +169,10 @@ impl Plugin for SimulationPlugin {
                         culling_system,        // Hard-remove asteroids past safety boundary
                         particle_locking_system,
                         gamepad_connection_system, // Track preferred gamepad
+                        tractor_hold_toggle_system, // Toggle tractor hold mode (KB/gamepad)
                         player_intent_clear_system, // Reset ExternalForce + PlayerIntent
-                        keyboard_to_intent_system, // WASD/rotation keys → PlayerIntent
-                        gamepad_to_intent_system,  // Gamepad left-stick + B → PlayerIntent
+                        keyboard_to_intent_system, // KB thrust+strafe + cursor-facing → PlayerIntent
+                        gamepad_to_intent_system,  // Gamepad sticks/triggers → PlayerIntent
                         apply_player_intent_system, // PlayerIntent → ExternalForce / Velocity
                         mouse_aim_system,          // Mouse cursor updates AimDirection
                     )
@@ -178,9 +181,9 @@ impl Plugin for SimulationPlugin {
                     // ── Group 2a: input / camera / mesh attachment ───────────
                     (
                         (
-                            projectile_fire_system,              // Space/click/right-stick fires
-                            missile_fire_system,                 // X/right-click fires a missile
-                            ion_cannon_fire_system,              // C fires a forward ion shot
+                            projectile_fire_system,              // Space/click/A fires
+                            missile_fire_system,                 // X/right-click/B fires a missile
+                            ion_cannon_fire_system,              // C/Y fires an ion shot
                             missile_acceleration_system,         // Missiles ramp toward max speed
                             missile_trail_particles_system, // Exhaust particles opposite velocity
                             ion_shot_particles_system,      // Ion shot particle trail

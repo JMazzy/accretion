@@ -59,7 +59,7 @@ use helpers::{
 // ── Projectile firing ─────────────────────────────────────────────────────────
 
 /// Unified fire system: handles Space / left-click (keyboard+mouse) and the
-/// gamepad right stick (twin-stick auto-fire) from a single location.
+/// gamepad South button (A / Cross) from a single location.
 ///
 /// The gamepad right stick also *writes* `AimDirection` each frame so the
 /// cursor-aim and stick-aim sources stay coherent through one shared resource.
@@ -83,8 +83,7 @@ pub fn projectile_fire_system(
         return;
     };
 
-    // ── Gamepad right stick: update aim + auto-fire when pushed past threshold ──
-    let mut gamepad_wants_fire = false;
+    // ── Gamepad right stick: update aim direction ─────────────────────────────
     if let Some(gamepad_entity) = preferred.0 {
         if let Ok(gamepad) = gamepads.get(gamepad_entity) {
             let rx = gamepad.get(GamepadAxis::RightStickX).unwrap_or(0.0);
@@ -94,12 +93,14 @@ pub fn projectile_fire_system(
                 aim.0 = right_stick.normalize_or_zero();
                 // Right stick is active — prevent idle aim snap.
                 idle.secs = 0.0;
-                if right_stick.length() > config.gamepad_fire_threshold {
-                    gamepad_wants_fire = true;
-                }
             }
         }
     }
+
+    let gamepad_wants_fire = preferred
+        .0
+        .and_then(|entity| gamepads.get(entity).ok())
+        .is_some_and(|gamepad| gamepad.pressed(GamepadButton::South));
 
     let kb_fire = keys.pressed(KeyCode::Space);
     let mouse_fire = mouse_buttons.pressed(MouseButton::Left);
@@ -177,7 +178,7 @@ pub fn despawn_old_projectiles_system(
 
 // ── Missile systems ────────────────────────────────────────────────────────────
 
-/// Fire a missile when the player presses `X` / right-click / gamepad West button.
+/// Fire a missile when the player presses `X` / right-click / gamepad East button.
 ///
 /// Missiles are heavier, slower, and more destructive than regular projectiles.
 /// A missile uses one `[MissileAmmo]` count; silently does nothing when empty.
@@ -202,11 +203,11 @@ pub fn missile_fire_system(
         return;
     };
 
-    // Gamepad West button (X on Xbox, Square on PS)
+    // Gamepad East button (B on Xbox, Circle on PS)
     let mut gamepad_wants_fire = false;
     if let Some(gamepad_entity) = preferred.0 {
         if let Ok(gamepad) = gamepads.get(gamepad_entity) {
-            if gamepad.just_pressed(GamepadButton::West) {
+            if gamepad.just_pressed(GamepadButton::East) {
                 gamepad_wants_fire = true;
             }
         }

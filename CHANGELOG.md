@@ -1,5 +1,36 @@
 # Accretion Changelog
 
+## Control Overhaul + Gamepad Parity (P0) — February 27, 2026
+
+### Cursor-facing KB/mouse strafe model with tractor hold/throw flow and full gamepad parity
+
+**What changed**:
+- Refactored movement intent in `src/player/state.rs` + `src/player/control.rs`:
+  - Added explicit facing + strafe axes to `PlayerIntent` (`desired_facing`, `strafe_local`, `strafe_world`).
+  - Added `TractorHoldState` resource for latched hold-mode flow.
+- Updated KB/mouse movement/facing behavior:
+  - `W/S` remain forward/reverse thrust.
+  - `A/D` now strafe left/right instead of rotation.
+  - Ship heading now steers toward shared `AimDirection` (cursor-facing).
+- Added tractor toggle action flow:
+  - `Q` toggles hold mode.
+  - While engaged: `E` pulls/holds targets with anti-collision hold-zone behavior.
+  - While engaged: `R` throws outward and disengages hold mode.
+- Added gamepad parity mapping:
+  - Right stick controls facing/aim direction.
+  - Left stick controls omnidirectional strafe.
+  - `RT/LT` provide forward/reverse thrust.
+  - `A` blaster, `B` missile, `Y` ion, `X` tractor toggle, `LB` pull/hold, `RB` throw/disengage.
+- Updated combat bindings:
+  - Primary fire now uses gamepad South button (`A`) instead of right-stick auto-fire.
+  - Missile fire uses gamepad East button (`B`).
+  - Ion fire supports gamepad North button (`Y`).
+- Added movement tuning constant:
+  - Introduced `STRAFE_FORCE` in `src/constants.rs`, mirrored to `PhysicsConfig` and `assets/physics.toml` as `strafe_force`.
+- Updated docs and backlog tracking:
+  - Updated controls/tractor descriptions in `FEATURES.md`.
+  - Marked both P0 control items complete in `BACKLOG.md`.
+
 ## Ion Stun Movement Behavior Tuning — February 27, 2026
 
 ### Stunned enemies now drift uncontrolled instead of braking to a stop

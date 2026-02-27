@@ -92,6 +92,7 @@ pub struct PhysicsConfig {
     // ── Player: Movement ──────────────────────────────────────────────────────
     pub thrust_force: f32,
     pub reverse_force: f32,
+    pub strafe_force: f32,
     pub rotation_speed: f32,
     pub player_linear_damping: f32,
     pub player_angular_damping: f32,
@@ -261,6 +262,7 @@ impl Default for PhysicsConfig {
             // Player: Movement
             thrust_force: THRUST_FORCE,
             reverse_force: REVERSE_FORCE,
+            strafe_force: STRAFE_FORCE,
             rotation_speed: ROTATION_SPEED,
             player_linear_damping: PLAYER_LINEAR_DAMPING,
             player_angular_damping: PLAYER_ANGULAR_DAMPING,

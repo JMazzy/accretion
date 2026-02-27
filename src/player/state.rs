@@ -142,6 +142,15 @@ pub struct AimIdleTimer {
     pub last_cursor: Option<Vec2>,
 }
 
+/// Latched tractor hold-mode state.
+///
+/// Toggled by keyboard/gamepad input and consumed by the tractor-beam force
+/// system to decide whether pull/throw actions are currently active.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct TractorHoldState {
+    pub engaged: bool,
+}
+
 /// Multiplier tier thresholds (streak → multiplier).
 ///
 /// | Streak | Multiplier |
@@ -608,6 +617,16 @@ pub struct PlayerIntent {
     /// `Some(value)` overwrites `Velocity::angvel`; `None` leaves the current
     /// angular velocity untouched (Rapier damping will slow it naturally).
     pub angvel: Option<f32>,
+    /// Desired facing direction in world-space (unit vector).
+    ///
+    /// When present, the movement apply system steers angular velocity toward
+    /// this direction and takes precedence over `angvel`.
+    pub desired_facing: Option<Vec2>,
+    /// Local left/right strafe axis: -1 = left, +1 = right.
+    pub strafe_local: f32,
+    /// World-space omnidirectional strafe input (typically gamepad left stick).
+    /// Expected range per component is [-1, 1].
+    pub strafe_world: Vec2,
     /// Active-brake flag: applies `GAMEPAD_BRAKE_DAMPING` to linvel/angvel while true.
     pub brake: bool,
 }

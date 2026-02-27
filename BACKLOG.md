@@ -96,7 +96,7 @@ Last updated: February 27, 2026.
 
 ### Player Control Enhancements
 
-- [ ] **Control scheme overhaul: KB/Mouse strafe + cursor-facing ship**
+- [x] **Control scheme overhaul: KB/Mouse strafe + cursor-facing ship**
 	- Ship heading follows mouse cursor direction.
 	- Keep `W/S` as forward/back thrust.
 	- Change `A/D` to strafe left/right.
@@ -108,7 +108,7 @@ Last updated: February 27, 2026.
 		- Add tractor toggle state machine resource and pull/throw action systems.
 		- Update HUD/help text and FEATURES docs for new controls.
 
-- [ ] **Gamepad parity overhaul for all new mechanics** `depends on Control scheme overhaul: KB/Mouse strafe + cursor-facing ship`
+- [x] **Gamepad parity overhaul for all new mechanics** `depends on Control scheme overhaul: KB/Mouse strafe + cursor-facing ship`
 	- Right stick controls facing direction.
 	- Left stick controls omnidirectional strafe (lower authority than thrust).
 	- `RT/LT` provide forward/reverse thrust (analog where available).

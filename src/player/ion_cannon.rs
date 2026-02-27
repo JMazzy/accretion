@@ -2,6 +2,7 @@ use super::state::{AimDirection, IonCannonLevel, Player};
 use crate::asteroid_rendering::filled_polygon_mesh;
 use crate::enemy::{Enemy, EnemyStun, EnemyTier};
 use crate::particles::spawn_ion_particles;
+use bevy::input::gamepad::GamepadButton;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
@@ -51,6 +52,8 @@ fn elongated_projectile_vertices(radius: f32, length: f32, segments: usize) -> V
 pub fn ion_cannon_fire_system(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
+    preferred: Res<super::state::PreferredGamepad>,
+    gamepads: Query<&Gamepad>,
     time: Res<Time>,
     aim: Res<AimDirection>,
     mut cooldown: ResMut<IonCannonCooldown>,
@@ -58,7 +61,12 @@ pub fn ion_cannon_fire_system(
 ) {
     cooldown.timer_secs = (cooldown.timer_secs - time.delta_secs()).max(0.0);
 
-    if !keys.just_pressed(KeyCode::KeyC) || cooldown.timer_secs > 0.0 {
+    let gamepad_fire = preferred
+        .0
+        .and_then(|entity| gamepads.get(entity).ok())
+        .is_some_and(|gp| gp.just_pressed(GamepadButton::North));
+
+    if !(keys.just_pressed(KeyCode::KeyC) || gamepad_fire) || cooldown.timer_secs > 0.0 {
         return;
     }
 

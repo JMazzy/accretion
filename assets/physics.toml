@@ -91,7 +91,10 @@ thrust_force = 25000.0
 # Reverse thrust force (N) while S is held.
 reverse_force = 12500.0
 
-# Angular velocity (rad/s) while A / D are held.
+# Lateral strafe force (N) from A/D or gamepad left-stick strafe input.
+strafe_force = 16000.0
+
+# Angular velocity (rad/s) used when steering ship heading toward desired facing.
 rotation_speed = 3.0
 
 # Rapier linear / angular damping on the player ship.
