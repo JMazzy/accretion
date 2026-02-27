@@ -2092,7 +2092,7 @@ fn spawn_ore_shop_overlay(
                                 };
 
                                 card_col.spawn((
-                                    Text::new("WEAPON"),
+                                    Text::new("BLASTER"),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,

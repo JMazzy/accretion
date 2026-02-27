@@ -388,7 +388,25 @@ pub fn missile_asteroid_hit_system(
 
         let destroy_threshold = missile_level.destroy_threshold();
 
-        if missile_level.can_fully_decompose_size(n) {
+        if n <= destroy_threshold {
+            // ── Instant destroy (small asteroids) ─────────────────────────────
+            commands.entity(asteroid_entity).despawn();
+            stats.destroyed_total += 1;
+            score.destroyed += 1;
+            missile_telemetry.instant_destroy_events += 1;
+            missile_telemetry.destroyed_mass_total += n;
+            // Missiles award double the destroy bonus for small targets.
+            score.points += multiplier + 10 * multiplier;
+
+            // Spawn ore drops (one per unit mass destroyed).
+            let drop_count = n.max(1);
+            for i in 0..drop_count {
+                let angle = std::f32::consts::TAU * (i as f32 / drop_count as f32);
+                let offset = Vec2::new(angle.cos(), angle.sin()) * 6.0;
+                spawn_ore_drop(&mut commands, pos + offset, vel);
+            }
+            spawn_debris_particles(&mut commands, pos, vel, n + 2);
+        } else if missile_level.can_fully_decompose_size(n) {
             // ── Full decomposition into unit asteroids ───────────────────────
             commands.entity(asteroid_entity).despawn();
             stats.split_total += 1;
@@ -418,24 +436,6 @@ pub fn missile_asteroid_hit_system(
                 );
             }
             spawn_debris_particles(&mut commands, pos, vel, n.min(10));
-        } else if n <= destroy_threshold {
-            // ── Instant destroy (small asteroids) ─────────────────────────────
-            commands.entity(asteroid_entity).despawn();
-            stats.destroyed_total += 1;
-            score.destroyed += 1;
-            missile_telemetry.instant_destroy_events += 1;
-            missile_telemetry.destroyed_mass_total += n;
-            // Missiles award double the destroy bonus for small targets.
-            score.points += multiplier + 10 * multiplier;
-
-            // Spawn ore drops (one per unit mass destroyed).
-            let drop_count = n.max(1);
-            for i in 0..drop_count {
-                let angle = std::f32::consts::TAU * (i as f32 / drop_count as f32);
-                let offset = Vec2::new(angle.cos(), angle.sin()) * 6.0;
-                spawn_ore_drop(&mut commands, pos + offset, vel);
-            }
-            spawn_debris_particles(&mut commands, pos, vel, n + 2);
         } else {
             // ── Split large asteroid into level-scaled convex fragments ───────
             score.points += multiplier;
@@ -731,7 +731,7 @@ pub fn projectile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
     q_asteroids: Query<
-        (&AsteroidSize, &Transform, &Velocity, &Vertices),
+        (&AsteroidSize, &Transform, Option<&Velocity>, &Vertices),
         (With<Asteroid>, Without<Planet>),
     >,
     mut q_proj: Query<(&Transform, &mut Projectile)>,
@@ -784,8 +784,8 @@ pub fn projectile_asteroid_hit_system(
 
         let pos = transform.translation.truncate();
         let rot = transform.rotation;
-        let vel = velocity.linvel;
-        let ang_vel = velocity.angvel;
+        let vel = velocity.map_or(Vec2::ZERO, |v| v.linvel);
+        let ang_vel = velocity.map_or(0.0, |v| v.angvel);
         let n = size.0;
 
         // World-space hull vertices (used by split and chip paths)

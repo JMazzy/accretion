@@ -183,10 +183,12 @@ fn setup_ore_mesh(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
 pub fn spawn_ore_drop(commands: &mut Commands, pos: Vec2, base_vel: Vec2) {
     let mut rng = rand::thread_rng();
     let scatter = Vec2::new(rng.gen_range(-18.0..18.0), rng.gen_range(-18.0..18.0));
+    let transform = Transform::from_translation(pos.extend(0.2));
     commands.spawn((
         OrePickup,
         OreAge(0.0),
-        Transform::from_translation(pos.extend(0.2)), // Z slightly above asteroids
+        transform, // Z slightly above asteroids
+        GlobalTransform::from(transform),
         Visibility::default(),
         RigidBody::KinematicVelocityBased,
         Velocity {

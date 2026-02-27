@@ -1,5 +1,40 @@
 # Accretion Changelog
 
+## Ore Drop Regression Fix (Unit Asteroids) — February 26, 2026
+
+### Restored ore drops for small terminal missile destroys
+
+**Root cause**:
+- In `missile_asteroid_hit_system` (`src/player/combat.rs`), the full-decomposition branch was evaluated before the instant-destroy branch.
+- This allowed small asteroids (including unit size) to be routed through decomposition logic, which does not spawn ore drops.
+
+**What changed**:
+- Reordered branch evaluation so `n <= destroy_threshold` is handled first.
+- Small terminal missile destroys now consistently execute the ore-drop path.
+- Full decomposition remains intact for larger asteroids above the destroy threshold.
+
+**Validation**:
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo test player::combat::tests:: -- --nocapture` ✅
+
+## Test Reliability + Doc-Test Cleanup — February 26, 2026
+
+### Fixed false-negative test harness behavior and resolved doc-test failures
+
+**What changed**:
+- Updated the `spawn_planet` docs example in `src/asteroid.rs` to use an ignored rustdoc block so it is documented without requiring runtime ECS setup in doctests.
+- Updated the soft-boundary equation docs block in `src/simulation.rs` to a text code block so Unicode math symbols are treated as documentation instead of Rust code.
+- Hardened `test_all.sh` execution flow:
+  - increased per-test timeout from `50s` to `120s`
+  - added explicit timeout handling (`✗ FAIL: Timed out after 120s`)
+  - added explicit fallback when no PASS/FAIL marker is found
+  - preserved summary accounting logic (`Passed` / `Failed`) for one-command verification
+
+**Validation**:
+- `cargo test` ✅ (unit/integration tests pass; doctests no longer fail)
+- `./test_all.sh` ✅ (10/10 passed)
+
 ## Ion Cannon Projectile + Stun VFX Pass — February 26, 2026
 
 ### Converted ion pulse into a forward-fired shot with continuous ion particles

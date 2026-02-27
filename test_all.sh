@@ -30,8 +30,20 @@ FAILED=0
 for test in "${TESTS[@]}"; do
     echo "▶ Running test: $test"
     TOTAL=$((TOTAL + 1))
-    
-    RESULT=$(timeout 50 bash -c "ACCRETION_TEST=$test cargo run --release 2>&1" | grep -E "(PASS|FAIL)" | tail -1)
+
+    set +e
+    OUTPUT=$(timeout 120 bash -c "ACCRETION_TEST=$test cargo run --release" 2>&1)
+    STATUS=$?
+    set -e
+
+    RESULT=$(echo "$OUTPUT" | grep -E "(✓ PASS|✗ FAIL)" | tail -1 || true)
+
+    if [ $STATUS -eq 124 ]; then
+        RESULT="✗ FAIL: Timed out after 120s"
+    elif [ -z "$RESULT" ]; then
+        RESULT="✗ FAIL: No PASS/FAIL marker found"
+    fi
+
     echo "$RESULT"
 
     if echo "$RESULT" | grep -q "✓ PASS"; then

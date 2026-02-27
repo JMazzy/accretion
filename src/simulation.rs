@@ -12,20 +12,22 @@ use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_rende
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::player::{
-    aim_snap_system, apply_player_intent_system, attach_missile_mesh_system,
-    attach_player_ship_mesh_system, attach_player_ui_system, attach_projectile_mesh_system,
-    camera_follow_system, cleanup_player_ui_system, despawn_old_missiles_system,
+    aim_snap_system, apply_player_intent_system, attach_ion_cannon_shot_mesh_system,
+    attach_missile_mesh_system, attach_player_ship_mesh_system, attach_player_ui_system,
+    attach_projectile_mesh_system, camera_follow_system, cleanup_player_ui_system,
+    despawn_old_ion_cannon_shots_system, despawn_old_missiles_system,
     despawn_old_projectiles_system, gamepad_connection_system, gamepad_to_intent_system,
+    ion_cannon_fire_system, ion_cannon_hit_enemy_system, ion_shot_particles_system,
     keyboard_to_intent_system, missile_acceleration_system, missile_asteroid_hit_system,
     missile_fire_system, missile_trail_particles_system, player_collision_damage_system,
     player_intent_clear_system, player_oob_damping_system, player_respawn_system,
     projectile_asteroid_hit_system, projectile_fire_system, projectile_missile_planet_hit_system,
-    sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
-    sync_player_health_bar_system, sync_projectile_outline_visibility_system,
-    sync_projectile_rotation_system, sync_ship_outline_visibility_and_color_system,
-    tractor_beam_force_system, AimDirection, AimIdleTimer, IonCannonLevel, MissileAmmo,
-    MissileCooldown, PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad,
-    TractorBeamLevel,
+    stunned_enemy_particles_system, sync_aim_indicator_system,
+    sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system,
+    sync_projectile_outline_visibility_system, sync_projectile_rotation_system,
+    sync_ship_outline_visibility_and_color_system, tractor_beam_force_system, AimDirection,
+    AimIdleTimer, IonCannonCooldown, IonCannonLevel, MissileAmmo, MissileCooldown, PlayerIntent,
+    PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad, TractorBeamLevel,
 };
 use crate::rendering::{
     debug_panel_button_system, hud_score_display_system, lives_hud_display_system,
@@ -119,6 +121,7 @@ impl Plugin for SimulationPlugin {
             .insert_resource(PlayerLives::default())
             .insert_resource(TractorBeamLevel::default())
             .insert_resource(IonCannonLevel::default())
+            .insert_resource(IonCannonCooldown::default())
             .insert_resource(MissileAmmo::default())
             .insert_resource(MissileCooldown::default())
             .insert_resource(PlayerUiEntities::default())
@@ -144,24 +147,35 @@ impl Plugin for SimulationPlugin {
                     profiler_mark_after_group1_system,
                     // ── Group 2a: input / camera / mesh attachment ───────────
                     (
-                        projectile_fire_system,           // Space/click/right-stick fires
-                        missile_fire_system,              // X/right-click fires a missile
-                        missile_acceleration_system,      // Missiles ramp toward max speed
-                        missile_trail_particles_system,   // Exhaust particles opposite velocity
-                        aim_snap_system,                  // Snap aim after idle timeout
-                        despawn_old_projectiles_system,   // Expire old projectiles
-                        despawn_old_missiles_system,      // Expire old missiles
-                        user_input_system,                // Mouse wheel zoom
-                        camera_follow_system,             // Camera tracks player
-                        camera_zoom_system,               // Apply zoom scale
-                        attach_asteroid_mesh_system,      // Attach Mesh2d to new asteroids
-                        sync_asteroid_render_mode_system, // Swap fill/outline mesh on wireframe_only toggle
-                        attach_player_ship_mesh_system,   // Attach Mesh2d to player ship
-                        attach_player_ui_system,          // Spawn health bar + aim indicator
-                        attach_projectile_mesh_system,    // Attach Mesh2d to new projectiles
-                        attach_missile_mesh_system,       // Attach Mesh2d to new missiles
-                        sync_projectile_rotation_system, // Update projectile rotation to match velocity
-                        sync_player_and_projectile_mesh_visibility_system, // Propagate wireframe_only
+                        (
+                            projectile_fire_system,              // Space/click/right-stick fires
+                            missile_fire_system,                 // X/right-click fires a missile
+                            ion_cannon_fire_system,              // C fires a forward ion shot
+                            missile_acceleration_system,         // Missiles ramp toward max speed
+                            missile_trail_particles_system,      // Exhaust particles opposite velocity
+                            ion_shot_particles_system,           // Ion shot particle trail
+                            stunned_enemy_particles_system,      // Stunned enemy particle feedback
+                            aim_snap_system,                     // Snap aim after idle timeout
+                            despawn_old_projectiles_system,      // Expire old projectiles
+                            despawn_old_missiles_system,         // Expire old missiles
+                            despawn_old_ion_cannon_shots_system, // Expire old ion shots
+                            user_input_system,                   // Mouse wheel zoom
+                        )
+                            .chain(),
+                        (
+                            camera_follow_system,                // Camera tracks player
+                            camera_zoom_system,                  // Apply zoom scale
+                            attach_asteroid_mesh_system,         // Attach Mesh2d to new asteroids
+                            sync_asteroid_render_mode_system, // Swap fill/outline mesh on wireframe_only toggle
+                            attach_player_ship_mesh_system,   // Attach Mesh2d to player ship
+                            attach_player_ui_system,          // Spawn health bar + aim indicator
+                            attach_projectile_mesh_system,    // Attach Mesh2d to new projectiles
+                            attach_missile_mesh_system,       // Attach Mesh2d to new missiles
+                            attach_ion_cannon_shot_mesh_system, // Attach Mesh2d to new ion shots
+                            sync_projectile_rotation_system, // Update projectile rotation to match velocity
+                            sync_player_and_projectile_mesh_visibility_system, // Propagate wireframe_only
+                        )
+                            .chain(),
                     )
                         .chain(),
                     profiler_mark_after_group2a_system,
@@ -227,6 +241,7 @@ impl Plugin for SimulationPlugin {
                     profiler_begin_post_update_system,
                     (
                         asteroid_formation_system,
+                        ion_cannon_hit_enemy_system,
                         projectile_asteroid_hit_system,
                         missile_asteroid_hit_system,
                         projectile_missile_planet_hit_system,
@@ -657,7 +672,7 @@ pub fn culling_system(
 /// Apply a restoring force to asteroids that have drifted past the soft boundary.
 ///
 /// The force is a linear spring toward the origin:
-/// ```
+/// ```text
 /// F_inward = soft_boundary_strength × (dist − soft_boundary_radius) × (−pos / dist)
 /// ```
 /// This creates a reflecting potential well that nudges stray asteroids back toward

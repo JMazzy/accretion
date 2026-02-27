@@ -241,7 +241,7 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
 /// exclude it via `Without<Planet>` filters.
 ///
 /// # Example
-/// ```
+/// ```ignore
 /// spawn_planet(&mut commands, Vec2::new(500.0, 300.0), &config);
 /// ```
 pub fn spawn_planet(commands: &mut Commands, position: Vec2, config: &PhysicsConfig) {

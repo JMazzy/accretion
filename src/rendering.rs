@@ -39,14 +39,13 @@
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
-use crate::enemy::IonCannonCooldown;
 use crate::graphics::GameFont;
 use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{
-    IonCannonLevel, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
-    TractorBeamLevel,
+    IonCannonCooldown, IonCannonLevel, PlayerLives, PlayerScore, PrimaryWeaponLevel,
+    SecondaryWeaponLevel, TractorBeamLevel,
 };
 use crate::simulation::{ProfilerStats, SimulationStats};
 use crate::spatial_partition::SpatialGrid;

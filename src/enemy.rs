@@ -8,11 +8,10 @@ use crate::asteroid_rendering::filled_polygon_mesh;
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::mining::spawn_ore_drop;
-use crate::particles::{spawn_debris_particles, spawn_impact_particles, spawn_ion_particles};
+use crate::particles::{spawn_debris_particles, spawn_impact_particles};
 use crate::player::state::{Missile, Projectile};
 use crate::player::{
-    IonCannonLevel, Player, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel,
-    SecondaryWeaponLevel,
+    Player, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
 };
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -46,11 +45,6 @@ pub struct EnemyProjectile {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
-pub struct IonCannonShot {
-    pub age: f32,
-}
-
-#[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyTier {
     pub level: u32,
 }
@@ -63,25 +57,11 @@ pub struct EnemyStun {
 #[derive(Component)]
 pub struct EnemyProjectileRenderMarker;
 
-#[derive(Component)]
-pub struct IonCannonShotRenderMarker;
-
 #[derive(Resource, Debug, Clone)]
 pub struct EnemySpawnState {
     pub timer_secs: f32,
     pub session_elapsed_secs: f32,
     pub total_spawned: u64,
-}
-
-#[derive(Resource, Debug, Clone)]
-pub struct IonCannonCooldown {
-    pub timer_secs: f32,
-}
-
-impl Default for IonCannonCooldown {
-    fn default() -> Self {
-        Self { timer_secs: 0.0 }
-    }
 }
 
 impl Default for EnemySpawnState {
@@ -99,23 +79,17 @@ pub struct EnemyPlugin;
 impl Plugin for EnemyPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(EnemySpawnState::default())
-            .insert_resource(IonCannonCooldown::default())
             .add_systems(
                 Update,
                 (
                     enemy_session_clock_system,
                     enemy_spawn_system,
                     enemy_stun_tick_system,
-                    ion_cannon_fire_system,
-                    despawn_old_ion_cannon_shots_system,
-                    ion_shot_particles_system,
-                    stunned_enemy_particles_system,
                     enemy_seek_player_system,
                     enemy_fire_system,
                     despawn_old_enemy_projectiles_system,
                     attach_enemy_mesh_system,
                     attach_enemy_projectile_mesh_system,
-                    attach_ion_cannon_shot_mesh_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -123,7 +97,6 @@ impl Plugin for EnemyPlugin {
             .add_systems(
                 PostUpdate,
                 (
-                    ion_cannon_hit_enemy_system,
                     enemy_damage_from_player_weapons_system,
                     enemy_collision_damage_system,
                     enemy_player_collision_damage_system,
@@ -168,28 +141,6 @@ fn initial_enemy_fire_timer(spawn_index: u64, base_cooldown: f32) -> f32 {
     let phase =
         ((spawn_index.wrapping_mul(1_103_515_245).wrapping_add(12_345)) % 10_000) as f32 / 10_000.0;
     base_cooldown * (0.4 + 0.6 * phase)
-}
-
-fn elongated_projectile_vertices(radius: f32, length: f32, segments: usize) -> Vec<Vec2> {
-    let half_segments = segments / 2;
-    let mut vertices = Vec::new();
-
-    for i in 0..=half_segments {
-        let angle = (i as f32) * std::f32::consts::PI / (half_segments as f32);
-        let x = angle.cos() * radius;
-        let y = angle.sin() * radius + length / 2.0;
-        vertices.push(Vec2::new(x, y));
-    }
-
-    for i in 0..=half_segments {
-        let angle =
-            std::f32::consts::PI + (i as f32) * std::f32::consts::PI / (half_segments as f32);
-        let x = angle.cos() * radius;
-        let y = angle.sin() * radius - length / 2.0;
-        vertices.push(Vec2::new(x, y));
-    }
-
-    vertices
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -316,169 +267,6 @@ fn enemy_stun_tick_system(time: Res<Time>, mut q_enemy: Query<&mut EnemyStun, Wi
 
     for mut stun in q_enemy.iter_mut() {
         stun.remaining_secs = (stun.remaining_secs - dt).max(0.0);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn ion_cannon_fire_system(
-    mut commands: Commands,
-    keys: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-    mut cooldown: ResMut<IonCannonCooldown>,
-    q_player: Query<&Transform, With<Player>>,
-) {
-    cooldown.timer_secs = (cooldown.timer_secs - time.delta_secs()).max(0.0);
-
-    if !keys.just_pressed(KeyCode::KeyC) || cooldown.timer_secs > 0.0 {
-        return;
-    }
-
-    let Ok(player_transform) = q_player.single() else {
-        return;
-    };
-
-    let forward = player_transform
-        .rotation
-        .mul_vec3(Vec3::Y)
-        .truncate()
-        .normalize_or_zero();
-    if forward == Vec2::ZERO {
-        return;
-    }
-
-    let spawn_pos = player_transform.translation.truncate() + forward * 14.0;
-
-    commands.spawn((
-        IonCannonShot { age: 0.0 },
-        IonCannonShotRenderMarker,
-        Transform::from_translation(spawn_pos.extend(0.2)),
-        Visibility::default(),
-        RigidBody::KinematicVelocityBased,
-        Velocity {
-            linvel: forward * crate::constants::ION_CANNON_SHOT_SPEED,
-            angvel: 0.0,
-        },
-        Collider::ball(crate::constants::ION_CANNON_SHOT_COLLIDER_RADIUS),
-        Sensor,
-        Ccd { enabled: true },
-        CollisionGroups::new(
-            bevy_rapier2d::geometry::Group::GROUP_3,
-            bevy_rapier2d::geometry::Group::GROUP_5,
-        ),
-        ActiveCollisionTypes::DYNAMIC_KINEMATIC,
-        ActiveEvents::COLLISION_EVENTS,
-    ));
-
-    cooldown.timer_secs = crate::constants::ION_CANNON_COOLDOWN_SECS;
-}
-
-fn despawn_old_ion_cannon_shots_system(
-    mut commands: Commands,
-    mut q_shots: Query<(Entity, &mut IonCannonShot, &Transform)>,
-    time: Res<Time>,
-    config: Res<PhysicsConfig>,
-) {
-    let dt = time.delta_secs();
-    for (entity, mut shot, transform) in q_shots.iter_mut() {
-        shot.age += dt;
-        let dist = transform.translation.truncate().length();
-        if shot.age >= crate::constants::ION_CANNON_SHOT_LIFETIME
-            || dist > config.hard_cull_distance
-        {
-            commands.entity(entity).despawn();
-        }
-    }
-}
-
-fn ion_shot_particles_system(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut emit_timer: Local<f32>,
-    q_shots: Query<(&Transform, &Velocity), With<IonCannonShot>>,
-) {
-    const ION_EMIT_INTERVAL: f32 = 0.03;
-
-    *emit_timer -= time.delta_secs();
-    if *emit_timer > 0.0 {
-        return;
-    }
-    *emit_timer = ION_EMIT_INTERVAL;
-
-    for (transform, velocity) in q_shots.iter() {
-        let pos = transform.translation.truncate();
-        let dir = velocity.linvel.normalize_or_zero();
-        spawn_ion_particles(&mut commands, pos, dir, velocity.linvel);
-    }
-}
-
-fn stunned_enemy_particles_system(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut emit_timer: Local<f32>,
-    q_enemy: Query<(&Transform, &Velocity, &EnemyStun), With<Enemy>>,
-) {
-    const STUN_EMIT_INTERVAL: f32 = 0.08;
-
-    *emit_timer -= time.delta_secs();
-    if *emit_timer > 0.0 {
-        return;
-    }
-    *emit_timer = STUN_EMIT_INTERVAL;
-
-    for (transform, velocity, stun) in q_enemy.iter() {
-        if stun.remaining_secs <= 0.0 {
-            continue;
-        }
-        let pos = transform.translation.truncate();
-        spawn_ion_particles(&mut commands, pos, Vec2::ZERO, velocity.linvel);
-    }
-}
-
-fn ion_cannon_hit_enemy_system(
-    mut commands: Commands,
-    mut collision_events: MessageReader<CollisionEvent>,
-    q_shots: Query<&Transform, With<IonCannonShot>>,
-    mut q_enemy: Query<(&EnemyTier, &mut EnemyStun), With<Enemy>>,
-    ion_level: Res<IonCannonLevel>,
-) {
-    let max_tier = ion_level.max_enemy_tier_affected();
-    let stun_secs = ion_level.stun_duration_secs();
-    let mut processed_shots: std::collections::HashSet<Entity> = Default::default();
-
-    for event in collision_events.read() {
-        let (e1, e2) = match event {
-            CollisionEvent::Started(e1, e2, _) => (*e1, *e2),
-            CollisionEvent::Stopped(..) => continue,
-        };
-
-        let shot_entity = if q_shots.contains(e1) {
-            e1
-        } else if q_shots.contains(e2) {
-            e2
-        } else {
-            continue;
-        };
-
-        if processed_shots.contains(&shot_entity) {
-            continue;
-        }
-        processed_shots.insert(shot_entity);
-
-        let enemy_entity = if shot_entity == e1 { e2 } else { e1 };
-        let shot_pos = q_shots
-            .get(shot_entity)
-            .map(|t| t.translation.truncate())
-            .unwrap_or(Vec2::ZERO);
-
-        commands.entity(shot_entity).despawn();
-
-        let Ok((tier, mut stun)) = q_enemy.get_mut(enemy_entity) else {
-            continue;
-        };
-        if tier.level <= max_tier {
-            stun.remaining_secs = stun.remaining_secs.max(stun_secs);
-            spawn_ion_particles(&mut commands, shot_pos, Vec2::ZERO, Vec2::ZERO);
-        }
     }
 }
 
@@ -1113,30 +901,6 @@ fn attach_enemy_projectile_mesh_system(
         commands
             .entity(entity)
             .insert((Mesh2d(mesh), MeshMaterial2d(mat)));
-    }
-}
-
-fn attach_ion_cannon_shot_mesh_system(
-    mut commands: Commands,
-    mut query: Query<(Entity, &Velocity, &mut Transform), Added<IonCannonShotRenderMarker>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    const ION_RADIUS: f32 = 2.0;
-    const ION_LENGTH: f32 = 10.0;
-
-    let vertices = elongated_projectile_vertices(ION_RADIUS, ION_LENGTH, 16);
-    let mesh = meshes.add(filled_polygon_mesh(&vertices));
-    let mat = materials.add(ColorMaterial::from_color(Color::srgb(0.52, 0.94, 1.0)));
-
-    for (entity, velocity, mut transform) in query.iter_mut() {
-        let direction = velocity.linvel.normalize_or_zero();
-        let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
-        transform.rotation = Quat::from_rotation_z(angle);
-
-        commands
-            .entity(entity)
-            .insert((Mesh2d(mesh.clone()), MeshMaterial2d(mat.clone())));
     }
 }
 

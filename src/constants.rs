@@ -584,22 +584,22 @@ pub const ION_CANNON_MAX_LEVEL: u32 = 8;
 pub const ION_CANNON_UPGRADE_BASE_COST: u32 = 6;
 
 /// Base stun duration (seconds) applied by the Ion Cannon at level 1.
-pub const ION_CANNON_BASE_STUN_SECS: f32 = 1.8;
+pub const ION_CANNON_BASE_STUN_SECS: f32 = 3.0;
 
 /// Additional stun duration (seconds) granted per Ion Cannon level.
-pub const ION_CANNON_STUN_SECS_PER_LEVEL: f32 = 0.35;
+pub const ION_CANNON_STUN_SECS_PER_LEVEL: f32 = 1.0;
 
 /// Cooldown (seconds) between Ion Cannon activations.
-pub const ION_CANNON_COOLDOWN_SECS: f32 = 5.2;
+pub const ION_CANNON_COOLDOWN_SECS: f32 = 3.0;
 
 /// Speed (u/s) of an ion-cannon shot.
-pub const ION_CANNON_SHOT_SPEED: f32 = 680.0;
+pub const ION_CANNON_SHOT_SPEED: f32 = 340.0;
 
 /// Lifetime (seconds) of an ion-cannon shot before despawn.
-pub const ION_CANNON_SHOT_LIFETIME: f32 = 0.95;
+pub const ION_CANNON_SHOT_LIFETIME: f32 = 3.0;
 
 /// Collider radius (u) of an ion-cannon shot.
-pub const ION_CANNON_SHOT_COLLIDER_RADIUS: f32 = 2.0;
+pub const ION_CANNON_SHOT_COLLIDER_RADIUS: f32 = 8.0;
 
 // ── Tractor Beam Upgrades ─────────────────────────────────────────────────────
 
