@@ -146,8 +146,8 @@ tractor_beam_max_target_speed_per_level = 20.0
 # Minimum distance where beam starts applying force.
 tractor_beam_min_distance = 20.0
 
-# Aim cone dot threshold (higher = narrower beam cone).
-tractor_beam_aim_cone_dot = 0.25
+# Aim cone dot threshold for a 30° total cone (±15° around aim direction).
+tractor_beam_aim_cone_dot = 0.9659
 
 # Freeze-mode (`Q+E`) relative-velocity damping strength.
 tractor_beam_freeze_velocity_damping = 260.0

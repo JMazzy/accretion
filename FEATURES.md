@@ -13,8 +13,8 @@
 | **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
 | **C**                       | Fire ion-cannon shot in the current aim direction (stuns enemy ships on hit)    |
-| **Hold Q**                   | Tractor beam pull (ship-forward cone targets nearby asteroids)                   |
-| **Hold E**                   | Tractor beam push (same cone and envelope, opposite force direction)             |
+| **Hold Q**                   | Tractor beam pull (30° total cone centered on current aim direction)             |
+| **Hold E**                   | Tractor beam push (same aim-aligned cone and envelope, opposite force direction) |
 | **Hold Q + E**               | Tractor beam freeze (damps relative motion to hold target offsets stably)        |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
@@ -22,6 +22,7 @@
 | **Pause menu Save buttons** | Save current run to slot 1/2/3                                                 |
 
 - **Aiming is decoupled from movement**: the ship faces the direction you steer, but projectiles travel toward the mouse cursor regardless of ship heading.
+- **Ion + tractor aim parity**: ion shots and tractor targeting use the same active `AimDirection` as the primary weapon (ship-forward only as fallback when aim is unavailable).
 - An **orange aim indicator** (line + dot) extends from the ship in the current fire direction. It is shown by default and can be hidden via the debug panel (*Aim Indicator* toggle).
 - **Aim idle snap**: if no mouse movement, gamepad left stick, or right stick input is received for 1 second, the aim direction automatically resets to the ship's forward (+Y).
 

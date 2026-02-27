@@ -242,13 +242,15 @@ pub fn aim_snap_system(
 /// - Hold `Q` + `E` to enter freeze mode: damp relative asteroid velocity
 ///   toward the ship to stabilize position under external forces.
 ///
-/// The beam only affects asteroids inside a front cone around ship forward
-/// and below level-scaled mass/speed thresholds to keep interactions stable.
+/// The beam only affects asteroids inside a narrow cone around active
+/// `AimDirection` (falls back to ship forward if aim is unavailable), and below
+/// level-scaled mass/speed thresholds to keep interactions stable.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn tractor_beam_force_system(
     mut commands: Commands,
     keys: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
+    aim: Res<AimDirection>,
     mut particle_emit_cooldown: Local<f32>,
     mut freeze_offsets: Local<HashMap<Entity, Vec2>>,
     mut freeze_seen_this_frame: Local<HashSet<Entity>>,
@@ -282,11 +284,15 @@ pub fn tractor_beam_force_system(
     };
 
     let player_pos = player_transform.translation.truncate();
-    let beam_dir = player_transform.rotation.mul_vec3(Vec3::Y).truncate();
+    let ship_forward = player_transform.rotation.mul_vec3(Vec3::Y).truncate();
+    let beam_dir = if aim.0.length_squared() > 1e-6 {
+        aim.0.normalize_or_zero()
+    } else {
+        ship_forward.normalize_or_zero()
+    };
     if beam_dir.length_squared() <= 1e-6 {
         return;
     }
-    let beam_dir = beam_dir.normalize();
 
     let range = beam_level.range_at_level(&config);
     let min_dist = config.tractor_beam_min_distance;
@@ -723,6 +729,7 @@ mod tests {
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(PhysicsConfig::default());
         app.insert_resource(TractorBeamLevel::default());
+        app.insert_resource(AimDirection::default());
         app
     }
 
@@ -858,6 +865,32 @@ mod tests {
             force,
             Vec2::ZERO,
             "expected no tractor force for asteroid outside ship-front cone, got {force:?}"
+        );
+    }
+
+    #[test]
+    fn tractor_uses_aim_direction_not_ship_forward() {
+        let mut app = build_tractor_test_app();
+        // Ship still faces +Y.
+        spawn_tractor_player(
+            &mut app,
+            Transform::from_rotation(Quat::IDENTITY),
+            Velocity::zero(),
+        );
+        // Target is on +X, outside ship-forward axis but aligned with explicit aim.
+        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(120.0, 0.0), Vec2::ZERO);
+
+        app.world_mut().insert_resource(AimDirection(Vec2::X));
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::KeyQ);
+
+        run_tractor_once(&mut app);
+
+        let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
+        assert!(
+            force.length() > 0.0,
+            "expected tractor force when asteroid is inside aim cone, got {force:?}"
         );
     }
 

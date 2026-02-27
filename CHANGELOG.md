@@ -1,5 +1,24 @@
 # Accretion Changelog
 
+## Weapon Pass: Tractor Cone Retune + Aim Alignment (P0) — February 27, 2026
+
+### Narrowed tractor acquisition to 30° total and aligned targeting to shared aim
+
+**What changed**:
+- Updated tractor targeting in `src/player/control.rs`:
+  - Tractor acquisition now uses shared `AimDirection` as its cone axis.
+  - Falls back to ship-forward only when aim direction is unavailable.
+- Retuned cone width to 30° total (±15° half-angle):
+  - Updated `TRACTOR_BEAM_AIM_CONE_DOT` in `src/constants.rs`.
+  - Updated matching runtime override in `assets/physics.toml`.
+- Added tractor test coverage for aim alignment in `src/player/control.rs` tests.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Weapon Pass: Ion Cannon Retune + Aim Parity (P0) — February 27, 2026
 
 ### Larger ion shot, faster cadence, and unified aim-direction firing

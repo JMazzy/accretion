@@ -207,8 +207,10 @@ pub const TRACTOR_BEAM_MAX_TARGET_SPEED_PER_LEVEL: f32 = 20.0;
 /// Minimum interaction distance to avoid unstable near-zero distance pulls.
 pub const TRACTOR_BEAM_MIN_DISTANCE: f32 = 20.0;
 
-/// Dot-product threshold for beam targeting cone around ship forward direction.
-pub const TRACTOR_BEAM_AIM_CONE_DOT: f32 = 0.25;
+/// Dot-product threshold for tractor targeting cone around active aim direction.
+///
+/// 30° total cone (±15° half-angle) => dot threshold cos(15°) ≈ 0.9659.
+pub const TRACTOR_BEAM_AIM_CONE_DOT: f32 = 0.9659;
 
 /// Velocity damping coefficient used by tractor freeze mode (`Q` + `E`).
 /// Higher values lock relative asteroid motion more aggressively.

@@ -86,7 +86,7 @@ Last updated: February 27, 2026.
 		- Ensure gamepad and mouse aim paths feed ion direction consistently.
 		- Re-run enemy stun behavior sanity checks.
 
-- [ ] **Tractor beam retune: 30° total narrow cone aligned to primary aim**
+- [x] **Tractor beam retune: 30° total narrow cone aligned to primary aim**
 	- Replace current tractor effective area with narrow 30° total cone.
 	- Ensure cone is aligned to primary weapon aiming direction (not ship-forward fallback unless aim absent).
 	- Acceptance: tractor acquisition only occurs inside 30° aim cone and tracks active aim direction consistently.
