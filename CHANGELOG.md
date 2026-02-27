@@ -1,5 +1,20 @@
 # Accretion Changelog
 
+## Ion Stun Movement Behavior Tuning — February 27, 2026
+
+### Stunned enemies now drift uncontrolled instead of braking to a stop
+
+**What changed**:
+- Updated `enemy_seek_player_system` in `src/enemy.rs`:
+  - While `EnemyStun` is active, enemy AI still loses steering/thrust control and cannot fire.
+  - Removed per-frame velocity damping during stun, so enemies keep momentum and drift naturally.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Ion Cannon Reliability + Cadence Follow-up — February 27, 2026
 
 ### Restored practical stun reliability and increased projectile-style usefulness

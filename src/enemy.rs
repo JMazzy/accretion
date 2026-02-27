@@ -284,8 +284,7 @@ fn enemy_seek_player_system(
     for (transform, mut force, mut velocity, stun) in q_enemy.iter_mut() {
         if stun.remaining_secs > 0.0 {
             force.force = Vec2::ZERO;
-            velocity.linvel *= 0.95;
-            velocity.angvel *= 0.8;
+            force.torque = 0.0;
             continue;
         }
 
