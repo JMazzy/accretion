@@ -8,9 +8,11 @@
 
 use crate::config::PhysicsConfig;
 use crate::constants::{
-    INVINCIBILITY_DURATION, MISSILE_AMMO_MAX, PLAYER_LIVES, PLAYER_MAX_HP,
-    PRIMARY_WEAPON_MAX_LEVEL, SECONDARY_WEAPON_MAX_LEVEL, SECONDARY_WEAPON_UPGRADE_BASE_COST,
-    TRACTOR_BEAM_MAX_LEVEL, TRACTOR_BEAM_UPGRADE_BASE_COST, WEAPON_UPGRADE_BASE_COST,
+    INVINCIBILITY_DURATION, ION_CANNON_BASE_STUN_SECS, ION_CANNON_MAX_LEVEL,
+    ION_CANNON_STUN_SECS_PER_LEVEL, ION_CANNON_UPGRADE_BASE_COST, MISSILE_AMMO_MAX, PLAYER_LIVES,
+    PLAYER_MAX_HP, PRIMARY_WEAPON_MAX_LEVEL, SECONDARY_WEAPON_MAX_LEVEL,
+    SECONDARY_WEAPON_UPGRADE_BASE_COST, TRACTOR_BEAM_MAX_LEVEL, TRACTOR_BEAM_UPGRADE_BASE_COST,
+    WEAPON_UPGRADE_BASE_COST,
 };
 use bevy::prelude::*;
 
@@ -316,6 +318,17 @@ pub struct TractorBeamLevel {
     pub level: u32,
 }
 
+/// Ion cannon upgrade level.
+///
+/// The ion cannon emits a short EMP-like pulse that can temporarily disable
+/// enemy ships. Higher levels increase stun duration and improve effectiveness
+/// against stronger enemy tiers.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct IonCannonLevel {
+    /// Internal 0-indexed level (0 = Level 1 / base).
+    pub level: u32,
+}
+
 impl TractorBeamLevel {
     /// Maximum internal level value (inclusive).
     pub const MAX: u32 = TRACTOR_BEAM_MAX_LEVEL - 1;
@@ -449,6 +462,64 @@ impl SecondaryWeaponLevel {
     }
 
     /// Spend ore and increment the level.  Returns the amount spent, or `None`
+    /// if maxed-out or the player cannot afford it.
+    pub fn try_upgrade(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.level += 1;
+        Some(cost)
+    }
+}
+
+impl IonCannonLevel {
+    /// Maximum internal level value (inclusive).
+    pub const MAX: u32 = ION_CANNON_MAX_LEVEL - 1;
+
+    /// Human-readable display level (1-indexed).
+    #[inline]
+    pub fn display_level(&self) -> u32 {
+        self.level + 1
+    }
+
+    /// Stun duration in seconds at the current level.
+    #[inline]
+    pub fn stun_duration_secs(&self) -> f32 {
+        ION_CANNON_BASE_STUN_SECS + self.level as f32 * ION_CANNON_STUN_SECS_PER_LEVEL
+    }
+
+    /// Highest enemy tier this level can affect.
+    #[inline]
+    pub fn max_enemy_tier_affected(&self) -> u32 {
+        (1 + self.level / 2).min(4)
+    }
+
+    /// Whether the ion cannon can be upgraded further.
+    #[inline]
+    pub fn is_maxed(&self) -> bool {
+        self.level >= Self::MAX
+    }
+
+    /// Ore cost to buy the next upgrade level.
+    /// Returns `None` when already at max level.
+    #[inline]
+    pub fn cost_for_next_level(&self) -> Option<u32> {
+        if self.is_maxed() {
+            None
+        } else {
+            Some(ION_CANNON_UPGRADE_BASE_COST * (self.level + 2))
+        }
+    }
+
+    /// Returns `true` when the player has enough ore to afford the next upgrade.
+    #[inline]
+    pub fn can_afford_next(&self, ore: u32) -> bool {
+        self.cost_for_next_level().is_some_and(|cost| ore >= cost)
+    }
+
+    /// Spend ore and increment the level. Returns the amount spent, or `None`
     /// if maxed-out or the player cannot afford it.
     pub fn try_upgrade(&mut self, ore: &mut u32) -> Option<u32> {
         let cost = self.cost_for_next_level()?;

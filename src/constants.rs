@@ -575,6 +575,32 @@ pub const MISSILE_SPLIT_MAX_PIECES: u32 = 12;
 /// Total to max-level: 5 + 10 + … + 50 = 275 ore.
 pub const SECONDARY_WEAPON_UPGRADE_BASE_COST: u32 = 5;
 
+// ── Ion Cannon Upgrades ──────────────────────────────────────────────────────
+
+/// Maximum level the Ion Cannon can be upgraded to (1-indexed display; 0 = base).
+pub const ION_CANNON_MAX_LEVEL: u32 = 8;
+
+/// Ore cost for the next Ion Cannon upgrade = `ION_CANNON_UPGRADE_BASE_COST * next_level`.
+pub const ION_CANNON_UPGRADE_BASE_COST: u32 = 6;
+
+/// Base stun duration (seconds) applied by the Ion Cannon at level 1.
+pub const ION_CANNON_BASE_STUN_SECS: f32 = 1.8;
+
+/// Additional stun duration (seconds) granted per Ion Cannon level.
+pub const ION_CANNON_STUN_SECS_PER_LEVEL: f32 = 0.35;
+
+/// Cooldown (seconds) between Ion Cannon activations.
+pub const ION_CANNON_COOLDOWN_SECS: f32 = 5.2;
+
+/// Speed (u/s) of an ion-cannon shot.
+pub const ION_CANNON_SHOT_SPEED: f32 = 680.0;
+
+/// Lifetime (seconds) of an ion-cannon shot before despawn.
+pub const ION_CANNON_SHOT_LIFETIME: f32 = 0.95;
+
+/// Collider radius (u) of an ion-cannon shot.
+pub const ION_CANNON_SHOT_COLLIDER_RADIUS: f32 = 2.0;
+
 // ── Tractor Beam Upgrades ─────────────────────────────────────────────────────
 
 /// Maximum level the tractor beam can be upgraded to (1-indexed display; 0 = base).

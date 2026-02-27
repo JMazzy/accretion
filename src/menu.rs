@@ -34,7 +34,8 @@ use crate::graphics::GameFont;
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::{
     state::{MissileAmmo, PlayerHealth},
-    Player, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel,
+    IonCannonLevel, Player, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
+    TractorBeamLevel,
 };
 use crate::save::{
     load_slot, slot_loadable, slot_metadata, PendingLoadedSnapshot, SaveSlotRequest,
@@ -244,6 +245,10 @@ pub struct OreShopMagnetUpgradeButton;
 /// Tags the tractor beam upgrade button in the ore shop.
 #[derive(Component)]
 pub struct OreShopTractorUpgradeButton;
+
+/// Tags the ion cannon upgrade button in the ore shop.
+#[derive(Component)]
+pub struct OreShopIonUpgradeButton;
 
 // ── Game-Over component markers ──────────────────────────────────────────────
 
@@ -1837,6 +1842,7 @@ fn spawn_ore_shop_overlay(
     missile_level: &SecondaryWeaponLevel,
     magnet_level: &OreAffinityLevel,
     tractor_level: &TractorBeamLevel,
+    ion_level: &IonCannonLevel,
     font: &GameFont,
 ) {
     let ore_text = format!("Ore available: {ore}");
@@ -2014,7 +2020,7 @@ fn spawn_ore_shop_overlay(
                         ..default()
                     });
 
-                    // ── Upgrades row (3 cards) ───────────────────────────────
+                    // ── Upgrades row ───────────────────────────────────────────
                     card.spawn(Node {
                         flex_direction: FlexDirection::Row,
                         column_gap: Val::Px(12.0),
@@ -2556,6 +2562,155 @@ fn spawn_ore_shop_overlay(
                                         ));
                                     });
                             });
+
+                        // ── Ion cannon card ─────────────────────────────────
+                        upgrades_row
+                            .spawn((
+                                Node {
+                                    width: Val::Px(248.0),
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(6.0),
+                                    padding: UiRect::all(Val::Px(12.0)),
+                                    border: UiRect::all(Val::Px(2.0)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.09, 0.09, 0.08)),
+                                BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
+                            ))
+                            .with_children(|card_col| {
+                                let can_upgrade =
+                                    !ion_level.is_maxed() && ion_level.can_afford_next(ore);
+                                let upg_btn_bg = if can_upgrade {
+                                    shop_buy_bg()
+                                } else {
+                                    Color::srgb(0.14, 0.14, 0.14)
+                                };
+                                let upg_btn_border = if can_upgrade {
+                                    shop_buy_border()
+                                } else {
+                                    Color::srgb(0.28, 0.28, 0.28)
+                                };
+                                let upg_btn_text_color = if can_upgrade {
+                                    shop_buy_text()
+                                } else {
+                                    Color::srgb(0.40, 0.40, 0.40)
+                                };
+                                let upg_label = if ion_level.is_maxed() {
+                                    "— MAX LEVEL —".to_string()
+                                } else {
+                                    let cost = ion_level.cost_for_next_level().unwrap_or(0);
+                                    format!("UPGRADE ({cost} ore)")
+                                };
+                                let cost_status = if ion_level.is_maxed() {
+                                    "MAX LEVEL REACHED".to_string()
+                                } else {
+                                    let cost = ion_level.cost_for_next_level().unwrap_or(0);
+                                    if can_upgrade {
+                                        format!("Cost: {cost} ore")
+                                    } else {
+                                        format!("Need {cost} ore")
+                                    }
+                                };
+
+                                let level_text = format!(
+                                    "Level {} / {}",
+                                    ion_level.display_level(),
+                                    crate::constants::ION_CANNON_MAX_LEVEL
+                                );
+                                let current_stun = ion_level.stun_duration_secs();
+                                let (next_stun, next_tier) = if ion_level.is_maxed() {
+                                    (current_stun, ion_level.max_enemy_tier_affected())
+                                } else {
+                                    let next = IonCannonLevel {
+                                        level: ion_level.level + 1,
+                                    };
+                                    (next.stun_duration_secs(), next.max_enemy_tier_affected())
+                                };
+                                let effectiveness_text = if ion_level.is_maxed() {
+                                    format!(
+                                        "Stun: {:.1}s | Affects up to tier {}",
+                                        current_stun,
+                                        ion_level.max_enemy_tier_affected()
+                                    )
+                                } else {
+                                    format!(
+                                        "Stun: {:.1} -> {:.1}s | Tier: {} -> {}",
+                                        current_stun,
+                                        next_stun,
+                                        ion_level.max_enemy_tier_affected(),
+                                        next_tier
+                                    )
+                                };
+
+                                card_col.spawn((
+                                    Text::new("ION CANNON"),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.45, 0.45, 0.45)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(level_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 15.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.85, 0.85, 0.85)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(effectiveness_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.55, 0.65, 0.60)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(cost_status),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(if ion_level.is_maxed() {
+                                        Color::srgb(0.90, 0.80, 0.30)
+                                    } else if can_upgrade {
+                                        Color::srgb(0.75, 0.90, 0.75)
+                                    } else {
+                                        Color::srgb(0.75, 0.40, 0.40)
+                                    }),
+                                ));
+                                card_col
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            height: Val::Px(42.0),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            border: UiRect::all(Val::Px(2.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(upg_btn_bg),
+                                        BorderColor::all(upg_btn_border),
+                                        OreShopIonUpgradeButton,
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new(upg_label),
+                                            TextFont {
+                                                font: font.0.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(upg_btn_text_color),
+                                        ));
+                                    });
+                            });
                     });
 
                     card.spawn(Node {
@@ -2615,6 +2770,7 @@ pub fn setup_ore_shop(
     missile_level: Res<SecondaryWeaponLevel>,
     magnet_level: Res<OreAffinityLevel>,
     tractor_level: Res<TractorBeamLevel>,
+    ion_level: Res<IonCannonLevel>,
     font: Res<GameFont>,
 ) {
     let (hp, max_hp) = q_health
@@ -2634,6 +2790,7 @@ pub fn setup_ore_shop(
         &missile_level,
         &magnet_level,
         &tractor_level,
+        &ion_level,
         &font,
     );
 }
@@ -2663,6 +2820,7 @@ pub fn ore_shop_button_system(
         Query<&Interaction, (Changed<Interaction>, With<OreShopMissileUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopMagnetUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopTractorUpgradeButton>)>,
+        Query<&Interaction, (Changed<Interaction>, With<OreShopIonUpgradeButton>)>,
     ),
     shop_root_query: Query<Entity, With<OreShopRoot>>,
     mut ore: ResMut<PlayerOre>,
@@ -2674,15 +2832,23 @@ pub fn ore_shop_button_system(
         ResMut<SecondaryWeaponLevel>,
         ResMut<OreAffinityLevel>,
         ResMut<TractorBeamLevel>,
+        ResMut<IonCannonLevel>,
     ),
     mut next_state: ResMut<NextState<GameState>>,
     return_state: Res<ShopReturnState>,
     font: Res<GameFont>,
 ) {
     // Destructure tuple parameters
-    let (upgrade_query, missile_upgrade_query, magnet_upgrade_query, tractor_upgrade_query) =
-        upgrade_queries;
-    let (mut weapon_level, mut missile_level, mut magnet_level, mut tractor_level) = levels;
+    let (
+        upgrade_query,
+        missile_upgrade_query,
+        magnet_upgrade_query,
+        tractor_upgrade_query,
+        ion_upgrade_query,
+    ) = upgrade_queries;
+    let (mut weapon_level, mut missile_level, mut magnet_level, mut tractor_level, mut ion_level) =
+        levels;
+
     // ── Close (ESC / Tab / button) ────────────────────────────────────────────
     let wants_close = keys.just_pressed(KeyCode::Escape)
         || keys.just_pressed(KeyCode::Tab)
@@ -2725,6 +2891,7 @@ pub fn ore_shop_button_system(
                     &missile_level,
                     &magnet_level,
                     &tractor_level,
+                    &ion_level,
                     &font,
                 );
                 return;
@@ -2761,6 +2928,7 @@ pub fn ore_shop_button_system(
             &missile_level,
             &magnet_level,
             &tractor_level,
+            &ion_level,
             &font,
         );
         return;
@@ -2794,6 +2962,7 @@ pub fn ore_shop_button_system(
             &missile_level,
             &magnet_level,
             &tractor_level,
+            &ion_level,
             &font,
         );
     }
@@ -2828,6 +2997,7 @@ pub fn ore_shop_button_system(
             &missile_level,
             &magnet_level,
             &tractor_level,
+            &ion_level,
             &font,
         );
     }
@@ -2862,6 +3032,7 @@ pub fn ore_shop_button_system(
             &missile_level,
             &magnet_level,
             &tractor_level,
+            &ion_level,
             &font,
         );
     }
@@ -2896,6 +3067,40 @@ pub fn ore_shop_button_system(
             &missile_level,
             &magnet_level,
             &tractor_level,
+            &ion_level,
+            &font,
+        );
+    }
+
+    // ── Ion cannon upgrade ────────────────────────────────────────────────────
+    let ion_upgrade_pressed = ion_upgrade_query.iter().any(|i| *i == Interaction::Pressed);
+    if ion_upgrade_pressed {
+        ion_level.try_upgrade(&mut ore.count);
+        let (hp, max_hp) = q_health
+            .single()
+            .map(|h| (h.hp, h.max_hp))
+            .unwrap_or((config.player_max_hp, config.player_max_hp));
+        let ore_count = ore.count;
+        let ammo_count = ammo.count;
+        let heal_amount = config.ore_heal_amount;
+        let ammo_max = config.missile_ammo_max;
+        for entity in shop_root_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        spawn_ore_shop_overlay(
+            &mut commands,
+            &config,
+            ore_count,
+            hp,
+            max_hp,
+            heal_amount,
+            ammo_count,
+            ammo_max,
+            &weapon_level,
+            &missile_level,
+            &magnet_level,
+            &tractor_level,
+            &ion_level,
             &font,
         );
     }

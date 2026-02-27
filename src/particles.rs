@@ -396,6 +396,60 @@ pub fn spawn_tractor_beam_particles(
     }
 }
 
+/// Spawn light-blue ion particles used by ion shots and stunned enemies.
+///
+/// `dir_hint` biases the spray direction when non-zero.
+pub fn spawn_ion_particles(commands: &mut Commands, origin: Vec2, dir_hint: Vec2, base_vel: Vec2) {
+    let mut rng = rand::thread_rng();
+    let count = 2_u32;
+
+    let use_dir = if dir_hint.length_squared() > 1e-6 {
+        Some(dir_hint.normalize())
+    } else {
+        None
+    };
+
+    for _ in 0..count {
+        let velocity = if let Some(dir) = use_dir {
+            let angle = dir.y.atan2(dir.x) + rng.gen_range(-0.28_f32..0.28_f32);
+            let speed = rng.gen_range(38.0_f32..95.0_f32);
+            Vec2::new(angle.cos(), angle.sin()) * speed + base_vel * 0.12
+        } else {
+            let angle = rng.gen_range(0.0_f32..std::f32::consts::TAU);
+            let speed = rng.gen_range(22.0_f32..60.0_f32);
+            Vec2::new(angle.cos(), angle.sin()) * speed + base_vel * 0.15
+        };
+
+        let r = rng.gen_range(0.45_f32..0.72_f32);
+        let g = rng.gen_range(0.88_f32..1.00_f32);
+        let b = rng.gen_range(0.95_f32..1.00_f32);
+        let lifetime = rng.gen_range(0.10_f32..0.22_f32);
+
+        let lateral = if let Some(dir) = use_dir {
+            Vec2::new(-dir.y, dir.x) * rng.gen_range(-1.8_f32..1.8_f32)
+        } else {
+            Vec2::new(
+                rng.gen_range(-1.8_f32..1.8_f32),
+                rng.gen_range(-1.8_f32..1.8_f32),
+            )
+        };
+
+        commands.spawn((
+            Particle {
+                velocity,
+                age: 0.0,
+                lifetime,
+                r,
+                g,
+                b,
+                material: None,
+            },
+            Transform::from_translation((origin + lateral).extend(0.9)),
+            Visibility::default(),
+        ));
+    }
+}
+
 // ── Mesh helper ───────────────────────────────────────────────────────────────
 
 /// Build a filled circle mesh approximated by an `n`-sided regular polygon.

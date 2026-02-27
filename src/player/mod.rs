@@ -40,9 +40,9 @@ pub use rendering::{
     PlayerUiEntities,
 };
 pub use state::{
-    AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
-    PlayerHealth, PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel,
-    SecondaryWeaponLevel, TractorBeamLevel,
+    AimDirection, AimIdleTimer, IonCannonLevel, MissileAmmo, MissileCooldown, Player,
+    PlayerFireCooldown, PlayerHealth, PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad,
+    PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

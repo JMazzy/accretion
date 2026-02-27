@@ -12,6 +12,7 @@
 | **D**                       | Rotate ship right                                                              |
 | **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
 | **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
+| **C**                       | Fire ion-cannon shot forward from ship nose (stuns enemy ships on hit)         |
 | **Hold Q**                   | Tractor beam pull (ship-forward cone targets nearby asteroids)                   |
 | **Hold E**                   | Tractor beam push (same cone and envelope, opposite force direction)             |
 | **Hold Q + E**               | Tractor beam freeze (damps relative motion to hold target offsets stably)        |
@@ -129,7 +130,7 @@ Ore has two consumable uses, replacing the old passive regeneration systems:
 | Restock missile | `M` | DPad Down | 1 ore | +1 missile, capped at `missile_ammo_max` |
 
 - Ore is **not spent** if the corresponding stat is already full.
-- The ore HUD row now shows all progression levels in one compact line, e.g. `Ore: 12 | Blaster: 3 | Missile: 2 | Tractor: 1`.
+- The ore HUD row now shows all progression levels in one compact line, e.g. `Ore: 12 | Blaster: 3 | Missile: 2 | Tractor: 1 | Ion: 2 (2.1s, T≤1)`.
 - Passive HP regen and passive missile recharge have been **removed**; ore spending is the only way to replenish them.
 
 ### Primary Weapon Upgrades
@@ -190,9 +191,22 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
 - Beam force/range and all envelope limits are runtime-tunable via `assets/physics.toml` (`tractor_beam_*` keys).
 - **Persistence**: tractor beam level is saved/restored in save slots.
 
+### Ion Cannon (MVP)
+
+- Press **C** to fire an ion shot from the front of the ship, aligned to ship heading.
+- Ion shots are rendered as light-blue elongated projectiles (same style family as primary shots).
+- Ion shots emit continuous light-blue particles while in flight.
+- On hit, ion shots apply enemy-only stun when enemy tier is within the current ion-level effectiveness cap.
+- Stunned enemies continuously emit the same light-blue ion particles for stun readability.
+- Ion upgrades are available in the ore shop (**ION CANNON** card), scaling:
+  - stun duration (`ION_CANNON_BASE_STUN_SECS` + level scaling)
+  - maximum enemy tier affected (`IonCannonLevel::max_enemy_tier_affected`)
+- Ion cooldown is enforced by `ION_CANNON_COOLDOWN_SECS`.
+
 ### Enemy Ships (Foundation)
 
-- Enemy ships now spawn during active sessions with deterministic spacing and progression-aware pacing.
+- Enemy ships are currently performance-capped to **one active ship at a time**.
+- Spawn position is currently constrained near the simulation edge to reduce center-area load spikes.
 - Spawn cadence and cap scale with both elapsed session time and player score progression.
 - Spawns use deterministic ring offsets around the player plus minimum-spacing checks to avoid overlap clusters.
 - Enemy movement is currently a basic seek/arrive model that steers toward the player with bounded max speed.

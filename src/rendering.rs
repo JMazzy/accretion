@@ -39,12 +39,14 @@
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
+use crate::enemy::IonCannonCooldown;
 use crate::graphics::GameFont;
 use crate::mining::PlayerOre;
 use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{
-    PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel,
+    IonCannonLevel, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
+    TractorBeamLevel,
 };
 use crate::simulation::{ProfilerStats, SimulationStats};
 use crate::spatial_partition::SpatialGrid;
@@ -570,11 +572,14 @@ pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: R
 /// When ore > 0 the text includes key-binding hints for spending it so players
 /// can discover the mechanic passively.  The primary weapon upgrade level is
 /// shown inline so players always know their current tier.
+#[allow(clippy::too_many_arguments)]
 pub fn ore_hud_display_system(
     ore: Res<PlayerOre>,
     weapon_level: Res<PrimaryWeaponLevel>,
     missile_level: Res<SecondaryWeaponLevel>,
     tractor_level: Res<TractorBeamLevel>,
+    ion_level: Res<IonCannonLevel>,
+    ion_cooldown: Res<IonCannonCooldown>,
     parent_query: Query<&Children, With<OreHudDisplay>>,
     mut text_query: Query<&mut Text>,
 ) {
@@ -582,6 +587,8 @@ pub fn ore_hud_display_system(
         && !weapon_level.is_changed()
         && !missile_level.is_changed()
         && !tractor_level.is_changed()
+        && !ion_level.is_changed()
+        && !ion_cooldown.is_changed()
     {
         return;
     }
@@ -600,9 +607,26 @@ pub fn ore_hud_display_system(
     } else {
         tractor_level.display_level().to_string()
     };
+    let ion_text = if ion_level.is_maxed() {
+        "MAX".to_string()
+    } else {
+        ion_level.display_level().to_string()
+    };
+    let ion_cd_text = if ion_cooldown.timer_secs <= 0.0 {
+        "READY".to_string()
+    } else {
+        format!("{:.1}s", ion_cooldown.timer_secs)
+    };
     let display = format!(
-        "Ore: {} | Blaster: {} | Missile: {} | Tractor: {}",
-        ore.count, blaster_text, missile_text, tractor_text
+        "Ore: {} | Blaster: {} | Missile: {} | Tractor: {} | Ion: {} ({:.1}s, T≤{}, CD: {})",
+        ore.count,
+        blaster_text,
+        missile_text,
+        tractor_text,
+        ion_text,
+        ion_level.stun_duration_secs(),
+        ion_level.max_enemy_tier_affected(),
+        ion_cd_text
     );
     for children in parent_query.iter() {
         for child in children.iter() {

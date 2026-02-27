@@ -23,8 +23,9 @@ use crate::player::{
     sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
     sync_player_health_bar_system, sync_projectile_outline_visibility_system,
     sync_projectile_rotation_system, sync_ship_outline_visibility_and_color_system,
-    tractor_beam_force_system, AimDirection, AimIdleTimer, MissileAmmo, MissileCooldown,
-    PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad, TractorBeamLevel,
+    tractor_beam_force_system, AimDirection, AimIdleTimer, IonCannonLevel, MissileAmmo,
+    MissileCooldown, PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad,
+    TractorBeamLevel,
 };
 use crate::rendering::{
     debug_panel_button_system, hud_score_display_system, lives_hud_display_system,
@@ -117,6 +118,7 @@ impl Plugin for SimulationPlugin {
             .insert_resource(PlayerScore::default())
             .insert_resource(PlayerLives::default())
             .insert_resource(TractorBeamLevel::default())
+            .insert_resource(IonCannonLevel::default())
             .insert_resource(MissileAmmo::default())
             .insert_resource(MissileCooldown::default())
             .insert_resource(PlayerUiEntities::default())

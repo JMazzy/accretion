@@ -18,6 +18,10 @@ Last updated: February 26, 2026.
 	- Add stun status effect for enemies only; level scaling controls minimum enemy tier affected.
 	- Add upgrade progression and HUD feedback for stun duration/effectiveness.
 	- Acceptance: cannon applies temporary disable correctly across enemy tiers.
+	- Progress (started):
+		- [x] Initial stun status + enemy disable wiring implemented.
+		- [x] Initial upgrade path + HUD feedback implemented.
+		- [ ] Balance pass and acceptance validation across tiers.
 
 ## P1 — After Core Combat Lands
 

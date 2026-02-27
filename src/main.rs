@@ -100,6 +100,7 @@ fn main() {
     .insert_resource(player::PlayerFireCooldown::default())
     .insert_resource(player::PrimaryWeaponLevel::default())
     .insert_resource(player::SecondaryWeaponLevel::default())
+    .insert_resource(player::IonCannonLevel::default())
     .add_plugins(save::SavePlugin)
     // Global startup: config + camera + physics settings (needed by both menu and gameplay).
     .add_systems(

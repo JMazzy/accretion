@@ -1,5 +1,31 @@
 # Accretion Changelog
 
+## Ion Cannon Projectile + Stun VFX Pass — February 26, 2026
+
+### Converted ion pulse into a forward-fired shot with continuous ion particles
+
+**What changed**:
+- Reworked ion cannon in `src/enemy.rs` from instant pulse to a real projectile (`IonCannonShot`) fired from the ship nose in ship-forward direction.
+- Added dedicated ion-shot collision handling (`ion_cannon_hit_enemy_system`) with enemy-tier gating and level-scaled stun application.
+- Added continuous ion particle emission for:
+  - ion shots while in flight
+  - enemies while stunned
+- Added ion projectile rendering (`attach_ion_cannon_shot_mesh_system`) with a light-blue elongated profile aligned to velocity.
+- Added shared ion particle helper `spawn_ion_particles` in `src/particles.rs`.
+- Tuned ion defaults in `src/constants.rs`:
+  - `ION_CANNON_COOLDOWN_SECS`
+  - `ION_CANNON_SHOT_SPEED`
+  - `ION_CANNON_SHOT_LIFETIME`
+  - `ION_CANNON_SHOT_COLLIDER_RADIUS`
+- Retained temporary enemy performance mitigation in `src/enemy.rs`:
+  - one active enemy cap
+  - spawn placement near simulation boundary
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+
 ## Enemy Projectile/Ship Collision Filter Fix — February 26, 2026
 
 ### Fixed player projectile/missile misses against enemy ships in live gameplay
