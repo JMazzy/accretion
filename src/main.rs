@@ -1,6 +1,7 @@
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
+use bevy::winit::WinitSettings;
 use bevy_rapier2d::prelude::*;
 use std::env;
 
@@ -94,6 +95,10 @@ fn main() {
     let test_mode = env::var("ACCRETION_TEST").ok();
 
     let mut app = App::new();
+
+    if test_mode.is_some() {
+        app.insert_resource(WinitSettings::game());
+    }
 
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {

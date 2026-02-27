@@ -93,8 +93,8 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
-                        "100 asteroids distributed across gravity-well clusters.\n\
-                         The original chaotic asteroid field.",
+                        "Asteroid-only clustered field with seeded variation.\n\
+                         Multiple patchy pockets and varied starts each run.",
                     ),
                     TextFont {
                         font: font.0.clone(),
@@ -140,8 +140,8 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
-                        "A massive planetoid at the centre, ringed by debris\n\
-                         fields of smaller asteroids in near-circular orbits.",
+                        "A strengthened central planetoid with jittered debris rings.\n\
+                         Strong gravity well with varied but coherent orbital flow.",
                     ),
                     TextFont {
                         font: font.0.clone(),
@@ -187,8 +187,8 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
-                        "Twenty large, fast-moving boulders on crossing trajectories.\n\
-                         They fragment on impact — dodge and shoot before they escape.",
+                        "Large-biased mixed bodies spawn near the outer boundary.\n\
+                         Gentle inward trajectories with tangential crossing flow.",
                     ),
                     TextFont {
                         font: font.0.clone(),
@@ -234,8 +234,8 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
-                        "250 unit triangles, near-zero velocity.  Watch gravity\n\
-                         pull them into growing clusters in real time.",
+                        "Dense small-body-biased outer shower with inward rain.\n\
+                         Distinct from Comets by smaller average mass and tighter clutter.",
                     ),
                     TextFont {
                         font: font.0.clone(),

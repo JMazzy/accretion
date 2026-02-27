@@ -1,5 +1,26 @@
 # Accretion Changelog
 
+## Test Mode Stability + Scenario Menu Copy Refresh — February 27, 2026
+
+### Fixed unfocused test timeout behavior and aligned scenario descriptions with refreshed functionality
+
+**What changed**:
+- Updated test-mode runtime setup in `src/main.rs`:
+  - Inserted `WinitSettings::game()` when `ACCRETION_TEST` is active so test-mode windows continue updating while unfocused.
+  - This removes intermittent wall-clock timeouts caused by UI/event-loop throttling during automated test runs.
+- Updated in-menu scenario descriptions in `src/menu/scenario_select.rs`:
+  - Field text now reflects asteroid-only seeded clustered starts.
+  - Orbit text now reflects stronger central well and jittered rings.
+  - Comets text now reflects outer-annulus gentle inward crossing flow.
+  - Shower text now reflects dense small-body outer inward rain.
+- Updated scenario enum doc comments in `src/menu/types.rs` to match current behavior.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Scenario Pass: Shower Redesign (P0) — February 27, 2026
 
 ### Rebased Shower onto outer-annulus inward flow with dense small-body mix

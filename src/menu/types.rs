@@ -31,14 +31,14 @@ pub enum ShopReturnState {
 /// Which scenario the player has chosen to play.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectedScenario {
-    /// 100 asteroids distributed by noise clusters — the classic asteroid field.
+    /// Asteroid-only seeded clustered field with varied starts.
     #[default]
     Field,
-    /// One very large planetoid at the origin with rings of smaller asteroids.
+    /// Strong central planetoid with varied orbital debris rings.
     Orbit,
-    /// Twenty large, fast-moving asteroids on crossing trajectories.
+    /// Large-biased outer-annulus bodies with gentle inward crossing flow.
     Comets,
-    /// 250 unit triangles packed into a dense field.
+    /// Dense small-body outer shower with inward rain trajectories.
     Shower,
 }
 
