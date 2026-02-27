@@ -170,11 +170,11 @@ impl Plugin for SimulationPlugin {
                         particle_locking_system,
                         gamepad_connection_system, // Track preferred gamepad
                         tractor_hold_toggle_system, // Toggle tractor hold mode (KB/gamepad)
+                        mouse_aim_system, // Mouse cursor updates AimDirection
                         player_intent_clear_system, // Reset ExternalForce + PlayerIntent
                         keyboard_to_intent_system, // KB thrust+strafe + cursor-facing → PlayerIntent
                         gamepad_to_intent_system,  // Gamepad sticks/triggers → PlayerIntent
                         apply_player_intent_system, // PlayerIntent → ExternalForce / Velocity
-                        mouse_aim_system,          // Mouse cursor updates AimDirection
                     )
                         .chain(),
                     profiler_mark_after_group1_system,
@@ -602,7 +602,7 @@ pub(crate) fn nbody_gravity_system(
 /// Updates `AimDirection` every frame from the mouse cursor position.
 /// The player is always at the screen centre (camera follows them), so the
 /// normalised screen-space offset from the centre IS the aim direction in world space.
-/// Also resets [`AimIdleTimer`] whenever the cursor position changes.
+/// Also keeps [`AimIdleTimer`] reset while a non-zero cursor aim is active.
 pub fn mouse_aim_system(
     mut aim: ResMut<AimDirection>,
     mut idle: ResMut<AimIdleTimer>,
@@ -624,13 +624,16 @@ pub fn mouse_aim_system(
     );
     let dir = offset.normalize_or_zero();
     if dir.length_squared() > 0.0 {
+        // A valid off-centre cursor means mouse aim is actively controlling
+        // facing, even when the cursor is stationary.
+        idle.secs = 0.0;
+
         // Detect cursor movement: compare to the stored last cursor position.
         let moved = idle
             .last_cursor
             .is_none_or(|prev: Vec2| prev.distance_squared(cursor) > 1.0);
         if moved {
             idle.last_cursor = Some(cursor);
-            idle.secs = 0.0;
         }
         aim.0 = dir;
     }

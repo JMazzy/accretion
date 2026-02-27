@@ -235,7 +235,9 @@ pub fn apply_player_intent_system(
         .desired_facing
         .filter(|dir| dir.length_squared() > 1e-6)
     {
-        let target_angle = desired.x.atan2(desired.y);
+        // Match the exact +Y-facing convention used by the aim indicator and
+        // projectile orientation: atan2(y, x) - PI/2.
+        let target_angle = desired.y.atan2(desired.x) - std::f32::consts::FRAC_PI_2;
         let current_angle = transform.rotation.to_euler(EulerRot::ZYX).0;
         let mut angle_diff = target_angle - current_angle;
         while angle_diff > std::f32::consts::PI {
