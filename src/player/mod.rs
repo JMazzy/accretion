@@ -30,7 +30,7 @@ pub use combat::{
 pub use control::{
     aim_snap_system, apply_player_intent_system, gamepad_connection_system,
     gamepad_to_intent_system, keyboard_to_intent_system, player_intent_clear_system,
-    player_oob_damping_system, tractor_beam_force_system,
+    tractor_beam_force_system,
 };
 pub use ion_cannon::{
     attach_ion_cannon_shot_mesh_system, despawn_old_ion_cannon_shots_system,

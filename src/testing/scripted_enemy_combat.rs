@@ -89,6 +89,7 @@ fn spawn_scripted_player_projectile(commands: &mut Commands, start: Vec2, dir: V
     commands.spawn((
         Projectile {
             age: 0.0,
+            distance_traveled: 0.0,
             was_hit: false,
         },
         Transform::from_translation(start.extend(0.0)),
@@ -109,7 +110,10 @@ fn spawn_scripted_player_projectile(commands: &mut Commands, start: Vec2, dir: V
 
 fn spawn_scripted_enemy_projectile(commands: &mut Commands, start: Vec2, dir: Vec2, speed: f32) {
     commands.spawn((
-        EnemyProjectile { age: 0.0 },
+        EnemyProjectile {
+            age: 0.0,
+            distance_traveled: 0.0,
+        },
         EnemyProjectileRenderMarker,
         Transform::from_translation(start.extend(0.2)),
         Visibility::default(),

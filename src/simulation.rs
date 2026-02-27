@@ -10,6 +10,7 @@ use crate::asteroid::{
 };
 use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_render_mode_system};
 use crate::config::PhysicsConfig;
+use crate::enemy::Enemy;
 use crate::menu::GameState;
 use crate::player::{
     aim_snap_system, apply_player_intent_system, attach_ion_cannon_shot_mesh_system,
@@ -20,14 +21,14 @@ use crate::player::{
     ion_cannon_fire_system, ion_cannon_hit_enemy_system, ion_shot_particles_system,
     keyboard_to_intent_system, missile_acceleration_system, missile_asteroid_hit_system,
     missile_fire_system, missile_trail_particles_system, player_collision_damage_system,
-    player_intent_clear_system, player_oob_damping_system, player_respawn_system,
-    projectile_asteroid_hit_system, projectile_fire_system, projectile_missile_planet_hit_system,
-    stunned_enemy_particles_system, sync_aim_indicator_system,
-    sync_player_and_projectile_mesh_visibility_system, sync_player_health_bar_system,
-    sync_projectile_outline_visibility_system, sync_projectile_rotation_system,
-    sync_ship_outline_visibility_and_color_system, tractor_beam_force_system, AimDirection,
-    AimIdleTimer, IonCannonCooldown, IonCannonLevel, MissileAmmo, MissileCooldown, PlayerIntent,
-    PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad, TractorBeamLevel,
+    player_intent_clear_system, player_respawn_system, projectile_asteroid_hit_system,
+    projectile_fire_system, projectile_missile_planet_hit_system, stunned_enemy_particles_system,
+    sync_aim_indicator_system, sync_player_and_projectile_mesh_visibility_system,
+    sync_player_health_bar_system, sync_projectile_outline_visibility_system,
+    sync_projectile_rotation_system, sync_ship_outline_visibility_and_color_system,
+    tractor_beam_force_system, AimDirection, AimIdleTimer, IonCannonCooldown, IonCannonLevel,
+    MissileAmmo, MissileCooldown, Player, PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities,
+    PreferredGamepad, TractorBeamLevel,
 };
 use crate::rendering::{
     debug_panel_button_system, hud_score_display_system, lives_hud_display_system,
@@ -163,7 +164,6 @@ impl Plugin for SimulationPlugin {
                     // ── Group 1: physics bookkeeping + input pipeline ─────────
                     (
                         stats_counting_system, // Count asteroids for stats
-                        soft_boundary_system,  // Apply inward spring force near boundary
                         culling_system,        // Hard-remove asteroids past safety boundary
                         particle_locking_system,
                         gamepad_connection_system, // Track preferred gamepad
@@ -227,7 +227,7 @@ impl Plugin for SimulationPlugin {
                         stats_display_system,          // Render stats overlay text
                         physics_inspector_display_system, // Render physics inspector text
                         profiler_display_system,       // Render profiler text
-                        player_oob_damping_system,     // Slow player outside boundary
+                        soft_boundary_system,          // Shared inward spring near boundary
                         player_collision_damage_system, // Player takes damage from asteroids
                         player_respawn_system,         // Re-spawn ship after countdown
                         cleanup_player_ui_system,      // Despawn UI on player death
@@ -736,17 +736,21 @@ pub fn culling_system(
     }
 }
 
-/// Apply a restoring force to asteroids that have drifted past the soft boundary.
+/// Apply a restoring force to non-projectile dynamic actors beyond the soft boundary.
 ///
 /// The force is a linear spring toward the origin:
 /// ```text
 /// F_inward = soft_boundary_strength × (dist − soft_boundary_radius) × (−pos / dist)
 /// ```
-/// This creates a reflecting potential well that nudges stray asteroids back toward
+/// This creates a reflecting potential well that nudges stray entities back toward
 /// the simulation centre without the jarring discontinuity of hard-culling.  The
 /// spring activates only when `dist > soft_boundary_radius`.
+#[allow(clippy::type_complexity)]
 pub fn soft_boundary_system(
-    mut query: Query<(&Transform, &mut ExternalForce), With<Asteroid>>,
+    mut query: Query<
+        (&Transform, &mut ExternalForce),
+        Or<(With<Asteroid>, With<Player>, With<Enemy>)>,
+    >,
     config: Res<PhysicsConfig>,
 ) {
     let inner_radius = config.soft_boundary_radius;
@@ -1074,6 +1078,105 @@ pub fn asteroid_formation_system(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::enemy::Enemy;
+    use crate::player::Player;
+
+    #[test]
+    fn soft_boundary_applies_same_force_to_asteroid_player_enemy() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(crate::config::PhysicsConfig::default())
+            .add_systems(Update, soft_boundary_system);
+
+        let cfg = app
+            .world()
+            .resource::<crate::config::PhysicsConfig>()
+            .clone();
+        let pos = Vec2::new(cfg.soft_boundary_radius + 50.0, 0.0);
+
+        let asteroid = app
+            .world_mut()
+            .spawn((
+                Asteroid,
+                Transform::from_translation(pos.extend(0.0)),
+                ExternalForce::default(),
+            ))
+            .id();
+
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                Transform::from_translation(pos.extend(0.0)),
+                ExternalForce::default(),
+            ))
+            .id();
+
+        let enemy = app
+            .world_mut()
+            .spawn((
+                Enemy,
+                Transform::from_translation(pos.extend(0.0)),
+                ExternalForce::default(),
+            ))
+            .id();
+
+        app.update();
+
+        let asteroid_force = app
+            .world()
+            .get::<ExternalForce>(asteroid)
+            .expect("asteroid external force")
+            .force;
+        let player_force = app
+            .world()
+            .get::<ExternalForce>(player)
+            .expect("player external force")
+            .force;
+        let enemy_force = app
+            .world()
+            .get::<ExternalForce>(enemy)
+            .expect("enemy external force")
+            .force;
+
+        let expected = Vec2::new(-cfg.soft_boundary_strength * 50.0, 0.0);
+        assert!((asteroid_force - expected).length() < 1e-4);
+        assert!((player_force - expected).length() < 1e-4);
+        assert!((enemy_force - expected).length() < 1e-4);
+    }
+
+    #[derive(Component)]
+    struct UnmanagedBoundaryEntity;
+
+    #[test]
+    fn soft_boundary_does_not_apply_to_unmanaged_entities() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(crate::config::PhysicsConfig::default())
+            .add_systems(Update, soft_boundary_system);
+
+        let cfg = app
+            .world()
+            .resource::<crate::config::PhysicsConfig>()
+            .clone();
+        let entity = app
+            .world_mut()
+            .spawn((
+                UnmanagedBoundaryEntity,
+                Transform::from_translation(Vec3::new(cfg.soft_boundary_radius + 100.0, 0.0, 0.0)),
+                ExternalForce::default(),
+            ))
+            .id();
+
+        app.update();
+
+        let force = app
+            .world()
+            .get::<ExternalForce>(entity)
+            .expect("external force")
+            .force;
+        assert_eq!(force, Vec2::ZERO);
+    }
 
     // ── gravity_force_between ─────────────────────────────────────────────────
 

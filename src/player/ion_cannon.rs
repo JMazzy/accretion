@@ -1,6 +1,5 @@
 use super::state::{IonCannonLevel, Player};
 use crate::asteroid_rendering::filled_polygon_mesh;
-use crate::config::PhysicsConfig;
 use crate::enemy::{Enemy, EnemyStun, EnemyTier};
 use crate::particles::spawn_ion_particles;
 use bevy::prelude::*;
@@ -9,6 +8,7 @@ use bevy_rapier2d::prelude::*;
 #[derive(Component, Debug, Clone, Copy)]
 pub struct IonCannonShot {
     pub age: f32,
+    pub distance_traveled: f32,
 }
 
 #[derive(Component)]
@@ -77,7 +77,10 @@ pub fn ion_cannon_fire_system(
     let spawn_pos = player_transform.translation.truncate() + forward * 14.0;
 
     commands.spawn((
-        IonCannonShot { age: 0.0 },
+        IonCannonShot {
+            age: 0.0,
+            distance_traveled: 0.0,
+        },
         IonCannonShotRenderMarker,
         Transform::from_translation(spawn_pos.extend(0.2)),
         Visibility::default(),
@@ -102,16 +105,15 @@ pub fn ion_cannon_fire_system(
 
 pub fn despawn_old_ion_cannon_shots_system(
     mut commands: Commands,
-    mut q_shots: Query<(Entity, &mut IonCannonShot, &Transform)>,
+    mut q_shots: Query<(Entity, &mut IonCannonShot, &Velocity)>,
     time: Res<Time>,
-    config: Res<PhysicsConfig>,
 ) {
     let dt = time.delta_secs();
-    for (entity, mut shot, transform) in q_shots.iter_mut() {
+    for (entity, mut shot, velocity) in q_shots.iter_mut() {
         shot.age += dt;
-        let dist = transform.translation.truncate().length();
+        shot.distance_traveled += velocity.linvel.length() * dt;
         if shot.age >= crate::constants::ION_CANNON_SHOT_LIFETIME
-            || dist > config.hard_cull_distance
+            || shot.distance_traveled > crate::constants::ION_CANNON_SHOT_MAX_DIST
         {
             commands.entity(entity).despawn();
         }

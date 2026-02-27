@@ -451,13 +451,20 @@ If the geometric split produces fewer vertices than the minimum for that mass (e
 
 **Chip geometry**: The remaining asteroid recomputes its convex hull after removing the impacted vertex, so the outline incrementally shrinks with each chip hit.
 
-### Out-of-Bounds Behaviour
+### Boundary Behaviour
 
-The player ship is not culled like asteroids, but experiences increasing velocity damping when outside the `OOB_RADIUS` boundary:
+Boundary behavior is now consistent by entity class:
 
-- **OOB radius**: `OOB_RADIUS` from origin (matches asteroid cull boundary)
-- **Damping factor**: `OOB_DAMPING` (velocity scaled per frame), ramped smoothly over `OOB_RAMP_WIDTH` from 0% at the boundary to full effect beyond
-- **Effect**: Gentle drag that discourages escaping the simulation; the player can still re-enter under thrust
+- **Non-projectile dynamic actors** (asteroids, player ship, enemy ships): beyond `SOFT_BOUNDARY_RADIUS`, all receive the same inward soft-boundary spring force.
+- **Asteroids**: still use `HARD_CULL_DISTANCE` as a safety fallback if they escape the soft-boundary spring.
+- **Weapon projectiles** (player projectile, missile, ion shot, enemy projectile): can cross the boundary and are not ended by boundary checks; they expire by lifetime and/or projectile range limits.
+
+| Entity class | Border behavior |
+|---|---|
+| Asteroids | Inward soft-boundary force; hard-cull safety fallback if they escape |
+| Player ship | Inward soft-boundary force (no player hard-cull) |
+| Enemy ships | Inward soft-boundary force (no enemy hard-cull) |
+| Weapon projectiles (player, missile, ion, enemy) | May cross boundary; expire only by lifetime/range |
 
 ## Pause Menu
 

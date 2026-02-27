@@ -598,6 +598,9 @@ pub const ION_CANNON_SHOT_SPEED: f32 = 340.0;
 /// Lifetime (seconds) of an ion-cannon shot before despawn.
 pub const ION_CANNON_SHOT_LIFETIME: f32 = 3.0;
 
+/// Maximum travel distance (u) for an ion-cannon shot before despawn.
+pub const ION_CANNON_SHOT_MAX_DIST: f32 = 2200.0;
+
 /// Collider radius (u) of an ion-cannon shot.
 pub const ION_CANNON_SHOT_COLLIDER_RADIUS: f32 = 8.0;
 

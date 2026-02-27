@@ -1,5 +1,32 @@
 # Accretion Changelog
 
+## Border Handling Consistency Pass (P0) — February 27, 2026
+
+### Unified non-projectile boundary force + decoupled projectile expiry from borders
+
+**What changed**:
+- Unified soft-boundary behavior in `src/simulation.rs`:
+  - `soft_boundary_system` now applies the same inward spring force to asteroids, player ship, and enemy ships.
+  - Removed scheduled player-only out-of-bounds damping path (`player_oob_damping_system`) so edge handling is consistent for non-projectile dynamic actors.
+- Decoupled projectile range expiry from world-origin/border coupling:
+  - Added `distance_traveled` tracking for `Projectile`, `Missile`, `EnemyProjectile`, and `IonCannonShot`.
+  - Updated despawn systems to expire by `lifetime` and `max_dist` based on **distance travelled since spawn** rather than distance from origin.
+  - Ion cannon shots no longer use `hard_cull_distance` for despawn; they now use lifetime + `ION_CANNON_SHOT_MAX_DIST`.
+- Updated docs/config comments:
+  - `ARCHITECTURE.md` and `FEATURES.md` now describe unified non-projectile soft-boundary behavior and projectile border-crossing policy.
+  - `assets/physics.toml` projectile range comments now explicitly describe distance-from-spawn semantics.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+- Targeted boundary regressions ✅:
+  - `projectile_not_despawned_just_for_being_far_from_origin`
+  - `projectile_despawns_when_traveled_distance_exceeds_max`
+  - `missile_not_despawned_just_for_being_far_from_origin`
+  - `soft_boundary_applies_same_force_to_asteroid_player_enemy`
+  - `soft_boundary_does_not_apply_to_unmanaged_entities`
+
 ## Performance Pass v1 (P0) — Profiler + Allocator Evidence Capture — February 27, 2026
 
 ### Added explicit PostUpdate delta reporting and allocator/heap counters for perf runs

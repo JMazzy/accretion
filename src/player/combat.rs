@@ -120,6 +120,7 @@ pub fn projectile_fire_system(
     commands.spawn((
         Projectile {
             age: 0.0,
+            distance_traveled: 0.0,
             was_hit: false,
         },
         Transform::from_translation(spawn_pos.extend(0.0)),
@@ -153,16 +154,17 @@ pub fn projectile_fire_system(
 /// considered a **miss** and resets the hit streak to zero.
 pub fn despawn_old_projectiles_system(
     mut commands: Commands,
-    mut q: Query<(Entity, &mut Projectile, &Transform)>,
+    mut q: Query<(Entity, &mut Projectile, &Velocity)>,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
     mut score: ResMut<PlayerScore>,
 ) {
     let dt = time.delta_secs();
-    for (entity, mut proj, transform) in q.iter_mut() {
+    for (entity, mut proj, velocity) in q.iter_mut() {
         proj.age += dt;
-        let dist = transform.translation.truncate().length();
-        let expired = proj.age >= config.projectile_lifetime || dist > config.projectile_max_dist;
+        proj.distance_traveled += velocity.linvel.length() * dt;
+        let expired = proj.age >= config.projectile_lifetime
+            || proj.distance_traveled > config.projectile_max_dist;
         if expired || proj.was_hit {
             if expired && !proj.was_hit {
                 // Projectile ran out of range without hitting anything — break streak.
@@ -233,7 +235,11 @@ pub fn missile_fire_system(
     let spawn_pos = transform.translation.truncate() + fire_dir * 16.0;
 
     commands.spawn((
-        Missile::default(),
+        Missile {
+            age: 0.0,
+            distance_traveled: 0.0,
+            trail_emit_timer: 0.0,
+        },
         Transform::from_translation(spawn_pos.extend(0.0)),
         Visibility::default(),
         RigidBody::KinematicVelocityBased,
@@ -278,15 +284,17 @@ pub fn missile_acceleration_system(
 /// Age missiles each frame; despawn when they expire or go out of range.
 pub fn despawn_old_missiles_system(
     mut commands: Commands,
-    mut q: Query<(Entity, &mut Missile, &Transform)>,
+    mut q: Query<(Entity, &mut Missile, &Velocity)>,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
 ) {
     let dt = time.delta_secs();
-    for (entity, mut missile, transform) in q.iter_mut() {
+    for (entity, mut missile, velocity) in q.iter_mut() {
         missile.age += dt;
-        let dist = transform.translation.truncate().length();
-        if missile.age >= config.missile_lifetime || dist > config.missile_max_dist {
+        missile.distance_traveled += velocity.linvel.length() * dt;
+        if missile.age >= config.missile_lifetime
+            || missile.distance_traveled > config.missile_max_dist
+        {
             commands.entity(entity).despawn();
         }
     }
@@ -955,6 +963,120 @@ pub fn projectile_missile_planet_hit_system(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bevy::prelude::{App, MinimalPlugins};
+
+    fn setup_projectile_lifetime_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(crate::config::PhysicsConfig::default())
+            .insert_resource(PlayerScore::default())
+            .add_systems(Update, despawn_old_projectiles_system);
+        app
+    }
+
+    fn setup_missile_lifetime_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(crate::config::PhysicsConfig::default())
+            .add_systems(Update, despawn_old_missiles_system);
+        app
+    }
+
+    #[test]
+    fn projectile_not_despawned_just_for_being_far_from_origin() {
+        let mut app = setup_projectile_lifetime_test_app();
+        let cfg = app
+            .world()
+            .resource::<crate::config::PhysicsConfig>()
+            .clone();
+
+        let entity = app
+            .world_mut()
+            .spawn((
+                Projectile {
+                    age: 0.0,
+                    distance_traveled: 0.0,
+                    was_hit: false,
+                },
+                Velocity {
+                    linvel: Vec2::ZERO,
+                    angvel: 0.0,
+                },
+                Transform::from_translation(Vec3::new(cfg.hard_cull_distance * 2.0, 0.0, 0.0)),
+            ))
+            .id();
+
+        app.update();
+
+        assert!(
+            app.world().get_entity(entity).is_ok(),
+            "projectile should not expire merely from being beyond world border"
+        );
+    }
+
+    #[test]
+    fn projectile_despawns_when_traveled_distance_exceeds_max() {
+        let mut app = setup_projectile_lifetime_test_app();
+        let cfg = app
+            .world()
+            .resource::<crate::config::PhysicsConfig>()
+            .clone();
+
+        let entity = app
+            .world_mut()
+            .spawn((
+                Projectile {
+                    age: 0.0,
+                    distance_traveled: cfg.projectile_max_dist + 1.0,
+                    was_hit: false,
+                },
+                Velocity {
+                    linvel: Vec2::ZERO,
+                    angvel: 0.0,
+                },
+                Transform::from_translation(Vec3::ZERO),
+            ))
+            .id();
+
+        app.update();
+
+        assert!(
+            app.world().get_entity(entity).is_err(),
+            "projectile should expire when traveled distance exceeds projectile_max_dist"
+        );
+    }
+
+    #[test]
+    fn missile_not_despawned_just_for_being_far_from_origin() {
+        let mut app = setup_missile_lifetime_test_app();
+        let cfg = app
+            .world()
+            .resource::<crate::config::PhysicsConfig>()
+            .clone();
+
+        let entity = app
+            .world_mut()
+            .spawn((
+                Missile {
+                    age: 0.0,
+                    distance_traveled: 0.0,
+                    trail_emit_timer: 0.0,
+                },
+                Velocity {
+                    linvel: Vec2::ZERO,
+                    angvel: 0.0,
+                },
+                Transform::from_translation(Vec3::new(cfg.hard_cull_distance * 2.0, 0.0, 0.0)),
+            ))
+            .id();
+
+        app.update();
+
+        assert!(
+            app.world().get_entity(entity).is_ok(),
+            "missile should not expire merely from being beyond world border"
+        );
+    }
 
     #[test]
     fn impact_radiating_split_basis_anchors_near_impact_edge() {

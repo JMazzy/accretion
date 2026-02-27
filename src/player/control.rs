@@ -13,7 +13,6 @@
 //! Also contains helper systems that are not part of the core thrust pipeline:
 //! - [`gamepad_connection_system`] — tracks which gamepad is preferred
 //! - [`aim_snap_system`] — snaps aim to ship forward after idle period
-//! - [`player_oob_damping_system`] — soft boundary enforcement
 
 use super::state::{
     AimDirection, AimIdleTimer, Player, PlayerIntent, PreferredGamepad, TractorBeamLevel,
@@ -233,30 +232,6 @@ pub fn aim_snap_system(
         if let Ok(transform) = q_player.single() {
             aim.0 = transform.rotation.mul_vec3(Vec3::Y).truncate();
         }
-    }
-}
-
-// ── Out-of-bounds damping ──────────────────────────────────────────────────────
-
-/// Applies ramped velocity damping when the player drifts outside `OOB_RADIUS`.
-///
-/// The damping factor ramps smoothly from 0% at the boundary to a maximum of
-/// `(1.0 − OOB_DAMPING) × 100%` at `OOB_RADIUS + OOB_RAMP_WIDTH`.
-/// The player can always re-enter under thrust; they are never hard-stopped.
-pub fn player_oob_damping_system(
-    mut q: Query<(&Transform, &mut Velocity), With<Player>>,
-    config: Res<PhysicsConfig>,
-) {
-    let Ok((transform, mut velocity)) = q.single_mut() else {
-        return;
-    };
-
-    let dist = transform.translation.truncate().length();
-    if dist > config.oob_radius {
-        let exceed = (dist - config.oob_radius).min(config.oob_ramp_width) / config.oob_ramp_width;
-        let factor = 1.0 - exceed * (1.0 - config.oob_damping);
-        velocity.linvel *= factor;
-        velocity.angvel *= factor;
     }
 }
 

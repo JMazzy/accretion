@@ -42,6 +42,7 @@ pub struct EnemyFireCooldown {
 #[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyProjectile {
     pub age: f32,
+    pub distance_traveled: f32,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -348,7 +349,10 @@ fn enemy_fire_system(
 
         let spawn_pos = enemy_pos + fire_dir * (config.enemy_collider_radius + 6.0);
         commands.spawn((
-            EnemyProjectile { age: 0.0 },
+            EnemyProjectile {
+                age: 0.0,
+                distance_traveled: 0.0,
+            },
             EnemyProjectileRenderMarker,
             Transform::from_translation(spawn_pos.extend(0.2)),
             Visibility::default(),
@@ -374,16 +378,16 @@ fn enemy_fire_system(
 
 fn despawn_old_enemy_projectiles_system(
     mut commands: Commands,
-    mut q: Query<(Entity, &mut EnemyProjectile, &Transform)>,
+    mut q: Query<(Entity, &mut EnemyProjectile, &Velocity)>,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
 ) {
     let dt = time.delta_secs();
-    for (entity, mut projectile, transform) in q.iter_mut() {
+    for (entity, mut projectile, velocity) in q.iter_mut() {
         projectile.age += dt;
-        let dist = transform.translation.truncate().length();
+        projectile.distance_traveled += velocity.linvel.length() * dt;
         if projectile.age >= config.enemy_projectile_lifetime
-            || dist > config.enemy_projectile_max_dist
+            || projectile.distance_traveled > config.enemy_projectile_max_dist
         {
             commands.entity(entity).despawn();
         }
@@ -1091,7 +1095,10 @@ mod tests {
         let enemy_projectile = app
             .world_mut()
             .spawn((
-                EnemyProjectile { age: 0.0 },
+                EnemyProjectile {
+                    age: 0.0,
+                    distance_traveled: 0.0,
+                },
                 Transform::from_translation(Vec3::new(12.0, -4.0, 0.0)),
             ))
             .id();
@@ -1150,7 +1157,10 @@ mod tests {
         let enemy_projectile = app
             .world_mut()
             .spawn((
-                EnemyProjectile { age: 0.0 },
+                EnemyProjectile {
+                    age: 0.0,
+                    distance_traveled: 0.0,
+                },
                 Transform::from_translation(Vec3::new(1.0, 1.0, 0.0)),
             ))
             .id();

@@ -12,7 +12,22 @@ Last updated: February 27, 2026.
 
 ## P0 — Next Implementation Candidates
 
-No open P0 items.
+### Border Handling Consistency (current limitation)
+
+- [x] **Weapon projectiles: unified border policy (can cross boundary)**
+	- Define a single rule for all weapon projectile types (player projectile, enemy projectile, ion shot, missiles/fragments if classified as weapon projectiles): crossing soft/hard simulation borders must not despawn or damp them.
+	- Remove/replace any border-coupled projectile despawn checks so projectile expiry policy is consistent across weapon systems.
+	- Acceptance: all weapon projectile types remain valid after crossing the boundary and expire only by their intended projectile lifetime and/or projectile max-range rule (never by border crossing itself).
+
+- [x] **Non-projectile entities: shared soft-boundary force behavior**
+	- Apply the same inward soft-boundary force model to all non-weapon entities that must remain in-bounds (asteroids, player, enemies, and other persistent world actors).
+	- Remove bespoke per-entity boundary behaviors that conflict with the shared rule (e.g., custom damping-only paths) unless explicitly documented as exceptions.
+	- Acceptance: non-projectile entities exhibit consistent edge behavior via one soft-boundary-force policy, with hard-cull reserved only as final safety fallback where required.
+
+- [x] **Boundary behavior audit + regression coverage**
+	- Create a boundary-policy matrix in docs listing each entity class and expected border behavior (cross / soft-force / hard-cull fallback).
+	- Add/extend tests to verify projectile-crossing behavior and non-projectile soft-boundary consistency.
+	- Acceptance: policy is documented in `ARCHITECTURE.md`/`FEATURES.md`, and boundary regressions are caught by automated test scenarios.
 
 - Completed v1 performance evidence and closeout summary: [PERFORMANCE_V1_CLOSEOUT.md](PERFORMANCE_V1_CLOSEOUT.md)
 - Next active optimization work is tracked in P1 (`Performance pass v2`).

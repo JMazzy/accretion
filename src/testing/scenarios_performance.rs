@@ -395,6 +395,7 @@ fn spawn_perf_player_projectile(commands: &mut Commands, start: Vec2, target: Ve
     commands.spawn((
         Projectile {
             age: 0.0,
+            distance_traveled: 0.0,
             was_hit: false,
         },
         Transform::from_translation((start + dir * 14.0).extend(0.0)),
@@ -424,6 +425,7 @@ fn spawn_perf_player_missile(
     commands.spawn((
         Missile {
             age: 0.0,
+            distance_traveled: 0.0,
             trail_emit_timer: 0.0,
         },
         Transform::from_translation((start + dir * 16.0).extend(0.0)),
@@ -445,7 +447,10 @@ fn spawn_perf_player_missile(
 fn spawn_perf_ion_shot(commands: &mut Commands, start: Vec2, target: Vec2) {
     let dir = (target - start).normalize_or_zero();
     commands.spawn((
-        IonCannonShot { age: 0.0 },
+        IonCannonShot {
+            age: 0.0,
+            distance_traveled: 0.0,
+        },
         IonCannonShotRenderMarker,
         Transform::from_translation((start + dir * 14.0).extend(0.2)),
         Visibility::default(),
@@ -472,7 +477,10 @@ fn spawn_perf_enemy_projectile(
 ) {
     let dir = (target - start).normalize_or_zero();
     commands.spawn((
-        EnemyProjectile { age: 0.0 },
+        EnemyProjectile {
+            age: 0.0,
+            distance_traveled: 0.0,
+        },
         EnemyProjectileRenderMarker,
         Transform::from_translation((start + dir * 12.0).extend(0.2)),
         Visibility::default(),

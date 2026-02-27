@@ -205,6 +205,7 @@ enemy_base_hp = 60.0
 enemy_fire_cooldown_base = 2.1
 enemy_projectile_speed = 360.0
 enemy_projectile_lifetime = 3.4
+# Maximum travel distance from spawn (world units) before enemy-projectile despawn.
 enemy_projectile_max_dist = 2200.0
 enemy_projectile_collider_radius = 3.0
 enemy_projectile_damage = 12.0
@@ -225,7 +226,7 @@ fire_cooldown = 0.2
 # Seconds before a live projectile is automatically despawned.
 projectile_lifetime = 3.0
 
-# Distance from origin beyond which a projectile is despawned.
+# Maximum travel distance from spawn (world units) before projectile despawn.
 projectile_max_dist = 2000.0
 
 # Radius (u) of each projectile's ball collider.
@@ -251,7 +252,7 @@ missile_cooldown = 0.4
 # Seconds before a missile despawns automatically.
 missile_lifetime = 4.0
 
-# Distance from origin beyond which missiles despawn.
+# Maximum travel distance from spawn (world units) before missile despawn.
 missile_max_dist = 2000.0
 
 # Radius (u) of missile collider.

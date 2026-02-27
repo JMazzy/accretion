@@ -53,6 +53,8 @@ impl Default for PlayerHealth {
 pub struct Projectile {
     /// Seconds since this projectile was spawned.
     pub age: f32,
+    /// Distance travelled since spawn (world units).
+    pub distance_traveled: f32,
     /// Set to `true` when the projectile has already hit an asteroid so the
     /// lifetime system knows not to count its expiry as a missed shot.
     pub was_hit: bool,
@@ -66,6 +68,8 @@ pub struct Projectile {
 pub struct Missile {
     /// Seconds since this missile was spawned.
     pub age: f32,
+    /// Distance travelled since spawn (world units).
+    pub distance_traveled: f32,
     /// Time accumulator used by the trail emission system.
     pub trail_emit_timer: f32,
 }

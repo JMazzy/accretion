@@ -145,10 +145,25 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 
 ### Culling & Boundary
 
-- **Soft boundary**: `SOFT_BOUNDARY_RADIUS` — asteroids beyond this distance feel a linear inward spring force (`soft_boundary_system`) that nudges them back toward the centre.  Force = `SOFT_BOUNDARY_STRENGTH × (dist − SOFT_BOUNDARY_RADIUS)` inward.
+- **Soft boundary**: `SOFT_BOUNDARY_RADIUS` — non-projectile dynamic actors (asteroids, player ship, enemy ships) beyond this distance feel a linear inward spring force (`soft_boundary_system`) that nudges them back toward the centre.  Force = `SOFT_BOUNDARY_STRENGTH × (dist − SOFT_BOUNDARY_RADIUS)` inward.
 - **Hard-cull distance**: `HARD_CULL_DISTANCE` — safety net; only asteroids that escape the soft spring entirely are removed outright.  In normal operation almost no asteroids reach this distance.
 - **Stats boundary**: `CULL_DISTANCE` — reference for the live-count display; asteroids within this radius are shown as "live".
 - Artificial velocity damping ramps have been removed; energy loss occurs only through collisions and the outer soft spring.
+- **Weapon projectiles**: projectile expiry is controlled by lifetime and projectile-range limits (distance travelled since spawn), not by boundary crossing.
+
+#### Boundary Policy Matrix
+
+| Entity class | Soft-boundary force | Border crossing allowed | Hard-cull fallback |
+|---|---|---|---|
+| Asteroid (`Asteroid`) | Yes | No (nudged inward) | Yes (`culling_system`) |
+| Player ship (`Player`) | Yes | No (nudged inward) | No |
+| Enemy ship (`Enemy`) | Yes | No (nudged inward) | No |
+| Player projectile (`Projectile`) | No | Yes | No |
+| Missile (`Missile`) | No | Yes | No |
+| Ion shot (`IonCannonShot`) | No | Yes | No |
+| Enemy projectile (`EnemyProjectile`) | No | Yes | No |
+
+Projectile classes expire by lifetime and max travelled-distance limits; they are never border-culled.
 
 ### Player Tractor Beam
 
@@ -206,7 +221,7 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 ### Update Schedule
 
 1. **`stats_counting_system`** - Counts live (within `CULL_DISTANCE`) / hard-culled (beyond `HARD_CULL_DISTANCE`) asteroids
-2. **`soft_boundary_system`** - Applies inward spring force to asteroids beyond `SOFT_BOUNDARY_RADIUS`
+2. **`soft_boundary_system`** - Applies inward spring force to non-projectile dynamic actors beyond `SOFT_BOUNDARY_RADIUS`
 3. **`culling_system`** - Hard-removes asteroids beyond `HARD_CULL_DISTANCE`
 4. **`neighbor_counting_system`** - Counts nearby asteroids using grid (O(N·K))
 5. **`particle_locking_system`** - Synchronizes velocities of slow touching asteroids via Rapier contact_pairs iterator (O(C), C = active contacts)
@@ -265,7 +280,7 @@ Key constant groups (see `src/constants.rs` for current values):
 | Camera | `MIN_ZOOM`, `MAX_ZOOM`, `ZOOM_SPEED` |
 | Player movement | `THRUST_FORCE`, `REVERSE_FORCE`, `ROTATION_SPEED` |
 | Tractor beam | `TRACTOR_BEAM_RANGE_*`, `TRACTOR_BEAM_FORCE_*`, `TRACTOR_BEAM_MAX_TARGET_SIZE_*`, `TRACTOR_BEAM_MAX_TARGET_SPEED_*`, `TRACTOR_BEAM_MIN_DISTANCE`, `TRACTOR_BEAM_AIM_CONE_DOT` |
-| Player OOB | `OOB_RADIUS`, `OOB_DAMPING`, `OOB_RAMP_WIDTH` |
+| Player OOB (legacy) | `OOB_RADIUS`, `OOB_DAMPING`, `OOB_RAMP_WIDTH` |
 | Player combat | `PROJECTILE_SPEED`, `FIRE_COOLDOWN`, `PROJECTILE_LIFETIME`, `MISSILE_INITIAL_SPEED`, `MISSILE_ACCELERATION`, `MISSILE_SPEED` |
 | Weapon upgrades | `PRIMARY_WEAPON_MAX_LEVEL`, `WEAPON_UPGRADE_BASE_COST`, `SECONDARY_WEAPON_MAX_LEVEL`, `SECONDARY_WEAPON_UPGRADE_BASE_COST`, `TRACTOR_BEAM_MAX_LEVEL`, `TRACTOR_BEAM_UPGRADE_BASE_COST` |
 | Ore economy & magnet upgrades | `ORE_HEAL_AMOUNT`, `ORE_MAGNET_BASE_RADIUS`, `ORE_MAGNET_BASE_STRENGTH`, `ORE_AFFINITY_MAX_LEVEL`, `ORE_AFFINITY_UPGRADE_BASE_COST` |
