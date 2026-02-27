@@ -12,7 +12,10 @@ Last updated: February 27, 2026.
 
 ## P0 — Next Implementation Candidates
 
-No open P0 items currently.
+No open P0 items.
+
+- Completed v1 performance evidence and closeout summary: [PERFORMANCE_V1_CLOSEOUT.md](PERFORMANCE_V1_CLOSEOUT.md)
+- Next active optimization work is tracked in P1 (`Performance pass v2`).
 
 ## P1 — Next Queue
 
@@ -59,6 +62,15 @@ No open P0 items currently.
 	- Friendly-fire, scoring, and win-condition rule variants.
 	- Acceptance: a complete PvP match loop can start, progress, and end cleanly.
 
+### Performance Program
+
+- [ ] **Performance pass v2 (post-v1 hardening + scale test)**
+	- Re-run profiling after v1 optimizations and target the next bottleneck at higher scale (e.g., larger asteroid counts / heavier contact density).
+	- Use [PERFORMANCE_V1_CLOSEOUT.md](PERFORMANCE_V1_CLOSEOUT.md) as the baseline reference for v2 comparisons.
+	- Initial candidate from v1 closeout: reduce mixed-content allocation churn in formation/contact and projectile-heavy update paths.
+	- Extend benchmark comparison table in docs with v1 vs v2 deltas.
+	- Acceptance: second measurable frame-time improvement without stability regressions.
+
 ## P2 — Developer Quality and Maintainability
 
 ### Tooling & Testing
@@ -82,10 +94,10 @@ No open P0 items currently.
 
 ### Performance Program
 
-- [ ] **Performance pass v1 (guided by profiler)**
-	- Use profiler overlay + benchmark scenarios to identify top 1–2 hot systems.
-	- Implement highest-impact optimization and log measurable before/after metrics.
-	- Acceptance: documented performance improvement in target scenario(s).
+- [ ] **Performance pass v3 (post-v2 hardening + scale test)**
+	- Re-run profiling after v2 optimizations and target the next bottleneck at higher scale (e.g., larger asteroid counts / heavier contact density).
+	- Extend benchmark comparison table in docs with v1 vs v2 vs v3 deltas.
+	- Acceptance: measurable frame-time improvement without stability regressions.
 
 ### Platform Maintenance
 

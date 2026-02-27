@@ -5,13 +5,14 @@ use crate::menu::GameState;
 use crate::player;
 use crate::simulation;
 use crate::testing::{
-    self, spawn_test_all_three, spawn_test_baseline_100, spawn_test_culling_verification,
-    spawn_test_enemy_combat_scripted, spawn_test_gentle_approach, spawn_test_gravity,
-    spawn_test_gravity_boundary, spawn_test_high_speed_collision, spawn_test_kdtree_only,
-    spawn_test_large_small_pair, spawn_test_mixed_size_asteroids, spawn_test_near_miss,
-    spawn_test_orbit_pair, spawn_test_passing_asteroid, spawn_test_perf_benchmark,
-    spawn_test_soft_boundary_only, spawn_test_three_triangles, spawn_test_tidal_only,
-    spawn_test_two_triangles, TestConfig,
+    self, spawn_test_all_three, spawn_test_all_three_225_enemy5, spawn_test_baseline_100,
+    spawn_test_baseline_225, spawn_test_culling_verification, spawn_test_enemy_combat_scripted,
+    spawn_test_gentle_approach, spawn_test_gravity, spawn_test_gravity_boundary,
+    spawn_test_high_speed_collision, spawn_test_kdtree_only, spawn_test_large_small_pair,
+    spawn_test_mixed_content_225_enemy8, spawn_test_mixed_content_324_enemy12,
+    spawn_test_mixed_size_asteroids, spawn_test_near_miss, spawn_test_orbit_pair,
+    spawn_test_passing_asteroid, spawn_test_perf_benchmark, spawn_test_soft_boundary_only,
+    spawn_test_three_triangles, spawn_test_tidal_only, spawn_test_two_triangles, TestConfig,
 };
 
 pub fn configure_test_mode(app: &mut App, test_name: &str) {
@@ -24,7 +25,11 @@ pub fn configure_test_mode(app: &mut App, test_name: &str) {
 
     app.add_systems(
         Update,
-        testing::enemy_combat_script_system.run_if(in_state(GameState::Playing)),
+        (
+            testing::enemy_combat_script_system,
+            testing::mixed_perf_projectile_stimulus_system,
+        )
+            .run_if(in_state(GameState::Playing)),
     );
 
     app.add_systems(
@@ -111,6 +116,28 @@ fn add_test_startup_system(app: &mut App, test_name: &str) {
         "all_three" => app.add_systems(
             Startup,
             spawn_test_all_three.after(config::load_physics_config),
+        ),
+        "baseline_225" => app.add_systems(
+            Startup,
+            spawn_test_baseline_225.after(config::load_physics_config),
+        ),
+        "all_three_225_enemy5" => app.add_systems(
+            Startup,
+            (player::spawn_player, spawn_test_all_three_225_enemy5)
+                .chain()
+                .after(config::load_physics_config),
+        ),
+        "mixed_content_225_enemy8" => app.add_systems(
+            Startup,
+            (player::spawn_player, spawn_test_mixed_content_225_enemy8)
+                .chain()
+                .after(config::load_physics_config),
+        ),
+        "mixed_content_324_enemy12" => app.add_systems(
+            Startup,
+            (player::spawn_player, spawn_test_mixed_content_324_enemy12)
+                .chain()
+                .after(config::load_physics_config),
         ),
         "orbit_pair" => app.add_systems(
             Startup,

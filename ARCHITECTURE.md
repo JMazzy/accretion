@@ -292,7 +292,7 @@ Built-in scenarios are variants of `SelectedScenario` (in `menu.rs`) and spawned
 - **Trigger**: `ACCRETION_TEST=<test_name>` environment variable
 - **Runs**: Single test scenario for exact reproducibility
 - **Framework**: Custom spawning functions exported via `src/testing.rs` and implemented in `src/testing/` modules
-- **Player isolation**: In test mode the player entity is **not spawned** — player systems run but find no `Player` component and are no-ops. This ensures asteroid-only tests are not affected by the player ship's collider (radius = `PLAYER_COLLIDER_RADIUS`) or its input/damage systems.
+- **Player isolation**: Most test scenarios do **not** spawn the player entity — player systems run but find no `Player` component and are no-ops. Select scenarios that explicitly benchmark player/enemy interaction can opt in to spawning the player during startup.
 
 ### Available Tests
 
@@ -307,12 +307,18 @@ Built-in scenarios are variants of `SelectedScenario` (in `menu.rs`) and spawned
 - `gravity_boundary` - Behavior at maximum gravity distance
 - `mixed_size_asteroids` - Complex 5-body N-body system
 - `enemy_combat_scripted` - Deterministic player/enemy/asteroid scripted fire sequence validating runtime collision contracts and particle emission
+- `baseline_225` - High-load baseline with 225 asteroids
+- `all_three_225_enemy5` - High-load mixed benchmark with 225 asteroids plus 5 enemies (player spawned)
+- `mixed_content_225_enemy8` - High-load mixed-content benchmark with variable asteroid sizes/shapes, planets, 8 enemies, and scripted spawning of all projectile classes
+- `mixed_content_324_enemy12` - Heavier-scale mixed-content benchmark with 324 asteroids, 12 enemies, 3 planets, and scripted spawning of all projectile classes
 
 ### Test Logging
 
 - Logs positions and velocities at key frames (1, 10, 30, 50, 100+)
 - Compares initial vs final asteroid counts
 - Validates: merging occurred (count decreased), physics stable (velocity reasonable)
+- Performance scenarios additionally emit frame-time percentiles (`p50/p95/p99`) plus `PostUpdate` schedule percentiles (`post_update p50/p95/p99`) from `ProfilerStats`
+- Optional allocator evidence is available via `ACCRETION_ALLOC_PROFILE=1`, which emits live/peak/total/net allocation bytes and alloc/dealloc/realloc call counts at test completion
 
 ## Code Quality Standards
 

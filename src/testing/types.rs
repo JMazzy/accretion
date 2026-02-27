@@ -10,6 +10,8 @@ pub struct TestConfig {
     pub initial_asteroid_count: usize,
     /// Per-frame delta times (seconds) recorded for perf_benchmark test
     pub perf_frame_times: Vec<f32>,
+    /// Per-frame `PostUpdate` schedule durations (milliseconds) from `ProfilerStats`.
+    pub post_update_frame_times: Vec<f32>,
     /// For orbit_pair test: set to true once the orbiting body's velocity has been
     /// calibrated from the actual Rapier mass read back by [`ReadMassProperties`].
     pub velocity_calibrated: bool,
@@ -28,6 +30,7 @@ impl Default for TestConfig {
             frame_count: 0,
             initial_asteroid_count: 0,
             perf_frame_times: Vec::new(),
+            post_update_frame_times: Vec::new(),
             velocity_calibrated: false,
             orbit_initial_dist: 0.0,
             orbit_final_dist: 0.0,

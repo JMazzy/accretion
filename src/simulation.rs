@@ -88,8 +88,8 @@ struct ProfilerClock {
     post_mark: Option<Instant>,
 }
 
-/// Per-frame scratch buffers reused across `neighbor_counting_system` to eliminate
-/// per-call heap allocations.
+/// Per-frame scratch buffers reused across gravity/neighbor systems to
+/// eliminate hot-path heap allocations.
 ///
 /// Registered once at startup; all `Vec`s grow to hold the largest N ever seen
 /// and are only cleared (never freed) each call, so steady-state operation
@@ -100,6 +100,35 @@ pub(crate) struct GravityScratch {
     neighbor_buf: Vec<Entity>,
     /// Reusable position buffer for `neighbor_counting_system`.
     nc_positions: Vec<(Entity, Vec2)>,
+    /// Reusable entity-position-mass buffer for `nbody_gravity_system`.
+    gravity_entities: Vec<(Entity, Vec2, f32)>,
+    /// Reusable entity→index lookup for gravity pair indexing.
+    gravity_index: std::collections::HashMap<Entity, usize>,
+    /// Reusable per-entity accumulated force deltas for gravity.
+    gravity_force_deltas: Vec<Vec2>,
+}
+
+/// Per-frame scratch buffers reused by `asteroid_formation_system`.
+#[derive(Resource, Default)]
+pub struct FormationScratch {
+    /// Reusable entity→index lookup for asteroid query ordering.
+    index_by_entity: std::collections::HashMap<Entity, usize>,
+    /// Reusable contact adjacency lists by asteroid index.
+    adjacency: Vec<Vec<usize>>,
+    /// Reusable processed flags by asteroid index.
+    processed: Vec<bool>,
+    /// Reusable visited flags by asteroid index.
+    visited: Vec<bool>,
+    /// Reusable flood-fill queue.
+    queue: Vec<usize>,
+    /// Reusable list of visited indices to reset visited flags.
+    touched: Vec<usize>,
+    /// Reusable cluster index buffer.
+    cluster_indices: Vec<usize>,
+    /// Reusable per-cluster masses buffer.
+    masses: Vec<f32>,
+    /// Reusable world-space vertex accumulation buffer.
+    world_vertices: Vec<Vec2>,
 }
 
 pub struct SimulationPlugin;
@@ -110,6 +139,7 @@ impl Plugin for SimulationPlugin {
             .insert_resource(MissileTelemetry::default())
             .insert_resource(OverlayState::default())
             .insert_resource(GravityScratch::default())
+            .insert_resource(FormationScratch::default())
             .insert_resource(ProfilerStats::default())
             .insert_resource(ProfilerClock::default())
             .insert_resource(CameraState { zoom: 1.0 })
@@ -462,7 +492,7 @@ pub(crate) fn gravity_force_between(
 /// (and the Orbit scenario's massive central planetoid) are genuinely more
 /// gravitationally dominant, producing stable orbital dynamics.
 ///
-/// Uses O(N²/2) pair iteration.
+/// Uses KD-tree neighbor queries to avoid full O(N²) scans.
 pub(crate) fn nbody_gravity_system(
     mut query: Query<
         (
@@ -475,6 +505,8 @@ pub(crate) fn nbody_gravity_system(
         With<Asteroid>,
     >,
     config: Res<PhysicsConfig>,
+    grid: Res<SpatialGrid>,
+    mut scratch: ResMut<GravityScratch>,
 ) {
     let gravity_const = config.gravity_const;
     let min_gravity_dist = config.min_gravity_dist;
@@ -490,20 +522,53 @@ pub(crate) fn nbody_gravity_system(
     }
 
     // Collect all entities with positions and gravitational masses.
-    let mut entity_data: Vec<(Entity, Vec2, f32)> = Vec::new();
+    scratch.gravity_entities.clear();
     for (entity, transform, size, _, _) in query.iter() {
-        entity_data.push((entity, transform.translation.truncate(), size.0 as f32));
+        scratch
+            .gravity_entities
+            .push((entity, transform.translation.truncate(), size.0 as f32));
     }
 
-    // Collect all force pairs to apply (entity, force_delta)
-    let mut force_deltas: std::collections::HashMap<Entity, Vec2> =
-        std::collections::HashMap::new();
+    let entity_count = scratch.gravity_entities.len();
+    if entity_count < 2 {
+        return;
+    }
 
-    // Calculate gravity between all asteroid pairs
-    for idx_i in 0..entity_data.len() {
-        let (entity_i, pos_i, mass_i) = entity_data[idx_i];
+    // Build stable index lookup for O(1) neighbor-id → array-index mapping.
+    scratch.gravity_index.clear();
+    if scratch.gravity_index.capacity() < entity_count {
+        let index_len = scratch.gravity_index.len();
+        scratch.gravity_index.reserve(entity_count - index_len);
+    }
+    for idx in 0..entity_count {
+        let entity = scratch.gravity_entities[idx].0;
+        scratch.gravity_index.insert(entity, idx);
+    }
 
-        for &(entity_j, pos_j, mass_j) in entity_data.iter().skip(idx_i + 1) {
+    // Reset reusable force-delta accumulation buffer.
+    scratch.gravity_force_deltas.clear();
+    scratch
+        .gravity_force_deltas
+        .resize(entity_count, Vec2::ZERO);
+
+    // Calculate gravity by querying only nearby candidates from the spatial index.
+    for idx_i in 0..entity_count {
+        let (entity_i, pos_i, mass_i) = scratch.gravity_entities[idx_i];
+        grid.query_neighbors_into(entity_i, pos_i, max_gravity_dist, &mut scratch.neighbor_buf);
+
+        let neighbor_count = scratch.neighbor_buf.len();
+        for nn in 0..neighbor_count {
+            let entity_j = scratch.neighbor_buf[nn];
+            let Some(&idx_j) = scratch.gravity_index.get(&entity_j) else {
+                continue;
+            };
+
+            // Enforce one-way processing so each pair is handled exactly once.
+            if idx_j <= idx_i {
+                continue;
+            }
+
+            let (_, pos_j, mass_j) = scratch.gravity_entities[idx_j];
             if let Some(force) = gravity_force_between(
                 pos_i,
                 pos_j,
@@ -514,14 +579,16 @@ pub(crate) fn nbody_gravity_system(
                 mass_j,
             ) {
                 // Apply Newton's third law: equal and opposite forces
-                *force_deltas.entry(entity_i).or_insert(Vec2::ZERO) += force;
-                *force_deltas.entry(entity_j).or_insert(Vec2::ZERO) -= force;
+                scratch.gravity_force_deltas[idx_i] += force;
+                scratch.gravity_force_deltas[idx_j] -= force;
             }
         }
     }
 
-    // Apply all collected forces
-    for (entity, force_delta) in force_deltas {
+    // Apply accumulated forces.
+    for idx in 0..entity_count {
+        let entity = scratch.gravity_entities[idx].0;
+        let force_delta = scratch.gravity_force_deltas[idx];
         if let Ok((_, _, _, mut force, mut grav)) = query.get_mut(entity) {
             force.force += force_delta;
             grav.0 += force_delta;
@@ -724,126 +791,216 @@ pub fn asteroid_formation_system(
     rapier_context: ReadRapierContext,
     mut stats: ResMut<SimulationStats>,
     config: Res<PhysicsConfig>,
+    mut scratch: ResMut<FormationScratch>,
 ) {
     let gravity_const = config.gravity_const;
-    let mut processed = std::collections::HashSet::new();
 
     let Ok(rapier) = rapier_context.single() else {
         return;
     };
     let asteroids: Vec<_> = query.iter().collect();
+    let asteroid_count = asteroids.len();
+    if asteroid_count < 2 {
+        return;
+    }
 
-    for i in 0..asteroids.len() {
-        let (e1, t1, v1, _verts1, sz1) = asteroids[i];
+    scratch.index_by_entity.clear();
+    if scratch.index_by_entity.capacity() < asteroid_count {
+        let deficit = asteroid_count - scratch.index_by_entity.capacity();
+        scratch.index_by_entity.reserve(deficit);
+    }
+    for (idx, (entity, _, _, _, _)) in asteroids.iter().enumerate() {
+        scratch.index_by_entity.insert(*entity, idx);
+    }
 
-        if processed.contains(&e1) {
+    if scratch.adjacency.len() < asteroid_count {
+        scratch.adjacency.resize_with(asteroid_count, Vec::new);
+    } else {
+        scratch.adjacency.truncate(asteroid_count);
+    }
+    for neighbors in scratch.adjacency.iter_mut() {
+        neighbors.clear();
+    }
+
+    for contact_pair in rapier
+        .simulation
+        .contact_pairs(rapier.colliders, rapier.rigidbody_set)
+    {
+        if !contact_pair.has_any_active_contact() {
+            continue;
+        }
+
+        let (Some(e1), Some(e2)) = (contact_pair.collider1(), contact_pair.collider2()) else {
+            continue;
+        };
+
+        let (Some(&idx1), Some(&idx2)) = (
+            scratch.index_by_entity.get(&e1),
+            scratch.index_by_entity.get(&e2),
+        ) else {
+            continue;
+        };
+
+        if idx1 == idx2 {
+            continue;
+        }
+
+        scratch.adjacency[idx1].push(idx2);
+        scratch.adjacency[idx2].push(idx1);
+    }
+
+    scratch.processed.clear();
+    scratch.processed.resize(asteroid_count, false);
+    scratch.visited.clear();
+    scratch.visited.resize(asteroid_count, false);
+    scratch.touched.clear();
+    scratch.queue.clear();
+    scratch.cluster_indices.clear();
+    scratch.masses.clear();
+    scratch.world_vertices.clear();
+
+    for i in 0..asteroid_count {
+        if scratch.processed[i] || scratch.adjacency[i].is_empty() {
             continue;
         }
 
         // Flood-fill to find all connected (touching) asteroids.
-        // No velocity pre-filter — the binding-energy check below gates the merge.
-        // Cluster stores: (entity, transform, velocity, vertices, size_units)
-        let mut cluster: Vec<(Entity, &Transform, &Velocity, &Vertices, u32)> =
-            vec![(e1, t1, v1, _verts1, sz1.0)];
-        let mut queue = vec![e1];
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(e1);
+        scratch.cluster_indices.clear();
+        scratch.queue.clear();
+        scratch.queue.push(i);
+        scratch.visited[i] = true;
+        scratch.touched.push(i);
 
-        while let Some(current) = queue.pop() {
-            for &(e2, t2, v2, verts2, sz2) in asteroids.iter() {
-                if visited.contains(&e2) || processed.contains(&e2) {
+        while let Some(current_idx) = scratch.queue.pop() {
+            if scratch.processed[current_idx] {
+                continue;
+            }
+
+            scratch.cluster_indices.push(current_idx);
+
+            let neighbor_count = scratch.adjacency[current_idx].len();
+            for neighbor_i in 0..neighbor_count {
+                let neighbor_idx = scratch.adjacency[current_idx][neighbor_i];
+                if scratch.visited[neighbor_idx] || scratch.processed[neighbor_idx] {
                     continue;
                 }
 
-                // Check if they're touching via Rapier contact
-                if let Some(contact) = rapier.contact_pair(current, e2) {
-                    if contact.has_any_active_contact() {
-                        visited.insert(e2);
-                        queue.push(e2);
-                        cluster.push((e2, t2, v2, verts2, sz2.0));
-                    }
-                }
+                scratch.visited[neighbor_idx] = true;
+                scratch.touched.push(neighbor_idx);
+                scratch.queue.push(neighbor_idx);
             }
         }
 
-        if cluster.len() < 2 {
+        while let Some(idx) = scratch.touched.pop() {
+            scratch.visited[idx] = false;
+        }
+
+        if scratch.cluster_indices.len() < 2 {
             continue;
         }
 
         // ── Gravitational binding energy check ────────────────────────────────
         //
         // Use AsteroidSize units as a mass proxy (uniform density → mass ∝ size).
-        let masses: Vec<f32> = cluster.iter().map(|&(_, _, _, _, s)| s as f32).collect();
-        let total_mass: f32 = masses.iter().sum();
+        scratch.masses.clear();
+        for cluster_i in 0..scratch.cluster_indices.len() {
+            let idx = scratch.cluster_indices[cluster_i];
+            let size = asteroids[idx].4 .0;
+            scratch.masses.push(size as f32);
+        }
+        let total_mass: f32 = scratch.masses.iter().sum();
 
         // Centre-of-mass velocity (mass-weighted average)
-        let v_cm: Vec2 = cluster
+        let v_cm: Vec2 = scratch
+            .cluster_indices
             .iter()
-            .zip(masses.iter())
-            .map(|(&(_, _, v, _, _), &m)| v.linvel * m)
+            .zip(scratch.masses.iter())
+            .map(|(&idx, &m)| asteroids[idx].2.linvel * m)
             .sum::<Vec2>()
             / total_mass;
 
         // Kinetic energy in the COM frame: translational + rotational per member.
-        // Moment of inertia for a uniform disk: I = ½ · m · r², r = √(m / π).
-        let ke_com: f32 = cluster
+        // Moment of inertia for a uniform disk:
+        // I = ½ · m · r², r = √(m / π)  =>  I = ½ · m² / π.
+        let ke_com: f32 = scratch
+            .cluster_indices
             .iter()
-            .zip(masses.iter())
-            .map(|(&(_, _, v, _, _), &m)| {
+            .zip(scratch.masses.iter())
+            .map(|(&idx, &m)| {
+                let v = asteroids[idx].2;
                 let dv = v.linvel - v_cm;
-                let r_eff = (m / std::f32::consts::PI).sqrt();
-                let inertia = 0.5 * m * r_eff * r_eff;
+                let inertia = 0.5 * m * m / std::f32::consts::PI;
                 0.5 * m * dv.length_squared() + 0.5 * inertia * v.angvel * v.angvel
             })
             .sum();
 
-        // Pairwise gravitational binding energy: E = Σ_{i<j} G·mᵢ·mⱼ / rᵢⱼ
-        let binding_energy: f32 = {
-            let mut e = 0.0_f32;
-            let n = cluster.len();
-            for a in 0..n {
+        // Pairwise gravitational binding energy: E = Σ_{i<j} G·mᵢ·mⱼ / rᵢⱼ.
+        // Short-circuit once E exceeds KE: merge condition is already satisfied.
+        let mut binding_energy = 0.0_f32;
+        let mut bound_enough = false;
+        {
+            let n = scratch.cluster_indices.len();
+            'binding: for a in 0..n {
                 for b in (a + 1)..n {
-                    let pos_a = cluster[a].1.translation.truncate();
-                    let pos_b = cluster[b].1.translation.truncate();
+                    let idx_a = scratch.cluster_indices[a];
+                    let idx_b = scratch.cluster_indices[b];
+                    let pos_a = asteroids[idx_a].1.translation.truncate();
+                    let pos_b = asteroids[idx_b].1.translation.truncate();
                     // Clamp distance to ≥1 to avoid division-by-zero on overlapping bodies
                     let dist = (pos_b - pos_a).length().max(1.0);
-                    e += gravity_const * masses[a] * masses[b] / dist;
+                    binding_energy += gravity_const * scratch.masses[a] * scratch.masses[b] / dist;
+                    if binding_energy > ke_com {
+                        bound_enough = true;
+                        break 'binding;
+                    }
                 }
             }
-            e
-        };
+        }
 
         // Reject merge if cluster has too much kinetic energy to be gravitationally bound
-        if ke_com >= binding_energy {
+        if !bound_enough && ke_com >= binding_energy {
             continue;
         }
 
         // ── Merge ─────────────────────────────────────────────────────────────
-        for (entity, _, _, _, _) in &cluster {
-            processed.insert(*entity);
+        for cluster_i in 0..scratch.cluster_indices.len() {
+            let idx = scratch.cluster_indices[cluster_i];
+            scratch.processed[idx] = true;
         }
 
         // Composite inherits the centre-of-mass velocity (momentum-conserving).
         // Angular velocity: simple average (moment-of-inertia weighting negligible here).
         let avg_linvel = v_cm;
-        let avg_angvel: f32 =
-            cluster.iter().map(|&(_, _, v, _, _)| v.angvel).sum::<f32>() / cluster.len() as f32;
+        let avg_angvel: f32 = scratch
+            .cluster_indices
+            .iter()
+            .map(|&idx| asteroids[idx].2.angvel)
+            .sum::<f32>()
+            / scratch.cluster_indices.len() as f32;
 
         // Collect ALL vertices from ALL cluster members in world-space
-        let mut world_vertices = Vec::new();
-        for (_entity, transform, _vel, vertices, _sz) in &cluster {
+        scratch.world_vertices.clear();
+        let mut vertex_count = 0usize;
+        for cluster_i in 0..scratch.cluster_indices.len() {
+            let idx = scratch.cluster_indices[cluster_i];
+            vertex_count += asteroids[idx].3 .0.len();
+        }
+        scratch.world_vertices.reserve(vertex_count);
+        for cluster_i in 0..scratch.cluster_indices.len() {
+            let idx = scratch.cluster_indices[cluster_i];
+            let (_, transform, _vel, vertices, _sz) = asteroids[idx];
             let rotation = transform.rotation;
             let offset = transform.translation.truncate();
 
             for local_v in &vertices.0 {
                 // Rotate local vertex by transform rotation
                 let world_v = offset + rotation.mul_vec3(local_v.extend(0.0)).truncate();
-                world_vertices.push(world_v);
+                scratch.world_vertices.push(world_v);
             }
         }
 
         // Compute convex hull from all world-space vertices
-        if let Some(hull) = compute_convex_hull_from_points(&world_vertices) {
+        if let Some(hull) = compute_convex_hull_from_points(&scratch.world_vertices) {
             // Need at least 3 vertices for a valid composite asteroid
             if hull.len() >= 3 {
                 // Use the hull's geometric centroid as the spawn position so that the
@@ -860,8 +1017,8 @@ pub fn asteroid_formation_system(
                     .iter()
                     .map(|v| v.length())
                     .fold(0.0_f32, f32::max);
-                let extent_limit =
-                    config.hull_extent_base + cluster.len() as f32 * config.hull_extent_per_member;
+                let extent_limit = config.hull_extent_base
+                    + scratch.cluster_indices.len() as f32 * config.hull_extent_per_member;
                 if max_extent > extent_limit {
                     // Refuse to create this merge — it indicates corrupted vertex data.
                     // Despawn nothing; leave the source asteroids intact.
@@ -869,7 +1026,11 @@ pub fn asteroid_formation_system(
                 }
 
                 // Sum unit sizes of all cluster members
-                let total_size: u32 = cluster.iter().map(|(_, _, _, _, s)| s).sum();
+                let total_size: u32 = scratch
+                    .cluster_indices
+                    .iter()
+                    .map(|&idx| asteroids[idx].4 .0)
+                    .sum();
 
                 // Scale the hull so its visual area matches total_size / density.
                 // This ensures merged composites look proportional to their mass
@@ -895,13 +1056,14 @@ pub fn asteroid_formation_system(
                 }
 
                 // Track merge: N asteroids became 1, so we merged (N-1) asteroids
-                let merge_count = (cluster.len() - 1) as u32;
+                let merge_count = (scratch.cluster_indices.len() - 1) as u32;
                 stats.merged_total += merge_count;
 
                 crate::particles::spawn_merge_particles(&mut commands, hull_centroid);
 
                 // Despawn all source asteroids
-                for (entity, _, _, _, _) in cluster {
+                for &idx in &scratch.cluster_indices {
+                    let entity = asteroids[idx].0;
                     commands.entity(entity).despawn();
                 }
             }

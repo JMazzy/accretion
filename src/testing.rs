@@ -21,7 +21,9 @@ pub use scenarios_core::{
 };
 pub use scenarios_orbit::{orbit_pair_calibrate_and_track_system, spawn_test_orbit_pair};
 pub use scenarios_performance::{
-    spawn_test_all_three, spawn_test_baseline_100, spawn_test_kdtree_only,
+    mixed_perf_projectile_stimulus_system, spawn_test_all_three, spawn_test_all_three_225_enemy5,
+    spawn_test_baseline_100, spawn_test_baseline_225, spawn_test_kdtree_only,
+    spawn_test_mixed_content_225_enemy8, spawn_test_mixed_content_324_enemy12,
     spawn_test_perf_benchmark, spawn_test_soft_boundary_only, spawn_test_tidal_only,
 };
 pub use scripted_enemy_combat::{

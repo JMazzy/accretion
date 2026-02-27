@@ -17,3 +17,7 @@ coverage/
 
 # Local game save files
 saves/
+
+# Local test logs
+artifacts/
+artifacts/perf/

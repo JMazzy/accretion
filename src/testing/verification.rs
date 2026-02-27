@@ -1,5 +1,7 @@
+use crate::alloc_profile;
 use crate::asteroid::{Asteroid, Vertices};
 use crate::simulation::MissileTelemetry;
+use crate::simulation::ProfilerStats;
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::{ExternalForce, Velocity};
 use std::io::Write;
@@ -9,6 +11,7 @@ use super::{EnemyCombatObservations, EnemyCombatScriptState, TestConfig};
 pub fn test_logging_system(
     mut test_config: ResMut<TestConfig>,
     time: Res<Time>,
+    profiler_stats: Res<ProfilerStats>,
     missile_telemetry: Res<MissileTelemetry>,
     q: Query<(Entity, &Transform, &Velocity, &Vertices, &ExternalForce), With<Asteroid>>,
 ) {
@@ -21,17 +24,27 @@ pub fn test_logging_system(
 
     let is_perf_test = test_config.test_name == "perf_benchmark"
         || test_config.test_name == "baseline_100"
+        || test_config.test_name == "baseline_225"
         || test_config.test_name == "tidal_only"
         || test_config.test_name == "soft_boundary_only"
         || test_config.test_name == "kdtree_only"
-        || test_config.test_name == "all_three";
+        || test_config.test_name == "all_three"
+        || test_config.test_name == "all_three_225_enemy5"
+        || test_config.test_name == "mixed_content_225_enemy8"
+        || test_config.test_name == "mixed_content_324_enemy12";
 
     if is_perf_test {
         let dt_ms = time.delta_secs() * 1000.0;
         test_config.perf_frame_times.push(dt_ms);
+        test_config
+            .post_update_frame_times
+            .push(profiler_stats.post_update_ms);
 
         if test_config.frame_count == 1 {
             test_config.initial_asteroid_count = asteroid_count;
+            if alloc_profile::is_enabled() {
+                alloc_profile::reset_counters();
+            }
             println!(
                 "[Frame 1] {} started | asteroids: {}",
                 test_config.test_name, asteroid_count
@@ -303,10 +316,14 @@ pub fn test_verification_system(
 
     if (test_config.test_name == "perf_benchmark"
         || test_config.test_name == "baseline_100"
+        || test_config.test_name == "baseline_225"
         || test_config.test_name == "tidal_only"
         || test_config.test_name == "soft_boundary_only"
         || test_config.test_name == "kdtree_only"
-        || test_config.test_name == "all_three")
+        || test_config.test_name == "all_three"
+        || test_config.test_name == "all_three_225_enemy5"
+        || test_config.test_name == "mixed_content_225_enemy8"
+        || test_config.test_name == "mixed_content_324_enemy12")
         && !test_config.perf_frame_times.is_empty()
     {
         let times = &test_config.perf_frame_times;
@@ -318,12 +335,39 @@ pub fn test_verification_system(
         let avg = steady.iter().sum::<f32>() / steady.len() as f32;
         let min = steady.iter().cloned().fold(f32::INFINITY, f32::min);
         let max = steady.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let mut sorted = steady.to_vec();
+        sorted.sort_by(|a, b| a.total_cmp(b));
+        let p50 = percentile(&sorted, 0.50);
+        let p95 = percentile(&sorted, 0.95);
+        let p99 = percentile(&sorted, 0.99);
         let over_budget = steady.iter().filter(|&&t| t > 16.7).count();
         let pct_60fps = 100.0 * (steady.len() - over_budget) as f32 / steady.len() as f32;
+
+        let post_times = &test_config.post_update_frame_times;
+        let post_steady = if post_times.len() > 10 {
+            &post_times[10..]
+        } else {
+            post_times.as_slice()
+        };
+        let post_avg = post_steady.iter().sum::<f32>() / post_steady.len() as f32;
+        let post_min = post_steady.iter().cloned().fold(f32::INFINITY, f32::min);
+        let post_max = post_steady
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        let mut post_sorted = post_steady.to_vec();
+        post_sorted.sort_by(|a, b| a.total_cmp(b));
+        let post_p50 = percentile(&post_sorted, 0.50);
+        let post_p95 = percentile(&post_sorted, 0.95);
+        let post_p99 = percentile(&post_sorted, 0.99);
+
         println!("\n── Timing summary (frames 10–{}) ──", times.len());
         println!("  avg frame: {:.2}ms", avg);
         println!("  min frame: {:.2}ms", min);
         println!("  max frame: {:.2}ms", max);
+        println!("  p50 frame: {:.2}ms", p50);
+        println!("  p95 frame: {:.2}ms", p95);
+        println!("  p99 frame: {:.2}ms", p99);
         println!(
             "  frames at 60 FPS (≤16.7ms): {}/{} ({:.1}%)",
             steady.len() - over_budget,
@@ -334,6 +378,31 @@ pub fn test_verification_system(
             println!("  ✓ Average frame time within 60 FPS budget");
         } else {
             println!("  ✗ Average frame time {:.2}ms exceeds 16.7ms budget", avg);
+        }
+
+        println!(
+            "\n── PostUpdate schedule summary (frames 10–{}) ──",
+            post_times.len()
+        );
+        println!("  post_update avg: {:.3}ms", post_avg);
+        println!("  post_update min: {:.3}ms", post_min);
+        println!("  post_update max: {:.3}ms", post_max);
+        println!("  post_update p50: {:.3}ms", post_p50);
+        println!("  post_update p95: {:.3}ms", post_p95);
+        println!("  post_update p99: {:.3}ms", post_p99);
+
+        if alloc_profile::is_enabled() {
+            let snapshot = alloc_profile::snapshot();
+            println!("\n── Allocator profile summary ──");
+            println!("  alloc live bytes: {}", snapshot.live_bytes);
+            println!("  alloc peak live bytes: {}", snapshot.peak_live_bytes);
+            println!("  alloc total bytes: {}", snapshot.total_alloc_bytes);
+            println!("  dealloc total bytes: {}", snapshot.total_dealloc_bytes);
+            println!("  alloc net bytes: {}", snapshot.net_bytes());
+            println!(
+                "  alloc calls: {} dealloc calls: {} realloc calls: {}",
+                snapshot.alloc_calls, snapshot.dealloc_calls, snapshot.realloc_calls
+            );
         }
     }
 
@@ -349,6 +418,22 @@ pub fn test_verification_system(
     let _ = std::io::stdout().flush();
 
     exit.write(bevy::app::AppExit::Success);
+}
+
+fn percentile(sorted_values: &[f32], p: f32) -> f32 {
+    if sorted_values.is_empty() {
+        return 0.0;
+    }
+    if sorted_values.len() == 1 {
+        return sorted_values[0];
+    }
+
+    let rank = (sorted_values.len() - 1) as f32 * p.clamp(0.0, 1.0);
+    let low = rank.floor() as usize;
+    let high = (low + 1).min(sorted_values.len() - 1);
+    let frac = rank - low as f32;
+
+    sorted_values[low] * (1.0 - frac) + sorted_values[high] * frac
 }
 
 fn verify_test_result(
@@ -496,6 +581,12 @@ fn verify_test_result(
                 final_count
             )
         }
+        "baseline_225" => {
+            format!(
+                "✓ PASS: baseline_225 complete — {} asteroids | High-load baseline for >200 asteroid profiling",
+                final_count
+            )
+        }
         "tidal_only" => {
             format!(
                 "✓ PASS: tidal_only complete — {} asteroids | Cost = tidal_only minus baseline_100",
@@ -517,6 +608,24 @@ fn verify_test_result(
         "all_three" => {
             format!(
                 "✓ PASS: all_three complete — {} asteroids | Full cost = all_three minus baseline_100",
+                final_count
+            )
+        }
+        "all_three_225_enemy5" => {
+            format!(
+                "✓ PASS: all_three_225_enemy5 complete — {} asteroids/entities | High-load mixed asteroid+enemy benchmark",
+                final_count
+            )
+        }
+        "mixed_content_225_enemy8" => {
+            format!(
+                "✓ PASS: mixed_content_225_enemy8 complete — {} asteroids/entities | High-load mixed-content benchmark (sizes/shapes/planets/projectiles)",
+                final_count
+            )
+        }
+        "mixed_content_324_enemy12" => {
+            format!(
+                "✓ PASS: mixed_content_324_enemy12 complete — {} asteroids/entities | Heavier-scale mixed-content benchmark (324 asteroids + 12 enemies + planets + projectiles)",
                 final_count
             )
         }

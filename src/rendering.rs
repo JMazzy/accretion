@@ -1163,58 +1163,82 @@ pub fn sync_debug_line_layers_system(
     )>,
     mut scratch: Local<DebugLineScratch>,
 ) {
-    scratch.wire.clear();
-    scratch.force.clear();
-    scratch.velocity.clear();
-    scratch.grid.clear();
+    let show_wire = overlay.show_wireframes;
+    let show_force =
+        overlay.show_force_vectors && stats.live_count < config.force_vector_hide_threshold;
+    let show_velocity = overlay.show_velocity_arrows;
+    let show_grid = overlay.show_debug_grid;
 
-    if overlay.show_wireframes {
-        for (transform, vertices, _, _) in query.iter() {
-            if vertices.0.len() < 2 {
-                continue;
-            }
-            let pos = transform.translation.truncate();
-            let rot = transform.rotation;
-            let n = vertices.0.len();
-            for i in 0..n {
-                let v1 = vertices.0[i];
-                let v2 = vertices.0[(i + 1) % n];
-                let p1 = pos + rot.mul_vec3(v1.extend(0.0)).truncate();
-                let p2 = pos + rot.mul_vec3(v2.extend(0.0)).truncate();
-                scratch.wire.push((p1, p2));
-            }
+    if !show_wire && !show_force && !show_velocity && !show_grid {
+        if let Ok((_, mut vis)) = debug_layers.p0().single_mut() {
+            *vis = Visibility::Hidden;
         }
+        if let Ok((_, mut vis)) = debug_layers.p1().single_mut() {
+            *vis = Visibility::Hidden;
+        }
+        if let Ok((_, mut vis)) = debug_layers.p2().single_mut() {
+            *vis = Visibility::Hidden;
+        }
+        if let Ok((_, mut vis)) = debug_layers.p3().single_mut() {
+            *vis = Visibility::Hidden;
+        }
+        return;
     }
 
-    if overlay.show_force_vectors && stats.live_count < config.force_vector_hide_threshold {
-        for (transform, _, grav, _) in query.iter() {
-            let pos = transform.translation.truncate();
-            let force_vec = grav.0 * config.force_vector_display_scale;
-            if force_vec.length() > config.force_vector_min_length {
-                scratch.force.push((pos, pos + force_vec));
-            }
-        }
+    if show_wire {
+        scratch.wire.clear();
+    }
+    if show_force {
+        scratch.force.clear();
+    }
+    if show_velocity {
+        scratch.velocity.clear();
+    }
+    if show_grid {
+        scratch.grid.clear();
     }
 
-    if overlay.show_velocity_arrows {
-        for (transform, _, _, vel) in query.iter() {
+    if show_wire || show_force || show_velocity {
+        for (transform, vertices, grav, vel) in query.iter() {
             let pos = transform.translation.truncate();
-            let v = vel.linvel;
-            if v.length_squared() > 0.5 {
-                let tip = pos + v * 0.15;
-                scratch.velocity.push((pos, tip));
 
-                let dir = (tip - pos).normalize_or_zero();
-                if dir != Vec2::ZERO {
-                    let perp = Vec2::new(-dir.y, dir.x);
-                    scratch.velocity.push((tip, tip - dir * 2.2 + perp * 1.2));
-                    scratch.velocity.push((tip, tip - dir * 2.2 - perp * 1.2));
+            if show_wire && vertices.0.len() >= 2 {
+                let rot = transform.rotation;
+                let n = vertices.0.len();
+                for i in 0..n {
+                    let v1 = vertices.0[i];
+                    let v2 = vertices.0[(i + 1) % n];
+                    let p1 = pos + rot.mul_vec3(v1.extend(0.0)).truncate();
+                    let p2 = pos + rot.mul_vec3(v2.extend(0.0)).truncate();
+                    scratch.wire.push((p1, p2));
+                }
+            }
+
+            if show_force {
+                let force_vec = grav.0 * config.force_vector_display_scale;
+                if force_vec.length() > config.force_vector_min_length {
+                    scratch.force.push((pos, pos + force_vec));
+                }
+            }
+
+            if show_velocity {
+                let v = vel.linvel;
+                if v.length_squared() > 0.5 {
+                    let tip = pos + v * 0.15;
+                    scratch.velocity.push((pos, tip));
+
+                    let dir = (tip - pos).normalize_or_zero();
+                    if dir != Vec2::ZERO {
+                        let perp = Vec2::new(-dir.y, dir.x);
+                        scratch.velocity.push((tip, tip - dir * 2.2 + perp * 1.2));
+                        scratch.velocity.push((tip, tip - dir * 2.2 - perp * 1.2));
+                    }
                 }
             }
         }
     }
 
-    if overlay.show_debug_grid {
+    if show_grid {
         let half = config.cull_distance;
         let min = Vec2::new(-half, -half);
         let max = Vec2::new(half, half);
@@ -1222,48 +1246,54 @@ pub fn sync_debug_line_layers_system(
     }
 
     if let Ok((mesh_handle, mut vis)) = debug_layers.p0().single_mut() {
-        *vis = if overlay.show_wireframes {
+        *vis = if show_wire {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
-        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
-            *mesh = line_segments_mesh(&scratch.wire, 0.28);
+        if show_wire {
+            if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+                *mesh = line_segments_mesh(&scratch.wire, 0.28);
+            }
         }
     }
 
     if let Ok((mesh_handle, mut vis)) = debug_layers.p1().single_mut() {
-        *vis = if overlay.show_force_vectors
-            && stats.live_count < config.force_vector_hide_threshold
-        {
+        *vis = if show_force {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
-        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
-            *mesh = line_segments_mesh(&scratch.force, 0.35);
+        if show_force {
+            if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+                *mesh = line_segments_mesh(&scratch.force, 0.35);
+            }
         }
     }
 
     if let Ok((mesh_handle, mut vis)) = debug_layers.p2().single_mut() {
-        *vis = if overlay.show_velocity_arrows {
+        *vis = if show_velocity {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
-        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
-            *mesh = line_segments_mesh(&scratch.velocity, 0.32);
+        if show_velocity {
+            if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+                *mesh = line_segments_mesh(&scratch.velocity, 0.32);
+            }
         }
     }
 
     if let Ok((mesh_handle, mut vis)) = debug_layers.p3().single_mut() {
-        *vis = if overlay.show_debug_grid {
+        *vis = if show_grid {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
-        if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
-            *mesh = line_segments_mesh(&scratch.grid, 0.20);
+        if show_grid {
+            if let Some(mesh) = meshes.get_mut(&mesh_handle.0) {
+                *mesh = line_segments_mesh(&scratch.grid, 0.20);
+            }
         }
     }
 }

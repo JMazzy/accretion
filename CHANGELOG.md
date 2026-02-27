@@ -1,5 +1,246 @@
 # Accretion Changelog
 
+## Performance Pass v1 (P0) — Profiler + Allocator Evidence Capture — February 27, 2026
+
+### Added explicit PostUpdate delta reporting and allocator/heap counters for perf runs
+
+**What changed**:
+- Added allocator profiling module `src/alloc_profile.rs` with a counting global allocator and env-gated activation:
+  - enable with `ACCRETION_ALLOC_PROFILE=1`
+  - emits live/peak/total/net byte counters and alloc/dealloc/realloc call counts
+- Wired allocator profiler initialization in `src/main.rs` and exposed module in `src/lib.rs`.
+- Extended perf test logging in `src/testing/verification.rs` to emit:
+  - PostUpdate schedule summary (`post_update avg/min/max/p50/p95/p99`)
+  - allocator summary block when `ACCRETION_ALLOC_PROFILE=1`
+- Extended repeated benchmark aggregation in `benchmark_high_load_repeat.sh` to parse and report PostUpdate percentile medians.
+
+**PostUpdate repeated-run deltas (clean 3x)**:
+- `baseline_225`: post_update medians p50/p95/p99 = 0.088/0.117/0.148ms
+- `all_three_225_enemy5`: post_update medians p50/p95/p99 = 0.097/0.121/0.138ms
+- `mixed_content_225_enemy8`: post_update medians p50/p95/p99 = 0.111/0.153/0.171ms
+- `mixed_content_324_enemy12`: post_update medians p50/p95/p99 = 0.115/0.150/0.165ms
+- Artifacts: `artifacts/perf/2026-02-27/high_load_repeat/`
+
+**Allocator/heap evidence (clean 5x medians with `ACCRETION_ALLOC_PROFILE=1`)**:
+- `baseline_225`: peak_live_med=662,962 B; total_alloc_med=4,155,383 B; calls_med=3,872/2,754/1,882
+- `all_three_225_enemy5`: peak_live_med=729,504 B; total_alloc_med=4,591,119 B; calls_med=5,984/4,827/2,438
+- `mixed_content_225_enemy8`: peak_live_med=1,531,000 B; total_alloc_med=6,875,309 B; calls_med=12,552/10,089/4,451
+- `mixed_content_324_enemy12`: peak_live_med=1,321,926 B; total_alloc_med=7,734,395 B; calls_med=10,351/8,169/3,952
+- Artifacts: `artifacts/perf/2026-02-27/alloc_profile_repeat/`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./benchmark_high_load_repeat.sh 3` ✅
+- `ACCRETION_ALLOC_PROFILE=1 ACCRETION_TEST=<scenario> cargo run --release` ✅ (5x per scenario)
+
+## Performance Pass v1 (P0) — Heavier-Scale Benchmark Coverage — February 27, 2026
+
+### Added 324-asteroid mixed-content stress case for clearer scaling signals
+
+**What changed**:
+- Added `mixed_content_324_enemy12` in `src/testing/scenarios_performance.rs`:
+  - 324 varied-size/-shape asteroids (18×18)
+  - 12 benchmark enemies
+  - 3 planets
+  - scripted projectile stimulus for player projectile, missile, ion shot, and enemy projectile
+- Wired scenario through test mode and test exports:
+  - `src/test_mode.rs`
+  - `src/testing.rs`
+  - `src/testing/verification.rs` (perf logging + PASS summary)
+- Included scenario in benchmark tooling:
+  - `benchmark_high_load.sh`
+  - `benchmark_high_load_repeat.sh`
+
+**Initial clean baseline (isolated 3x runs)**:
+- `mixed_content_324_enemy12`: avg med 16.67ms, p50 med 16.67ms, p95 med 16.95ms, p99 med 17.08ms, 60 FPS med 56.6%
+- Artifacts: `artifacts/perf/2026-02-27/heavy_324_repeat/`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `ACCRETION_TEST=mixed_content_324_enemy12 cargo run --release` ✅ (3 isolated runs)
+
+## Performance Pass v1 (P0) — Formation Micro-Optimization Pass — February 27, 2026
+
+### Tightened formation merge-gate inner loops and cluster vertex prep
+
+**What changed**:
+- Optimized `asteroid_formation_system` in `src/simulation.rs` without changing merge semantics:
+  - simplified inertia calculation from `I = 0.5 * m * r^2` with `r = sqrt(m / PI)` to equivalent `I = 0.5 * m * m / PI`
+  - short-circuited binding-energy accumulation loop once `E_binding > E_k_com`
+  - pre-reserved world-vertex accumulation capacity from cluster member vertex counts before hull build
+- Kept behavior unchanged for:
+  - binding-energy merge gate condition
+  - hull generation and extent validation
+  - composite spawn/despawn flow and velocity inheritance
+
+**Fresh 5-run percentile table (clean logs, Feb 27)**:
+- `baseline_225`: frame p95 med 17.05ms, frame p99 med 17.31ms, 60 FPS med 56.9%
+- `all_three_225_enemy5`: frame p95 med 16.94ms, frame p99 med 17.07ms, 60 FPS med 58.3%
+- `mixed_content_225_enemy8`: frame p95 med 16.89ms, frame p99 med 17.04ms, 60 FPS med 56.9%
+- Artifacts: `artifacts/perf/2026-02-27/high_load_repeat/`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./benchmark_high_load_repeat.sh 5` ✅ (clean sweep after clearing prior logs)
+
+## Performance Pass v1 (P0) — Formation Allocation Reuse — February 27, 2026
+
+### Reused formation-system temporary buffers to reduce PostUpdate allocation churn
+
+**What changed**:
+- Added `FormationScratch` resource in `src/simulation.rs` and reused it inside `asteroid_formation_system`.
+- Replaced recurring allocations for:
+  - entity-index lookup map
+  - adjacency lists
+  - processed/visited flags
+  - flood-fill queue and touched/cluster index vectors
+  - per-cluster masses
+  - world-space vertex accumulation buffer
+- Kept merge behavior unchanged (binding-energy check, hull build, velocity inheritance, despawn flow).
+
+**Post-change fresh 5-run table (after prior overlay-throttling baseline)**:
+- `baseline_225`: frame p95 med 17.02ms, frame p99 med 17.16ms, 60 FPS med 55.2%
+- `all_three_225_enemy5`: frame p95 med 16.99ms, frame p99 med 17.16ms, 60 FPS med 55.9%
+- `mixed_content_225_enemy8`: frame p95 med 16.95ms, frame p99 med 17.04ms, 60 FPS med 59.0%
+- Artifacts: `artifacts/perf/2026-02-27/high_load_repeat/`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./benchmark_high_load_repeat.sh 5` ✅ (clean sweep after clearing prior logs)
+
+## Performance Pass v1 (P0) — Debug Overlay Rebuild Throttling — February 27, 2026
+
+### Avoided per-frame retained-line mesh rebuilds when debug overlays are inactive
+
+**What changed**:
+- Refactored `sync_debug_line_layers_system` in `src/rendering.rs`:
+  - Early return when all debug line overlays are disabled (hide layers, skip geometry work)
+  - Rebuild retained line meshes only for currently active overlay layers
+  - Collapsed repeated asteroid query passes into a single pass when multiple overlays are active
+- Kept rendering behavior unchanged for enabled overlays.
+
+**Fresh 5-run percentile table (clean logs, Feb 27)**:
+- Baseline table (before this optimization):
+  - `baseline_225`: frame p95 med 17.15ms, frame p99 med 17.28ms, 60 FPS med 53.4%
+  - `all_three_225_enemy5`: frame p95 med 17.16ms, frame p99 med 17.33ms, 60 FPS med 53.1%
+  - `mixed_content_225_enemy8`: frame p95 med 17.14ms, frame p99 med 17.26ms, 60 FPS med 53.1%
+- Post-change table (fresh clean sweep):
+  - `baseline_225`: frame p95 med 17.05ms, frame p99 med 17.18ms, 60 FPS med 56.2%
+  - `all_three_225_enemy5`: frame p95 med 16.97ms, frame p99 med 17.13ms, 60 FPS med 54.5%
+  - `mixed_content_225_enemy8`: frame p95 med 16.97ms, frame p99 med 17.12ms, 60 FPS med 57.2%
+- Artifacts: `artifacts/perf/2026-02-27/high_load_repeat/`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./benchmark_high_load_repeat.sh 5` ✅ (clean sweep after clearing prior logs)
+
+## Performance Pass v1 (P0) — Frame-Time Percentile Parser Upgrade — February 27, 2026
+
+### Added true per-frame p50/p95/p99 extraction and aggregation
+
+**What changed**:
+- Updated `src/testing/verification.rs` timing summary output to include frame-time percentiles computed from per-frame timing samples:
+  - `p50 frame`
+  - `p95 frame`
+  - `p99 frame`
+- Updated `benchmark_high_load_repeat.sh` parser to aggregate these percentile lines across runs and report median percentile values per scenario.
+- Kept all benchmark output repo-local under `artifacts/perf/<date>/...`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./benchmark_high_load_repeat.sh 1` ✅ (percentile lines + aggregate parsing verified)
+
+## Performance Pass v1 (P0) — Mixed-Content Benchmark Coverage — February 27, 2026
+
+### Expanded perf tests beyond unit-triangle asteroid fields
+
+**What changed**:
+- Added new mixed-content high-load scenario in `src/testing/scenarios_performance.rs`:
+  - `mixed_content_225_enemy8`
+  - Spawns a 225-asteroid field with variable masses/shapes (`canonical_vertices_for_mass` + area scaling)
+  - Includes 2 planets (`spawn_planet`) and 8 enemies
+  - Adds scripted projectile stimulus during test runtime for all projectile classes:
+    - player projectile
+    - missile
+    - ion cannon shot
+    - enemy projectile
+- Wired scenario into test-mode startup routing in `src/test_mode.rs` and perf logging/verification in `src/testing/verification.rs`.
+- Added `mixed_perf_projectile_stimulus_system` to Update test systems (self-gated by scenario name).
+- Updated benchmark tooling:
+  - `benchmark_high_load.sh` now includes `mixed_content_225_enemy8`
+  - Added `benchmark_high_load_repeat.sh` for repeated runs with median/p95 summary parsing from repo-local artifacts.
+
+**Initial benchmark sample (single repeat)**:
+- `mixed_content_225_enemy8`: avg 16.67ms, min 16.17ms, max 17.17ms, 64.1% frames ≤16.7ms
+- Artifacts: `artifacts/perf/2026-02-27/high_load_repeat/`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./benchmark_high_load_repeat.sh 1` ✅ (aggregate parser fixed and validated)
+
+## Performance Pass v1 (P0) — Formation Contact-Graph Optimization — February 27, 2026
+
+### Replaced nested contact scans in formation flood-fill with one-pass contact adjacency
+
+**What changed**:
+- Refactored `asteroid_formation_system` in `src/simulation.rs` to build an asteroid contact adjacency graph once per frame from Rapier active contact pairs.
+- Replaced nested per-node contact queries (`rapier.contact_pair(current, e2)` within asteroid scans) with index-based flood-fill over the prebuilt adjacency graph.
+- Kept merge behavior unchanged:
+  - gravitational binding-energy gate
+  - hull centroid/local-space conversion
+  - hull extent sanity gate
+  - composite velocity inheritance and source-despawn flow
+- Captured post-change high-load benchmark runs in repo-local artifacts:
+  - `artifacts/perf/2026-02-27/formation_contact_graph_after/baseline_225_after_rerun.log`
+  - `artifacts/perf/2026-02-27/formation_contact_graph_after/all_three_225_enemy5_after.log`
+- Observed timing summaries (300-frame runs):
+  - `baseline_225`: avg 16.66ms, min 16.21ms, max 17.26ms, 63.4% frames ≤16.7ms
+  - `all_three_225_enemy5`: avg 16.67ms, min 15.34ms, max 17.72ms, 51.7% frames ≤16.7ms
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `ACCRETION_TEST=baseline_225 cargo run --release` ✅
+- `ACCRETION_TEST=all_three_225_enemy5 cargo run --release` ✅
+
+## Performance Pass v1 (P0) — High-Load Benchmark Refocus — February 27, 2026
+
+### Added >200 asteroid + multi-enemy benchmark coverage and in-repo artifacts
+
+**What changed**:
+- Added new performance test scenarios in `src/testing/scenarios_performance.rs`:
+  - `baseline_225` (225 asteroids)
+  - `all_three_225_enemy5` (225 asteroids + 5 enemies; player spawned for active enemy systems)
+- Wired new scenarios into test routing in `src/test_mode.rs` and testing re-exports in `src/testing.rs`.
+- Extended performance logging/verification handling in `src/testing/verification.rs` so both scenarios emit timing summaries and PASS lines like existing perf tests.
+- Added executable helper script `benchmark_high_load.sh` to run focused high-load performance scenarios.
+- Standardized benchmark log output to repo-local artifacts (e.g., `artifacts/perf/2026-02-27/`) to avoid external temp-path workflows.
+- Captured high-load baseline metrics (300-frame runs):
+  - `baseline_225`: avg 16.67ms, min 15.82ms, max 17.47ms, 53.8% frames ≤16.7ms
+  - `all_three_225_enemy5`: avg 16.67ms, min 16.02ms, max 17.28ms, 52.8% frames ≤16.7ms
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `ACCRETION_TEST=baseline_225 cargo run --release` ✅
+- `ACCRETION_TEST=all_three_225_enemy5 cargo run --release` ✅
+
 ## Menu Maintainability Refactor (Phase 6) — February 27, 2026
 
 ### Began deeper `menu.rs` decomposition into focused internal modules
@@ -53,6 +294,29 @@
 - Marked `MIGRATION_PLAN.md` as a historical reference document to avoid confusion with current dependency versions.
 - Updated `README.md` project structure to include current `menu` and `testing` module split (`src/menu/`, `src/test_mode.rs`, `src/testing/`).
 - Updated `BACKLOG.md` for consistency with shipped features: removed completed Ion Cannon MVP entry, refreshed last-updated date, and normalized priority section wording.
+- Promoted performance work to P0 in `BACKLOG.md` and added a concrete optimization queue based on current-system survey:
+  - gravity broadphase optimization
+  - asteroid formation contact-graph optimization
+  - debug overlay mesh rebuild throttling
+  - hot-path allocation reduction
+  - retained performance pass planning (v1 in P0, v2 in P1)
+- Started P0 performance pass v1 baseline capture (300-frame test scenarios):
+  - `baseline_100`: avg 16.66ms, min 15.75ms, max 17.50ms, 58.6% frames ≤16.7ms
+  - `tidal_only`: avg 16.67ms, min 15.86ms, max 17.41ms, 56.6% frames ≤16.7ms
+  - `soft_boundary_only`: avg 16.67ms, min 15.74ms, max 17.53ms, 47.2% frames ≤16.7ms
+  - `kdtree_only`: avg 16.66ms, min 16.00ms, max 17.33ms, 66.6% frames ≤16.7ms
+  - `all_three`: avg 16.67ms, min 15.66ms, max 17.64ms, 55.5% frames ≤16.7ms
+- Implemented first P0 optimization: gravity broadphase in `nbody_gravity_system` (`src/simulation.rs`)
+  - Replaced all-pairs gravity scan with neighbor-limited pair generation via `SpatialGrid::query_neighbors_into`.
+  - Added one-way pair processing (`idx_j > idx_i`) to preserve exactly-once pair evaluation.
+  - Preserved Newton’s third-law force accumulation and existing min/max gravity distance gates.
+- Captured post-change benchmark pass (300-frame scenarios):
+  - `baseline_100`: avg 16.67ms, 57.9% frames ≤16.7ms
+  - `tidal_only`: avg 16.67ms, 61.0% frames ≤16.7ms
+  - `soft_boundary_only`: avg 16.67ms, 57.6% frames ≤16.7ms
+  - `kdtree_only`: avg 16.67ms, 58.6% frames ≤16.7ms
+  - `all_three`: avg 16.67ms, 57.6% frames ≤16.7ms
+  - Interpretation: at 100 asteroids, averages are largely frame-budget-limited/noisy; next step is higher-load benchmarking to evaluate scaling gains.
 
 **Validation**:
 - `cargo fmt` ✅

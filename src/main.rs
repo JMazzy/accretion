@@ -4,6 +4,7 @@ use bevy::window::WindowResolution;
 use bevy_rapier2d::prelude::*;
 use std::env;
 
+mod alloc_profile;
 mod asteroid;
 mod asteroid_rendering;
 mod config;
@@ -89,6 +90,8 @@ fn add_playing_transition_hud_systems_for(app: &mut App, exited: GameState) {
 }
 
 fn main() {
+    alloc_profile::init_from_env();
+
     // Check for test mode — bypasses the menu and starts directly in Playing.
     let test_mode = env::var("ACCRETION_TEST").ok();
 

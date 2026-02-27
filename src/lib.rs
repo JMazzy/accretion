@@ -1,5 +1,6 @@
 //! Asteroid simulation engine library
 
+pub mod alloc_profile;
 pub mod asteroid;
 pub mod asteroid_rendering;
 pub mod config;
