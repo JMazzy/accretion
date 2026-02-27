@@ -14,6 +14,7 @@ use crate::constants::{
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 use rand::rngs::StdRng;
+use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 
 /// Marker component for any asteroid entity
@@ -123,134 +124,134 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
     let size_scale_max = (config.asteroid_size_scale_max * 1.35).max(size_scale_min + 0.05);
 
     let mut spawned = 0;
+    let mut cell_indices: Vec<usize> = (0..sample_grid_size * sample_grid_size).collect();
+    cell_indices.shuffle(&mut rng);
 
-    for sample_y in 0..sample_grid_size {
-        for sample_x in 0..sample_grid_size {
-            if spawned >= count {
-                break;
-            }
-
-            let base_x = -sim_width / 2.0 + grid_margin + sample_x as f32 * sample_step_x;
-            let base_y = -sim_height / 2.0 + grid_margin + sample_y as f32 * sample_step_y;
-
-            // Evaluate seeded multi-scale noise at this grid position.
-            let coarse_noise =
-                noise_2d(base_x, base_y, coarse_noise_frequency, coarse_noise_offset);
-            let fine_noise = noise_2d(base_x, base_y, fine_noise_frequency, fine_noise_offset);
-
-            // Ridge term increases patch boundaries so nearby dense pockets form.
-            let ridge = (1.0 - (2.0 * coarse_noise - 1.0).abs()).powf(1.7);
-            let cluster_weight = (0.65 * coarse_noise + 0.35 * ridge).clamp(0.0, 1.0);
-
-            // Probability is heavily cluster-weighted with fine local modulation.
-            let spawn_prob =
-                (0.08 + cluster_weight * 0.34 + fine_noise.powf(2.0) * 0.22).clamp(0.0, 0.72);
-
-            if rng.gen::<f32>() > spawn_prob {
-                continue;
-            }
-
-            // Position within the cell with some randomness
-            let position = Vec2::new(
-                base_x + rng.gen_range(-sample_step_x * 0.4..sample_step_x * 0.4),
-                base_y + rng.gen_range(-sample_step_y * 0.4..sample_step_y * 0.4),
-            );
-
-            // Skip if within player buffer zone
-            if position.distance(Vec2::ZERO) < player_buffer_radius {
-                continue;
-            }
-
-            spawned += 1;
-
-            // Random size scale
-            let size_scale = rng.gen_range(size_scale_min..size_scale_max);
-
-            // Random shape (triangle, square, pentagon, hexagon, heptagon, octagon)
-            let shape = rng.gen_range(0..6);
-            let mut vertices = match shape {
-                0 => generate_triangle(size_scale, config.triangle_base_side),
-                1 => generate_square(size_scale, config.square_base_half),
-                2 => generate_pentagon(size_scale, config.polygon_base_radius),
-                3 => generate_hexagon(size_scale, config.polygon_base_radius),
-                4 => generate_heptagon(size_scale, config.heptagon_base_radius),
-                _ => generate_octagon(size_scale, config.octagon_base_radius),
-            };
-
-            // Apply vertex jitter for natural-looking shapes
-            vertices = apply_vertex_jitter(vertices, size_scale, &mut rng);
-
-            // Derive AsteroidSize from actual polygon area so the density invariant
-            // (vertices.area == AsteroidSize / density) holds from the very first frame.
-            // Accounts for the randomised scale and jitter applied above.
-            let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
-            let unit_size = ((polygon_area(&vertices) / tri_area).round() as u32).max(1);
-            vertices =
-                rescale_vertices_to_area(&vertices, unit_size as f32 / config.asteroid_density);
-
-            // Random velocity (gentle to avoid instant collisions)
-            let speed_scale = rng.gen_range(0.35..1.55);
-            let velocity_range = config.asteroid_initial_velocity_range * speed_scale;
-            let velocity = Vec2::new(
-                rng.gen_range(-velocity_range..velocity_range),
-                rng.gen_range(-velocity_range..velocity_range),
-            );
-            let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
-
-            // Spawn the asteroid
-            commands.spawn((
-                (
-                    Transform::from_translation(position.extend(0.05))
-                        .with_rotation(initial_rotation),
-                    GlobalTransform::default(),
-                    Asteroid,
-                    AsteroidSize(unit_size),
-                    NeighborCount(0),
-                    Vertices(vertices.clone()),
-                    RigidBody::Dynamic,
-                ),
-                (
-                    {
-                        if vertices.len() >= 3 {
-                            Collider::convex_hull(&vertices).unwrap_or_else(|| Collider::ball(5.0))
-                        } else if vertices.len() == 2 {
-                            let radius = ((vertices[0] - vertices[1]).length() / 2.0).max(2.0);
-                            Collider::ball(radius)
-                        } else {
-                            Collider::ball(2.0)
-                        }
-                    },
-                    Restitution::coefficient(RESTITUTION_SMALL),
-                    Friction::coefficient(FRICTION_ASTEROID),
-                    Velocity {
-                        linvel: velocity,
-                        angvel: rng.gen_range(
-                            -config.asteroid_initial_angvel_range * 1.6
-                                ..config.asteroid_initial_angvel_range * 1.6,
-                        ),
-                    },
-                    Damping {
-                        linear_damping: 0.0,
-                        angular_damping: 0.0,
-                    },
-                    ExternalForce {
-                        force: Vec2::ZERO,
-                        torque: 0.0,
-                    },
-                    GravityForce::default(),
-                    CollisionGroups::new(
-                        bevy_rapier2d::geometry::Group::GROUP_1,
-                        bevy_rapier2d::geometry::Group::GROUP_1
-                            | bevy_rapier2d::geometry::Group::GROUP_2
-                            | bevy_rapier2d::geometry::Group::GROUP_3
-                            | bevy_rapier2d::geometry::Group::GROUP_5
-                            | bevy_rapier2d::geometry::Group::GROUP_6,
-                    ),
-                    ActiveEvents::COLLISION_EVENTS,
-                    Sleeping::disabled(),
-                ),
-            ));
+    for cell_idx in cell_indices {
+        if spawned >= count {
+            break;
         }
+
+        let sample_x = cell_idx % sample_grid_size;
+        let sample_y = cell_idx / sample_grid_size;
+
+        let base_x = -sim_width / 2.0 + grid_margin + sample_x as f32 * sample_step_x;
+        let base_y = -sim_height / 2.0 + grid_margin + sample_y as f32 * sample_step_y;
+
+        // Evaluate seeded multi-scale noise at this grid position.
+        let coarse_noise = noise_2d(base_x, base_y, coarse_noise_frequency, coarse_noise_offset);
+        let fine_noise = noise_2d(base_x, base_y, fine_noise_frequency, fine_noise_offset);
+
+        // Ridge term increases patch boundaries so nearby dense pockets form.
+        let ridge = (1.0 - (2.0 * coarse_noise - 1.0).abs()).powf(1.7);
+        let cluster_weight = (0.65 * coarse_noise + 0.35 * ridge).clamp(0.0, 1.0);
+
+        // Probability is heavily cluster-weighted with fine local modulation.
+        let spawn_prob =
+            (0.08 + cluster_weight * 0.34 + fine_noise.powf(2.0) * 0.22).clamp(0.0, 0.72);
+
+        if rng.gen::<f32>() > spawn_prob {
+            continue;
+        }
+
+        // Position within the cell with some randomness.
+        let position = Vec2::new(
+            base_x + rng.gen_range(-sample_step_x * 0.4..sample_step_x * 0.4),
+            base_y + rng.gen_range(-sample_step_y * 0.4..sample_step_y * 0.4),
+        );
+
+        // Skip if within player buffer zone.
+        if position.distance(Vec2::ZERO) < player_buffer_radius {
+            continue;
+        }
+
+        spawned += 1;
+
+        // Random size scale.
+        let size_scale = rng.gen_range(size_scale_min..size_scale_max);
+
+        // Random shape (triangle, square, pentagon, hexagon, heptagon, octagon).
+        let shape = rng.gen_range(0..6);
+        let mut vertices = match shape {
+            0 => generate_triangle(size_scale, config.triangle_base_side),
+            1 => generate_square(size_scale, config.square_base_half),
+            2 => generate_pentagon(size_scale, config.polygon_base_radius),
+            3 => generate_hexagon(size_scale, config.polygon_base_radius),
+            4 => generate_heptagon(size_scale, config.heptagon_base_radius),
+            _ => generate_octagon(size_scale, config.octagon_base_radius),
+        };
+
+        // Apply vertex jitter for natural-looking shapes.
+        vertices = apply_vertex_jitter(vertices, size_scale, &mut rng);
+
+        // Derive AsteroidSize from actual polygon area so the density invariant
+        // (vertices.area == AsteroidSize / density) holds from the very first frame.
+        // Accounts for the randomised scale and jitter applied above.
+        let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+        let unit_size = ((polygon_area(&vertices) / tri_area).round() as u32).max(1);
+        vertices = rescale_vertices_to_area(&vertices, unit_size as f32 / config.asteroid_density);
+
+        // Random velocity (gentle to avoid instant collisions).
+        let speed_scale = rng.gen_range(0.35..1.55);
+        let velocity_range = config.asteroid_initial_velocity_range * speed_scale;
+        let velocity = Vec2::new(
+            rng.gen_range(-velocity_range..velocity_range),
+            rng.gen_range(-velocity_range..velocity_range),
+        );
+        let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
+
+        // Spawn the asteroid.
+        commands.spawn((
+            (
+                Transform::from_translation(position.extend(0.05)).with_rotation(initial_rotation),
+                GlobalTransform::default(),
+                Asteroid,
+                AsteroidSize(unit_size),
+                NeighborCount(0),
+                Vertices(vertices.clone()),
+                RigidBody::Dynamic,
+            ),
+            (
+                {
+                    if vertices.len() >= 3 {
+                        Collider::convex_hull(&vertices).unwrap_or_else(|| Collider::ball(5.0))
+                    } else if vertices.len() == 2 {
+                        let radius = ((vertices[0] - vertices[1]).length() / 2.0).max(2.0);
+                        Collider::ball(radius)
+                    } else {
+                        Collider::ball(2.0)
+                    }
+                },
+                Restitution::coefficient(RESTITUTION_SMALL),
+                Friction::coefficient(FRICTION_ASTEROID),
+                Velocity {
+                    linvel: velocity,
+                    angvel: rng.gen_range(
+                        -config.asteroid_initial_angvel_range * 1.6
+                            ..config.asteroid_initial_angvel_range * 1.6,
+                    ),
+                },
+                Damping {
+                    linear_damping: 0.0,
+                    angular_damping: 0.0,
+                },
+                ExternalForce {
+                    force: Vec2::ZERO,
+                    torque: 0.0,
+                },
+                GravityForce::default(),
+                CollisionGroups::new(
+                    bevy_rapier2d::geometry::Group::GROUP_1,
+                    bevy_rapier2d::geometry::Group::GROUP_1
+                        | bevy_rapier2d::geometry::Group::GROUP_2
+                        | bevy_rapier2d::geometry::Group::GROUP_3
+                        | bevy_rapier2d::geometry::Group::GROUP_5
+                        | bevy_rapier2d::geometry::Group::GROUP_6,
+                ),
+                ActiveEvents::COLLISION_EVENTS,
+                Sleeping::disabled(),
+            ),
+        ));
     }
 }
 
