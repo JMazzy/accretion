@@ -1,5 +1,24 @@
 # Accretion Changelog
 
+## Ion Cannon Reliability + Cadence Follow-up — February 27, 2026
+
+### Restored practical stun reliability and increased projectile-style usefulness
+
+**What changed**:
+- Updated `ion_cannon_hit_enemy_system` in `src/player/ion_cannon.rs`:
+  - Ion hits now always apply stun.
+  - Enemies above the current ion tier cap receive a reduced stun duration instead of no stun.
+- Increased ion shot presence and cadence:
+  - Lowered `ION_CANNON_COOLDOWN_SECS` in `src/constants.rs` for faster recharge.
+  - Increased `ION_CANNON_SHOT_COLLIDER_RADIUS` in `src/constants.rs`.
+  - Increased ion shot mesh dimensions in `src/player/ion_cannon.rs`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Weapon Pass: Tractor Cone Retune + Aim Alignment (P0) — February 27, 2026
 
 ### Narrowed tractor acquisition to 30° total and aligned targeting to shared aim

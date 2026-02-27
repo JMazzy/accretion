@@ -207,10 +207,15 @@ pub fn ion_cannon_hit_enemy_system(
         let Ok((tier, mut stun)) = q_enemy.get_mut(enemy_entity) else {
             continue;
         };
-        if tier.level <= max_tier {
-            stun.remaining_secs = stun.remaining_secs.max(stun_secs);
-            spawn_ion_particles(&mut commands, shot_pos, Vec2::ZERO, Vec2::ZERO);
-        }
+        let applied_stun = if tier.level <= max_tier {
+            stun_secs
+        } else {
+            // Over-cap tiers still receive a shorter stun so ion remains useful
+            // as a projectile weapon while upgrades preserve stronger control.
+            (stun_secs * 0.45).max(0.75)
+        };
+        stun.remaining_secs = stun.remaining_secs.max(applied_stun);
+        spawn_ion_particles(&mut commands, shot_pos, Vec2::ZERO, Vec2::ZERO);
     }
 }
 
@@ -220,8 +225,8 @@ pub fn attach_ion_cannon_shot_mesh_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    const ION_RADIUS: f32 = 3.0;
-    const ION_LENGTH: f32 = 14.0;
+    const ION_RADIUS: f32 = 4.5;
+    const ION_LENGTH: f32 = 18.0;
 
     let vertices = elongated_projectile_vertices(ION_RADIUS, ION_LENGTH, 16);
     let mesh = meshes.add(filled_polygon_mesh(&vertices));
