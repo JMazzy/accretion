@@ -731,32 +731,85 @@ pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 /// collapses them into growing clusters — watch the field accrete in real time.
 pub fn spawn_shower_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     let mut rng = rand::thread_rng();
-    let sim_radius: f32 = 1600.0;
+    let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+    let outer_spawn_max = (config.soft_boundary_radius - 20.0).min(config.cull_distance - 70.0);
+    let outer_spawn_min = (outer_spawn_max * 0.72).max(config.player_buffer_radius + 280.0);
     let player_buffer = config.player_buffer_radius;
     let mut spawned = 0u32;
+    let target_count = 180u32;
 
-    while spawned < 120 {
-        // Uniform-area random point within sim_radius (sqrt gives uniform disk distribution).
+    while spawned < target_count {
+        // Spawn in a Comet-like outer annulus to create inward "rain".
         let angle: f32 = rng.gen_range(0.0..TAU);
-        let dist: f32 = rng.gen_range(0.0_f32..1.0).sqrt() * sim_radius;
+        let dist: f32 = rng.gen_range(outer_spawn_min..outer_spawn_max);
         let position = Vec2::new(dist * angle.cos(), dist * angle.sin());
 
         if position.length() < player_buffer {
             continue;
         }
 
-        let vertices = rescale_vertices_to_area(
-            &generate_triangle(1.0, config.triangle_base_side),
-            1.0 / config.asteroid_density,
-        );
-        let velocity = Vec2::new(rng.gen_range(-3.0..3.0), rng.gen_range(-3.0..3.0));
+        // Small-body biased scale with occasional medium pieces for variation.
+        let scale = if rng.gen::<f32>() < 0.82 {
+            0.45 + rng.gen::<f32>().powf(2.4) * 0.95
+        } else {
+            rng.gen_range(1.0..1.8)
+        };
+
+        let shape = rng.gen_range(0..5);
+        let (raw_vertices, pre_area) = match shape {
+            0 => {
+                let side = config.triangle_base_side * scale;
+                (
+                    generate_triangle(scale, config.triangle_base_side),
+                    3.0_f32.sqrt() / 4.0 * side.powi(2),
+                )
+            }
+            1 => {
+                let half = config.square_base_half * scale;
+                (
+                    generate_square(scale, config.square_base_half),
+                    (2.0 * half).powi(2),
+                )
+            }
+            2 => {
+                let radius = config.polygon_base_radius * scale;
+                (
+                    generate_pentagon(scale, config.polygon_base_radius),
+                    5.0 / 2.0 * radius.powi(2) * (TAU / 5.0).sin(),
+                )
+            }
+            3 => {
+                let radius = config.polygon_base_radius * scale;
+                (
+                    generate_hexagon(scale, config.polygon_base_radius),
+                    6.0 / 2.0 * radius.powi(2) * (TAU / 6.0).sin(),
+                )
+            }
+            _ => {
+                let radius = config.heptagon_base_radius * scale;
+                (
+                    generate_heptagon(scale, config.heptagon_base_radius),
+                    7.0 / 2.0 * radius.powi(2) * (TAU / 7.0).sin(),
+                )
+            }
+        };
+
+        let unit_size = ((pre_area / tri_area).round() as u32).max(1);
+        let vertices =
+            rescale_vertices_to_area(&raw_vertices, unit_size as f32 / config.asteroid_density);
+
+        let inward = -position.normalize_or_zero();
+        let tangent = Vec2::new(-inward.y, inward.x);
+        let tangential = tangent * rng.gen_range(-0.42..0.42);
+        let velocity = (inward + tangential).normalize_or_zero() * rng.gen_range(8.0..24.0);
+        let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
 
         commands.spawn((
             (
-                Transform::from_translation(position.extend(0.05)),
+                Transform::from_translation(position.extend(0.05)).with_rotation(initial_rotation),
                 GlobalTransform::default(),
                 Asteroid,
-                AsteroidSize(1),
+                AsteroidSize(unit_size),
                 NeighborCount(0),
                 Vertices(vertices.clone()),
                 RigidBody::Dynamic,
@@ -768,7 +821,7 @@ pub fn spawn_shower_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                 Friction::coefficient(FRICTION_ASTEROID),
                 Velocity {
                     linvel: velocity,
-                    angvel: rng.gen_range(-0.5..0.5),
+                    angvel: rng.gen_range(-0.9..0.9),
                 },
                 Damping {
                     linear_damping: 0.0,

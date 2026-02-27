@@ -1,5 +1,23 @@
 # Accretion Changelog
 
+## Scenario Pass: Shower Redesign (P0) — February 27, 2026
+
+### Rebased Shower onto outer-annulus inward flow with dense small-body mix
+
+**What changed**:
+- Updated `spawn_shower_scenario` in `src/asteroid.rs`:
+  - Replaced uniform full-disk spawn with Comet-like outer-annulus spawn near the soft boundary.
+  - Increased shower density and switched to small-body-biased mixed shape/size generation (not uniform size/mass).
+  - Added inward-start trajectories with bounded tangential variance for a readable inward-rain flow.
+  - Added randomized initial rotations and wider angular-velocity variation for richer motion.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Scenario Pass: Comet Refresh (P0) — February 27, 2026
 
 ### Moved comet starts to outer annulus with gentler inward flow and larger mixed bodies

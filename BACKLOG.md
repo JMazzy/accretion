@@ -65,7 +65,7 @@ Last updated: February 27, 2026.
 		- Add explicit average-size bias relative to Field defaults.
 		- Verify early-frame trajectory behavior with logging in test mode.
 
-- [ ] **Scenario pass: Shower redesign (small-body outer shower)**
+- [x] **Scenario pass: Shower redesign (small-body outer shower)**
 	- Rebase Shower to be Comet-like outer soft-boundary spawn pattern.
 	- Bias toward many small asteroids (not uniform size) with inward-start behavior.
 	- Acceptance: Shower feels like dense small-body inward rain and is behaviorally distinct from Comet by smaller average mass.
