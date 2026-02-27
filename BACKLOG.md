@@ -12,25 +12,125 @@ Last updated: February 27, 2026.
 
 ## P0 — Next Implementation Candidates
 
-### Border Handling Consistency (current limitation)
+### Recommended Execution Sequence (second pass)
 
-- [x] **Weapon projectiles: unified border policy (can cross boundary)**
-	- Define a single rule for all weapon projectile types (player projectile, enemy projectile, ion shot, missiles/fragments if classified as weapon projectiles): crossing soft/hard simulation borders must not despawn or damp them.
-	- Remove/replace any border-coupled projectile despawn checks so projectile expiry policy is consistent across weapon systems.
-	- Acceptance: all weapon projectile types remain valid after crossing the boundary and expire only by their intended projectile lifetime and/or projectile max-range rule (never by border crossing itself).
+1. **Scenario baseline refresh: Field**
+	- Execute `Scenario pass: Field refresh` first to establish new spawn/distribution baseline and seeded variability patterns reused by later scenario tasks.
+2. **Scenario gravity anchor: Orbit**
+	- Execute `Scenario pass: Orbit identity boost` second so stronger planetoid defaults are established before balancing controls/weapons around live gameplay feel.
+3. **Outer-flow scenarios: Comet then Shower**
+	- Execute `Scenario pass: Comet refresh`, then `Scenario pass: Shower redesign` using Comet flow as the template.
+4. **Player control foundation (KB/Mouse)**
+	- Execute `Control scheme overhaul: KB/Mouse strafe + cursor-facing ship` before gamepad parity and tractor fine-tuning.
+5. **Gamepad parity pass**
+	- Execute `Gamepad parity overhaul for all new mechanics` after KB/Mouse foundation is stable.
+6. **Weapon aim + cone tuning**
+	- Execute `Ion cannon retune + aim parity with primary weapon`, then `Tractor beam retune: 30° total narrow cone aligned to primary aim` to align with updated aiming/control model.
+7. **Stabilization + verification checkpoint**
+	- Run `cargo fmt`, `cargo clippy -- -D warnings`, `./test_all.sh`, plus scenario-focused manual checks after steps 1–6.
+8. **Visual deformation track**
+	- Execute `Concave deformation: damage model + rendering`, then `Concave deformation: collider/physics strategy` once gameplay/control/scenario tuning is locked.
 
-- [x] **Non-projectile entities: shared soft-boundary force behavior**
-	- Apply the same inward soft-boundary force model to all non-weapon entities that must remain in-bounds (asteroids, player, enemies, and other persistent world actors).
-	- Remove bespoke per-entity boundary behaviors that conflict with the shared rule (e.g., custom damping-only paths) unless explicitly documented as exceptions.
-	- Acceptance: non-projectile entities exhibit consistent edge behavior via one soft-boundary-force policy, with hard-cull reserved only as final safety fallback where required.
+### Content Improvements
 
-- [x] **Boundary behavior audit + regression coverage**
-	- Create a boundary-policy matrix in docs listing each entity class and expected border behavior (cross / soft-force / hard-cull fallback).
-	- Add/extend tests to verify projectile-crossing behavior and non-projectile soft-boundary consistency.
-	- Acceptance: policy is documented in `ARCHITECTURE.md`/`FEATURES.md`, and boundary regressions are caught by automated test scenarios.
+- [ ] **Scenario pass: Field refresh (remove planet + richer clustered distribution)**
+	- Remove the small planet from `Field` scenario.
+	- Replace single broad noise patch with finer-scale clustered distribution (multiple nearby patches).
+	- Add per-run random seed so `Field` starts differ each time.
+	- Increase variation in asteroid sizes, initial rotations, and initial speeds.
+	- Acceptance: `Field` has no planet, shows multiple asteroid clusters, and exhibits clearly varied asteroid starts across repeated launches.
+	- Initial plan:
+		- Adjust Field scenario spawner in `src/asteroid.rs` to drop planet spawn and revise noise sampling scale.
+		- Add seeded randomness source for scenario generation.
+		- Tune spread ranges in `assets/physics.toml` / config constants where applicable.
+		- Validate via repeated `Field` starts + test-mode sanity run.
 
-- Completed v1 performance evidence and closeout summary: [PERFORMANCE_V1_CLOSEOUT.md](PERFORMANCE_V1_CLOSEOUT.md)
-- Next active optimization work is tracked in P1 (`Performance pass v2`).
+- [ ] **Scenario pass: Orbit identity boost (stronger well + noisier orbital starts)**
+	- Keep planet in `Orbit`, but make planetoid objects larger and denser by default to strengthen gravity well.
+	- Raise initial orbital speeds as needed to remain playable under stronger gravity.
+	- Replace clean orbital bands with wider randomized ranges (size, rotation, orbital radius), while keeping the scene mostly stable.
+	- Acceptance: `Orbit` is visibly distinct from `Field`, with stronger central attraction and more varied but still coherent orbital motion.
+	- Initial plan:
+		- Update planetoid defaults in `src/constants.rs` and `PhysicsConfig::default` in `src/config.rs`.
+		- Retune orbit spawn velocities/radius jitter in Orbit scenario spawner.
+		- Run orbit scenario manual checks for stability and gameplay readability.
+
+- [ ] **Scenario pass: Comet refresh (outer-start inward flow + larger average bodies)**
+	- Increase size/shape variety for Comet scenario asteroids.
+	- Spawn asteroids in/near soft-boundary region with gentle inward initial velocity.
+	- Preserve existing comet concept, but bias to farther-out and larger-average asteroids than `Field`.
+	- Acceptance: comets begin near outer region, accelerate inward naturally, and do not immediately eject out of bounds en masse.
+	- Initial plan:
+		- Rework Comet spawn radius/velocity envelopes in scenario spawner.
+		- Add explicit average-size bias relative to Field defaults.
+		- Verify early-frame trajectory behavior with logging in test mode.
+
+- [ ] **Scenario pass: Shower redesign (small-body outer shower)**
+	- Rebase Shower to be Comet-like outer soft-boundary spawn pattern.
+	- Bias toward many small asteroids (not uniform size) with inward-start behavior.
+	- Acceptance: Shower feels like dense small-body inward rain and is behaviorally distinct from Comet by smaller average mass.
+	- Initial plan:
+		- Reuse Comet spawn flow with Shower-specific size distribution.
+		- Tune spawn count/velocity caps for readability and performance.
+		- Validate with scenario-specific test-mode run and quick perf sanity.
+
+### Weapon Enhancements
+
+- [ ] **Ion cannon retune + aim parity with primary weapon**
+	- Increase ion shot visual/collider size.
+	- Reduce ion cannon cooldown.
+	- Change ion firing direction source to match primary weapon aiming direction.
+	- Acceptance: ion shot is larger, fires more frequently, and follows the same aim vector behavior as primary blaster.
+	- Initial plan:
+		- Update ion constants/config and fire system in `src/player/ion_cannon.rs`.
+		- Ensure gamepad and mouse aim paths feed ion direction consistently.
+		- Re-run enemy stun behavior sanity checks.
+
+- [ ] **Tractor beam retune: 30° total narrow cone aligned to primary aim**
+	- Replace current tractor effective area with narrow 30° total cone.
+	- Ensure cone is aligned to primary weapon aiming direction (not ship-forward fallback unless aim absent).
+	- Acceptance: tractor acquisition only occurs inside 30° aim cone and tracks active aim direction consistently.
+	- Initial plan:
+		- Update cone-dot threshold derivation and aim source in `src/player/control.rs`.
+		- Add/adjust tests for cone gating and aim alignment behavior.
+
+### Player Control Enhancements
+
+- [ ] **Control scheme overhaul: KB/Mouse strafe + cursor-facing ship**
+	- Ship heading follows mouse cursor direction.
+	- Keep `W/S` as forward/back thrust.
+	- Change `A/D` to strafe left/right.
+	- Keep blaster/missile/ion fire bindings unchanged.
+	- Tractor behavior: `Q` toggles hold mode; while engaged, `E` pulls/holds (stop before ship collision), `R` throws outward and disengages.
+	- Acceptance: KB/mouse controls match specified mapping and tractor interaction flow works end-to-end.
+	- Initial plan:
+		- Refactor `player/control` intent model to separate facing, thrust, and strafe axes.
+		- Add tractor toggle state machine resource and pull/throw action systems.
+		- Update HUD/help text and FEATURES docs for new controls.
+
+- [ ] **Gamepad parity overhaul for all new mechanics** `depends on Control scheme overhaul: KB/Mouse strafe + cursor-facing ship`
+	- Right stick controls facing direction.
+	- Left stick controls omnidirectional strafe (lower authority than thrust).
+	- `RT/LT` provide forward/reverse thrust (analog where available).
+	- Buttons: `A` blaster, `B` missile, `Y` ion.
+	- Tractor behavior: `X` toggles hold mode; while engaged, `LB` pulls/holds, `RB` throws and disengages.
+	- Acceptance: gamepad supports all current weapon + tractor features with behavior parity to KB/mouse where intended.
+	- Initial plan:
+		- Expand gamepad input mapping in `src/player/control.rs` + combat systems.
+		- Ensure analog triggers map to variable thrust in intent application.
+		- Add scripted/gamepad-focused verification cases and manual controller sanity pass.
+
+### Visual Features
+
+- [ ] **Concave deformation: damage model + rendering**
+	- Per-vertex damage accumulation and inward displacement model.
+	- Visual crack/deformation feedback linked to impact intensity.
+	- Acceptance: repeated non-lethal hits visibly deform asteroid silhouettes.
+
+- [ ] **Concave deformation: collider/physics strategy** `depends on Concave deformation: damage model + rendering`
+	- Decide and implement safe collider approximation strategy (convex decomposition or fallback hull).
+	- Validate performance and contact stability.
+	- Acceptance: deformed asteroids remain physically stable and performant.
 
 ## P1 — Next Queue
 
@@ -48,16 +148,6 @@ Last updated: February 27, 2026.
 
 ### Visual Features
 
-- [ ] **Concave deformation: damage model + rendering**
-	- Per-vertex damage accumulation and inward displacement model.
-	- Visual crack/deformation feedback linked to impact intensity.
-	- Acceptance: repeated non-lethal hits visibly deform asteroid silhouettes.
-
-- [ ] **Concave deformation: collider/physics strategy** `depends on Concave deformation: damage model + rendering`
-	- Decide and implement safe collider approximation strategy (convex decomposition or fallback hull).
-	- Validate performance and contact stability.
-	- Acceptance: deformed asteroids remain physically stable and performant.
-
 - [ ] **Post-processing: collision bloom pass**
 	- Add bloom trigger/intensity mapping for high-energy collisions.
 	- Acceptance: visible bloom on major impacts without overwhelming scene readability.
@@ -65,17 +155,6 @@ Last updated: February 27, 2026.
 - [ ] **Post-processing: invincibility aberration pass**
 	- Add chromatic aberration only during player invincibility windows.
 	- Acceptance: effect is temporally bounded and clearly communicates invulnerability state.
-
-### Multiplayer
-
-- [ ] **Local multiplayer: shared-world co-op MVP**
-	- Two player entities, independent input mappings, shared asteroid world.
-	- Basic camera and HUD strategy for dual-player readability.
-	- Acceptance: two local players can play simultaneously without control conflicts.
-
-- [ ] **Local multiplayer: PvP ruleset** `depends on Local multiplayer: shared-world co-op MVP`
-	- Friendly-fire, scoring, and win-condition rule variants.
-	- Acceptance: a complete PvP match loop can start, progress, and end cleanly.
 
 ### Performance Program
 
@@ -87,6 +166,17 @@ Last updated: February 27, 2026.
 	- Acceptance: second measurable frame-time improvement without stability regressions.
 
 ## P2 — Developer Quality and Maintainability
+
+### Multiplayer
+
+- [ ] **Local multiplayer: shared-world co-op MVP**
+	- Two player entities, independent input mappings, shared asteroid world.
+	- Basic camera and HUD strategy for dual-player readability.
+	- Acceptance: two local players can play simultaneously without control conflicts.
+
+- [ ] **Local multiplayer: PvP ruleset** `depends on Local multiplayer: shared-world co-op MVP`
+	- Friendly-fire, scoring, and win-condition rule variants.
+	- Acceptance: a complete PvP match loop can start, progress, and end cleanly.
 
 ### Tooling & Testing
 
