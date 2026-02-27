@@ -41,8 +41,6 @@ fn spawn_initial_world(
     match *scenario {
         SelectedScenario::Field => {
             asteroid::spawn_initial_asteroids(&mut commands, 100, &config);
-            // Classic field includes one anchored planet offset from the player.
-            asteroid::spawn_planet(&mut commands, Vec2::new(700.0, 400.0), &config);
         }
         SelectedScenario::Orbit => {
             asteroid::spawn_orbit_scenario(&mut commands, &config);

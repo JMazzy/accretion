@@ -33,7 +33,7 @@ Last updated: February 27, 2026.
 
 ### Content Improvements
 
-- [ ] **Scenario pass: Field refresh (remove planet + richer clustered distribution)**
+- [x] **Scenario pass: Field refresh (remove planet + richer clustered distribution)**
 	- Remove the small planet from `Field` scenario.
 	- Replace single broad noise patch with finer-scale clustered distribution (multiple nearby patches).
 	- Add per-run random seed so `Field` starts differ each time.

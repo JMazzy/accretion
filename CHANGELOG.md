@@ -1,5 +1,25 @@
 # Accretion Changelog
 
+## Scenario Pass: Field Refresh (P0) — February 27, 2026
+
+### Removed anchored planet and added seeded multi-cluster startup variation
+
+**What changed**:
+- Updated Field startup flow in `src/main.rs`:
+  - Removed Field's anchored planet spawn from `spawn_initial_world`.
+  - Field now starts as an asteroid-only scenario.
+- Refreshed Field asteroid generation in `src/asteroid.rs` (`spawn_initial_asteroids`):
+  - Added per-run generation seed logging (`Field scenario seed: ...`) and switched generation to a seeded RNG.
+  - Replaced single-scale cluster probability with seeded multi-scale/ridge noise to create richer nearby patch structure.
+  - Increased startup variability for asteroid size, initial linear speed, initial angular velocity, and initial transform rotation.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Border Handling Consistency Pass (P0) — February 27, 2026
 
 ### Unified non-projectile boundary force + decoupled projectile expiry from borders

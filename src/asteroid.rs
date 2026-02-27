@@ -13,7 +13,8 @@ use crate::constants::{
 };
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 /// Marker component for any asteroid entity
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -50,16 +51,19 @@ pub struct GravityForce(pub Vec2);
 
 /// Simple hash-based noise generator for clustering asteroids.
 /// Returns a float in [0, 1) that varies smoothly across space.
-fn noise_2d(x: f32, y: f32, frequency: f32) -> f32 {
-    let grid_x = (x * frequency).floor();
-    let grid_y = (y * frequency).floor();
+fn noise_2d(x: f32, y: f32, frequency: f32, offset: Vec2) -> f32 {
+    let sample_x = x + offset.x;
+    let sample_y = y + offset.y;
+
+    let grid_x = (sample_x * frequency).floor();
+    let grid_y = (sample_y * frequency).floor();
 
     // Hash function: mix bits from grid coordinates
     let h = ((13.0 * grid_x + 31.0 * grid_y).sin() * 13131.0).fract();
 
     // Smooth transition within cell
-    let local_x = (x * frequency).fract();
-    let local_y = (y * frequency).fract();
+    let local_x = (sample_x * frequency).fract();
+    let local_y = (sample_y * frequency).fract();
     let smooth_x = local_x * local_x * (3.0 - 2.0 * local_x);
     let smooth_y = local_y * local_y * (3.0 - 2.0 * local_y);
 
@@ -85,7 +89,9 @@ fn apply_vertex_jitter(vertices: Vec<Vec2>, scale: f32, rng: &mut impl Rng) -> V
 /// Spawns asteroids with clustered distributions using noise-based seeding.
 /// Creates natural asteroid field patterns rather than even distribution.
 pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &PhysicsConfig) {
-    let mut rng = rand::thread_rng();
+    let seed = rand::random::<u64>();
+    let mut rng = StdRng::seed_from_u64(seed);
+    info!("Field scenario seed: {}", seed);
 
     // Extended simulation area (well beyond viewport)
     let sim_width = config.sim_width;
@@ -97,12 +103,24 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
 
     // Sample grid: coarse grid for noise-based clustering
     // We'll evaluate noise at candidate positions and spawn asteroids probabilistically
-    let sample_grid_size = 40; // Number of samples per dimension
+    let sample_grid_size = 56; // Number of samples per dimension
     let sample_step_x = (sim_width - 2.0 * grid_margin) / sample_grid_size as f32;
     let sample_step_y = (sim_height - 2.0 * grid_margin) / sample_grid_size as f32;
 
-    // Frequency for noise function (controls cluster size)
-    let noise_frequency = 0.008;
+    // Multi-scale seeded noise produces richer nearby cluster patches.
+    let coarse_noise_frequency = 0.0045;
+    let fine_noise_frequency = 0.018;
+    let coarse_noise_offset = Vec2::new(
+        rng.gen_range(-40_000.0..40_000.0),
+        rng.gen_range(-40_000.0..40_000.0),
+    );
+    let fine_noise_offset = Vec2::new(
+        rng.gen_range(-40_000.0..40_000.0),
+        rng.gen_range(-40_000.0..40_000.0),
+    );
+
+    let size_scale_min = (config.asteroid_size_scale_min * 0.7).max(0.2);
+    let size_scale_max = (config.asteroid_size_scale_max * 1.35).max(size_scale_min + 0.05);
 
     let mut spawned = 0;
 
@@ -115,12 +133,18 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
             let base_x = -sim_width / 2.0 + grid_margin + sample_x as f32 * sample_step_x;
             let base_y = -sim_height / 2.0 + grid_margin + sample_y as f32 * sample_step_y;
 
-            // Evaluate noise at this grid position
-            let noise_val = noise_2d(base_x, base_y, noise_frequency);
+            // Evaluate seeded multi-scale noise at this grid position.
+            let coarse_noise =
+                noise_2d(base_x, base_y, coarse_noise_frequency, coarse_noise_offset);
+            let fine_noise = noise_2d(base_x, base_y, fine_noise_frequency, fine_noise_offset);
 
-            // Probability of spawning an asteroid here scales with noise value
-            // Higher noise = more asteroids tend to spawn in that region (clusters)
-            let spawn_prob = noise_val * 0.3; // Scale to 0-30% chance per grid cell
+            // Ridge term increases patch boundaries so nearby dense pockets form.
+            let ridge = (1.0 - (2.0 * coarse_noise - 1.0).abs()).powf(1.7);
+            let cluster_weight = (0.65 * coarse_noise + 0.35 * ridge).clamp(0.0, 1.0);
+
+            // Probability is heavily cluster-weighted with fine local modulation.
+            let spawn_prob =
+                (0.08 + cluster_weight * 0.34 + fine_noise.powf(2.0) * 0.22).clamp(0.0, 0.72);
 
             if rng.gen::<f32>() > spawn_prob {
                 continue;
@@ -140,8 +164,7 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
             spawned += 1;
 
             // Random size scale
-            let size_scale =
-                rng.gen_range(config.asteroid_size_scale_min..config.asteroid_size_scale_max);
+            let size_scale = rng.gen_range(size_scale_min..size_scale_max);
 
             // Random shape (triangle, square, pentagon, hexagon, heptagon, octagon)
             let shape = rng.gen_range(0..6);
@@ -166,19 +189,19 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
                 rescale_vertices_to_area(&vertices, unit_size as f32 / config.asteroid_density);
 
             // Random velocity (gentle to avoid instant collisions)
+            let speed_scale = rng.gen_range(0.35..1.55);
+            let velocity_range = config.asteroid_initial_velocity_range * speed_scale;
             let velocity = Vec2::new(
-                rng.gen_range(
-                    -config.asteroid_initial_velocity_range..config.asteroid_initial_velocity_range,
-                ),
-                rng.gen_range(
-                    -config.asteroid_initial_velocity_range..config.asteroid_initial_velocity_range,
-                ),
+                rng.gen_range(-velocity_range..velocity_range),
+                rng.gen_range(-velocity_range..velocity_range),
             );
+            let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
 
             // Spawn the asteroid
             commands.spawn((
                 (
-                    Transform::from_translation(position.extend(0.05)),
+                    Transform::from_translation(position.extend(0.05))
+                        .with_rotation(initial_rotation),
                     GlobalTransform::default(),
                     Asteroid,
                     AsteroidSize(unit_size),
@@ -202,9 +225,9 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
                     Velocity {
                         linvel: velocity,
                         angvel: rng.gen_range(
-                            -config.asteroid_initial_angvel_range
-                                ..config.asteroid_initial_angvel_range,
-                        ), // Random angular velocity
+                            -config.asteroid_initial_angvel_range * 1.6
+                                ..config.asteroid_initial_angvel_range * 1.6,
+                        ),
                     },
                     Damping {
                         linear_damping: 0.0,
