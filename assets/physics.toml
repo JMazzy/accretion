@@ -197,8 +197,8 @@ enemy_arrive_radius = 120.0
 
 # Enemy body defaults.
 enemy_collider_radius = 10.0
-enemy_linear_damping = 1.8
-enemy_angular_damping = 8.0
+enemy_linear_damping = 0.1
+enemy_angular_damping = 0.1
 enemy_base_hp = 60.0
 
 # Enemy combat loop tuning.

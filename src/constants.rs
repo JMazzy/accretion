@@ -287,10 +287,10 @@ pub const ENEMY_ARRIVE_RADIUS: f32 = 120.0;
 pub const ENEMY_COLLIDER_RADIUS: f32 = 10.0;
 
 /// Enemy linear damping.
-pub const ENEMY_LINEAR_DAMPING: f32 = 1.8;
+pub const ENEMY_LINEAR_DAMPING: f32 = 0.1;
 
 /// Enemy angular damping.
-pub const ENEMY_ANGULAR_DAMPING: f32 = 8.0;
+pub const ENEMY_ANGULAR_DAMPING: f32 = 0.1;
 
 /// Baseline HP for enemy ships.
 pub const ENEMY_BASE_HP: f32 = 60.0;
