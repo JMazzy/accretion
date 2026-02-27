@@ -55,7 +55,7 @@ Last updated: February 27, 2026.
 		- Retune orbit spawn velocities/radius jitter in Orbit scenario spawner.
 		- Run orbit scenario manual checks for stability and gameplay readability.
 
-- [ ] **Scenario pass: Comet refresh (outer-start inward flow + larger average bodies)**
+- [x] **Scenario pass: Comet refresh (outer-start inward flow + larger average bodies)**
 	- Increase size/shape variety for Comet scenario asteroids.
 	- Spawn asteroids in/near soft-boundary region with gentle inward initial velocity.
 	- Preserve existing comet concept, but bias to farther-out and larger-average asteroids than `Field`.

@@ -302,6 +302,7 @@ Live: XX | Culled: YY | Merged: ZZ
   - Projectiles and missiles are consumed on impact
   - Planet hits do **not** grant score and do not split/destroy the planet
 - Current usage: the Field scenario is a pure asteroid-only clustered field (no planet), and the Orbit scenario uses a stronger central anchored planet with jittered orbital debris rings.
+- Comets scenario: large-biased mixed polygons spawn near the soft-boundary annulus with gentle inward trajectories and tangential variance for crossing flows.
 
 ### Asteroid Rendering
 

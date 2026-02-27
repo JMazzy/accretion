@@ -638,27 +638,40 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     let mut rng = rand::thread_rng();
     let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+    let outer_spawn_max = (config.soft_boundary_radius - 30.0).min(config.cull_distance - 80.0);
+    let outer_spawn_min = (outer_spawn_max * 0.74).max(config.player_buffer_radius + 300.0);
 
     for _ in 0..20u32 {
-        // Spawn position: 400–1500 units from origin at a random angle.
+        // Spawn near the soft-boundary annulus so comets flow inward.
         let spawn_angle: f32 = rng.gen_range(0.0..TAU);
-        let dist: f32 = rng.gen_range(400.0..1500.0);
+        let dist: f32 = rng.gen_range(outer_spawn_min..outer_spawn_max);
         let position = Vec2::new(dist * spawn_angle.cos(), dist * spawn_angle.sin());
 
-        // Scale: visually large.
-        let scale: f32 = rng.gen_range(2.5..4.5);
+        // Keep a larger average body size than Field with wider spread.
+        let size_mix = rng.gen_range(0.0..1.0);
+        let scale: f32 = if size_mix < 0.65 {
+            rng.gen_range(2.2..4.6)
+        } else {
+            rng.gen_range(1.6..5.4)
+        };
 
-        // Pick a high-sided polygon (9–12 sides).
-        let sides: usize = rng.gen_range(9usize..=12);
+        // Broader shape variety than before, still biased toward high-sided "comet" bodies.
+        let sides: usize = match rng.gen_range(0..5) {
+            0 => rng.gen_range(6usize..=8),
+            1 | 2 => rng.gen_range(8usize..=10),
+            _ => rng.gen_range(10usize..=12),
+        };
         let base_radius = config.polygon_base_radius;
         let vertices = generate_regular_polygon(sides, scale, base_radius);
+        let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
 
-        // Inward velocity with angular spread so comets cross the arena.
-        let inward_dir = std::f32::consts::PI + spawn_angle;
-        let spread: f32 = rng.gen_range(-0.7..0.7);
-        let vel_angle = inward_dir + spread;
-        let speed: f32 = rng.gen_range(35.0..60.0);
-        let velocity = Vec2::new(vel_angle.cos() * speed, vel_angle.sin() * speed);
+        // Gentle inward velocity with modest tangential variation.
+        let inward = -position.normalize_or_zero();
+        let tangent = Vec2::new(-inward.y, inward.x);
+        let tangential = tangent * rng.gen_range(-0.30..0.30);
+        let travel_dir = (inward + tangential).normalize_or_zero();
+        let speed: f32 = rng.gen_range(14.0..34.0);
+        let velocity = travel_dir * speed;
 
         // Derive AsteroidSize from polygon area, then rescale vertices to satisfy
         // the density invariant: vertices.area == AsteroidSize / density.
@@ -670,7 +683,7 @@ pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 
         commands.spawn((
             (
-                Transform::from_translation(position.extend(0.05)),
+                Transform::from_translation(position.extend(0.05)).with_rotation(initial_rotation),
                 GlobalTransform::default(),
                 Asteroid,
                 AsteroidSize(unit_size),
@@ -685,7 +698,7 @@ pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                 Friction::coefficient(FRICTION_ASTEROID),
                 Velocity {
                     linvel: velocity,
-                    angvel: rng.gen_range(-0.2..0.2),
+                    angvel: rng.gen_range(-0.45..0.45),
                 },
                 Damping {
                     linear_damping: 0.0,

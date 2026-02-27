@@ -1,5 +1,23 @@
 # Accretion Changelog
 
+## Scenario Pass: Comet Refresh (P0) — February 27, 2026
+
+### Moved comet starts to outer annulus with gentler inward flow and larger mixed bodies
+
+**What changed**:
+- Updated `spawn_comets_scenario` in `src/asteroid.rs`:
+  - Spawn positions now originate in an outer annulus near the soft-boundary radius (with cull-distance safety margin).
+  - Initial movement now uses gentle inward velocity with bounded tangential variance rather than high-speed steep crossings.
+  - Expanded size/shape variability while keeping average bodies larger than Field (broader scale range and mixed high-sided polygon selection).
+  - Added random initial body rotation and slightly wider angular-velocity spread for visual diversity.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Scenario Pass: Orbit Identity Boost (P0) — February 27, 2026
 
 ### Increased central gravity dominance and added orbital-start jitter
