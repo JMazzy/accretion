@@ -334,21 +334,21 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
 /// Gravitational mass used for the Orbit scenario central body.
 /// Must match `AsteroidSize` set on the spawned entity; used in the orbital
 /// velocity formula below.
-const ORBIT_CENTRAL_MASS: u32 = 2000;
+const ORBIT_CENTRAL_MASS: u32 = 2800;
 
 pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     // ── Central anchored planet ──────────────────────────────────────────────
     //
-    // 4× the normal planetoid radius gives a visually dominant body.  It is placed
+    // 5.2× the normal planetoid radius gives a visually dominant body.  It is placed
     // at (800, 0) so the player (always at origin) starts outside the ring system
     // and can fly in.
     //
     // AsteroidSize(ORBIT_CENTRAL_MASS) makes this body gravitationally dominant:
     // with mass-scaled gravity (F = G·m_i·m_j/r²), it attracts ring triangles
-    // with 2000× the force that a single triangle would.  The 66 ring asteroids
-    // combined exert only 66 units of perturbation, giving a 30:1 dominance ratio
+    // with 2800× the force that a single triangle would.  The 66 ring asteroids
+    // combined exert only 66 units of perturbation, giving a dominant central well
     // that keeps orbits stable for many revolutions.
-    let central_radius = config.planetoid_base_radius * 4.0;
+    let central_radius = config.planetoid_base_radius * 5.2;
     let central_pos = Vec2::new(800.0, 0.0);
     let central_vertices = rescale_vertices_to_area(
         &generate_regular_polygon(16, 1.0, central_radius),
@@ -412,22 +412,26 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     let mut rng = rand::thread_rng();
 
     // ── Ring 1: unit triangles (inner, unchanged) ────────────────────────────
-    let (r1, n1) = (280.0_f32, 14u32);
+    let (r1, n1) = (260.0_f32, 16u32);
     let m_tri = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
     // v = sqrt(G·CM·density/r) — after density rescaling all bodies have
     // m_rapier_i = AsteroidSize_i/density, so centripetal balance gives this.
     let v_orbit = |r: f32| -> f32 { (g * cm * config.asteroid_density / r).sqrt() };
     for i in 0..n1 {
-        let angle = i as f32 * TAU / n1 as f32;
-        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * r1;
+        let base_angle = i as f32 * TAU / n1 as f32;
+        let angle = base_angle + rng.gen_range(-0.09..0.09);
+        let radius = (r1 + rng.gen_range(-18.0..18.0)).max(120.0);
+        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * radius;
         let tangent = Vec2::new(-angle.sin(), angle.cos());
+        let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
+        let speed_boost = rng.gen_range(1.08..1.20);
         let vertices = rescale_vertices_to_area(
             &generate_triangle(1.0, config.triangle_base_side),
             1.0 / config.asteroid_density,
         );
         commands.spawn((
             (
-                Transform::from_translation(pos.extend(0.05)),
+                Transform::from_translation(pos.extend(0.05)).with_rotation(initial_rotation),
                 GlobalTransform::default(),
                 Asteroid,
                 AsteroidSize(1),
@@ -441,8 +445,8 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                 Restitution::coefficient(RESTITUTION_SMALL),
                 Friction::coefficient(FRICTION_ASTEROID),
                 Velocity {
-                    linvel: tangent * v_orbit(r1),
-                    angvel: 0.0,
+                    linvel: tangent * v_orbit(radius) * speed_boost,
+                    angvel: rng.gen_range(-0.35..0.35),
                 },
                 Damping {
                     linear_damping: 0.0,
@@ -468,14 +472,18 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     }
 
     // ── Ring 2: triangles and squares (mid ring, varied sizes) ───────────────
-    let (r2, n2) = (480.0_f32, 22u32);
+    let (r2, n2) = (450.0_f32, 24u32);
     for i in 0..n2 {
-        let angle = i as f32 * TAU / n2 as f32;
-        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * r2;
+        let base_angle = i as f32 * TAU / n2 as f32;
+        let angle = base_angle + rng.gen_range(-0.10..0.10);
+        let radius = (r2 + rng.gen_range(-35.0..35.0)).max(180.0);
+        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * radius;
         let tangent = Vec2::new(-angle.sin(), angle.cos());
 
-        // Random scale in 1.0–1.8 for visual size variety.
-        let scale: f32 = rng.gen_range(1.0..1.8);
+        // Random scale in 0.9–2.1 for visual size variety.
+        let scale: f32 = rng.gen_range(0.9..2.1);
+        let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
+        let speed_boost = rng.gen_range(1.02..1.16);
 
         let (raw_verts, pre_area) = if i % 2 == 0 {
             // Triangle
@@ -496,7 +504,7 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 
         commands.spawn((
             (
-                Transform::from_translation(pos.extend(0.05)),
+                Transform::from_translation(pos.extend(0.05)).with_rotation(initial_rotation),
                 GlobalTransform::default(),
                 Asteroid,
                 AsteroidSize(asteroid_size),
@@ -510,8 +518,8 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                 Restitution::coefficient(RESTITUTION_SMALL),
                 Friction::coefficient(FRICTION_ASTEROID),
                 Velocity {
-                    linvel: tangent * v_orbit(r2),
-                    angvel: 0.0,
+                    linvel: tangent * v_orbit(radius) * speed_boost,
+                    angvel: rng.gen_range(-0.25..0.25),
                 },
                 Damping {
                     linear_damping: 0.0,
@@ -537,14 +545,18 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     }
 
     // ── Ring 3: pentagons, hexagons, heptagons (outer, larger) ───────────────
-    let (r3, n3) = (680.0_f32, 30u32);
+    let (r3, n3) = (640.0_f32, 32u32);
     for i in 0..n3 {
-        let angle = i as f32 * TAU / n3 as f32;
-        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * r3;
+        let base_angle = i as f32 * TAU / n3 as f32;
+        let angle = base_angle + rng.gen_range(-0.12..0.12);
+        let radius = (r3 + rng.gen_range(-55.0..55.0)).max(260.0);
+        let pos = central_pos + Vec2::new(angle.cos(), angle.sin()) * radius;
         let tangent = Vec2::new(-angle.sin(), angle.cos());
 
-        // Random scale in 1.0–2.2 for bigger visual spread.
-        let scale: f32 = rng.gen_range(1.0..2.2);
+        // Random scale in 0.9–2.6 for bigger visual spread.
+        let scale: f32 = rng.gen_range(0.9..2.6);
+        let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
+        let speed_boost = rng.gen_range(0.98..1.12);
 
         let (raw_verts, pre_area) = match i % 3 {
             0 => {
@@ -572,7 +584,7 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 
         commands.spawn((
             (
-                Transform::from_translation(pos.extend(0.05)),
+                Transform::from_translation(pos.extend(0.05)).with_rotation(initial_rotation),
                 GlobalTransform::default(),
                 Asteroid,
                 AsteroidSize(asteroid_size),
@@ -586,8 +598,8 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                 Restitution::coefficient(RESTITUTION_SMALL),
                 Friction::coefficient(FRICTION_ASTEROID),
                 Velocity {
-                    linvel: tangent * v_orbit(r3),
-                    angvel: 0.0,
+                    linvel: tangent * v_orbit(radius) * speed_boost,
+                    angvel: rng.gen_range(-0.20..0.20),
                 },
                 Damping {
                     linear_damping: 0.0,

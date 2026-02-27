@@ -301,7 +301,7 @@ Live: XX | Culled: YY | Merged: ZZ
 - Weapon interactions:
   - Projectiles and missiles are consumed on impact
   - Planet hits do **not** grant score and do not split/destroy the planet
-- Current usage: the Field scenario is a pure asteroid-only clustered field (no planet), and the Orbit scenario uses a central anchored planet with orbital debris rings.
+- Current usage: the Field scenario is a pure asteroid-only clustered field (no planet), and the Orbit scenario uses a stronger central anchored planet with jittered orbital debris rings.
 
 ### Asteroid Rendering
 

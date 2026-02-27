@@ -1,5 +1,24 @@
 # Accretion Changelog
 
+## Scenario Pass: Orbit Identity Boost (P0) — February 27, 2026
+
+### Increased central gravity dominance and added orbital-start jitter
+
+**What changed**:
+- Tuned Orbit scenario setup in `src/asteroid.rs` (`spawn_orbit_scenario`):
+  - Increased central anchored mass (`ORBIT_CENTRAL_MASS`) and central body radius scaling for a stronger gravity well.
+  - Tightened ring base radii inward and increased ring body counts.
+  - Added randomized radius/angle jitter for all rings so starts are less banded and more organic.
+  - Added randomized initial body rotation and non-zero angular velocity in ring bodies.
+  - Applied modest per-body orbital speed multipliers to keep starts dynamic while remaining coherent.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build --release` ✅
+- `./test_all.sh` ✅ (10/10 pass)
+
 ## Scenario Pass: Field Refresh (P0) — February 27, 2026
 
 ### Removed anchored planet and added seeded multi-cluster startup variation

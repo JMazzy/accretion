@@ -45,7 +45,7 @@ Last updated: February 27, 2026.
 		- Tune spread ranges in `assets/physics.toml` / config constants where applicable.
 		- Validate via repeated `Field` starts + test-mode sanity run.
 
-- [ ] **Scenario pass: Orbit identity boost (stronger well + noisier orbital starts)**
+- [x] **Scenario pass: Orbit identity boost (stronger well + noisier orbital starts)**
 	- Keep planet in `Orbit`, but make planetoid objects larger and denser by default to strengthen gravity well.
 	- Raise initial orbital speeds as needed to remain playable under stronger gravity.
 	- Replace clean orbital bands with wider randomized ranges (size, rotation, orbital radius), while keeping the scene mostly stable.
