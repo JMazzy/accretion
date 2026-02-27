@@ -4,6 +4,7 @@ pub mod asteroid;
 pub mod asteroid_rendering;
 pub mod config;
 pub mod constants;
+pub mod enemy;
 pub mod error;
 pub mod graphics;
 pub mod menu;

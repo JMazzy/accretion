@@ -14,17 +14,7 @@ Last updated: February 26, 2026.
 
 ### Gameplay Foundation (Combat + AI)
 
-- [ ] **Enemy ships: foundation + spawning**
-	- Add enemy entity type, rendering, HP, and basic movement/targeting toward player.
-	- Add deterministic spawn rules (count, spacing, cooldown) tied to scenario/session progression.
-	- Acceptance: enemies spawn reliably, move intentionally, and do not destabilize asteroid simulation.
-
-- [ ] **Enemy ships: combat loop** `depends on Enemy ships: foundation + spawning`
-	- Enemy fire behavior, cooldown, projectile ownership/friendly-fire rules.
-	- Damage intake from player weapons + asteroid collisions.
-	- Acceptance: full enemy life-cycle (spawn → attack → die) works and updates score/stats.
-
-- [ ] **Ion Cannon MVP** `depends on Enemy ships: combat loop`
+- [ ] **Ion Cannon MVP**
 	- Add stun status effect for enemies only; level scaling controls minimum enemy tier affected.
 	- Add upgrade progression and HUD feedback for stun duration/effectiveness.
 	- Acceptance: cannon applies temporary disable correctly across enemy tiers.

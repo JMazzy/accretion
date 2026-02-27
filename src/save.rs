@@ -472,7 +472,10 @@ pub fn apply_pending_loaded_snapshot_system(
             Restitution::coefficient(config.player_restitution),
             CollisionGroups::new(
                 bevy_rapier2d::geometry::Group::GROUP_2,
-                bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_4,
+                bevy_rapier2d::geometry::Group::GROUP_1
+                    | bevy_rapier2d::geometry::Group::GROUP_4
+                    | bevy_rapier2d::geometry::Group::GROUP_5
+                    | bevy_rapier2d::geometry::Group::GROUP_6,
             ),
             ActiveEvents::COLLISION_EVENTS,
             Transform {

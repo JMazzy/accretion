@@ -219,7 +219,9 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
                         bevy_rapier2d::geometry::Group::GROUP_1,
                         bevy_rapier2d::geometry::Group::GROUP_1
                             | bevy_rapier2d::geometry::Group::GROUP_2
-                            | bevy_rapier2d::geometry::Group::GROUP_3,
+                            | bevy_rapier2d::geometry::Group::GROUP_3
+                            | bevy_rapier2d::geometry::Group::GROUP_5
+                            | bevy_rapier2d::geometry::Group::GROUP_6,
                     ),
                     ActiveEvents::COLLISION_EVENTS,
                     Sleeping::disabled(),
@@ -279,7 +281,9 @@ pub fn spawn_planet(commands: &mut Commands, position: Vec2, config: &PhysicsCon
                 bevy_rapier2d::geometry::Group::GROUP_1,
                 bevy_rapier2d::geometry::Group::GROUP_1
                     | bevy_rapier2d::geometry::Group::GROUP_2
-                    | bevy_rapier2d::geometry::Group::GROUP_3,
+                    | bevy_rapier2d::geometry::Group::GROUP_3
+                    | bevy_rapier2d::geometry::Group::GROUP_5
+                    | bevy_rapier2d::geometry::Group::GROUP_6,
             ),
             ActiveEvents::COLLISION_EVENTS,
             Sleeping::disabled(),
@@ -358,7 +362,9 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                 bevy_rapier2d::geometry::Group::GROUP_1,
                 bevy_rapier2d::geometry::Group::GROUP_1
                     | bevy_rapier2d::geometry::Group::GROUP_2
-                    | bevy_rapier2d::geometry::Group::GROUP_3,
+                    | bevy_rapier2d::geometry::Group::GROUP_3
+                    | bevy_rapier2d::geometry::Group::GROUP_5
+                    | bevy_rapier2d::geometry::Group::GROUP_6,
             ),
             ActiveEvents::COLLISION_EVENTS,
             Sleeping::disabled(),
@@ -428,7 +434,9 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                     bevy_rapier2d::geometry::Group::GROUP_1,
                     bevy_rapier2d::geometry::Group::GROUP_1
                         | bevy_rapier2d::geometry::Group::GROUP_2
-                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                        | bevy_rapier2d::geometry::Group::GROUP_3
+                        | bevy_rapier2d::geometry::Group::GROUP_5
+                        | bevy_rapier2d::geometry::Group::GROUP_6,
                 ),
                 ActiveEvents::COLLISION_EVENTS,
                 Sleeping::disabled(),
@@ -495,7 +503,9 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                     bevy_rapier2d::geometry::Group::GROUP_1,
                     bevy_rapier2d::geometry::Group::GROUP_1
                         | bevy_rapier2d::geometry::Group::GROUP_2
-                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                        | bevy_rapier2d::geometry::Group::GROUP_3
+                        | bevy_rapier2d::geometry::Group::GROUP_5
+                        | bevy_rapier2d::geometry::Group::GROUP_6,
                 ),
                 ActiveEvents::COLLISION_EVENTS,
                 Sleeping::disabled(),
@@ -569,7 +579,9 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                     bevy_rapier2d::geometry::Group::GROUP_1,
                     bevy_rapier2d::geometry::Group::GROUP_1
                         | bevy_rapier2d::geometry::Group::GROUP_2
-                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                        | bevy_rapier2d::geometry::Group::GROUP_3
+                        | bevy_rapier2d::geometry::Group::GROUP_5
+                        | bevy_rapier2d::geometry::Group::GROUP_6,
                 ),
                 ActiveEvents::COLLISION_EVENTS,
                 Sleeping::disabled(),
@@ -652,7 +664,9 @@ pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                     bevy_rapier2d::geometry::Group::GROUP_1,
                     bevy_rapier2d::geometry::Group::GROUP_1
                         | bevy_rapier2d::geometry::Group::GROUP_2
-                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                        | bevy_rapier2d::geometry::Group::GROUP_3
+                        | bevy_rapier2d::geometry::Group::GROUP_5
+                        | bevy_rapier2d::geometry::Group::GROUP_6,
                 ),
                 ActiveEvents::COLLISION_EVENTS,
                 Sleeping::disabled(),
@@ -720,7 +734,9 @@ pub fn spawn_shower_scenario(commands: &mut Commands, config: &PhysicsConfig) {
                     bevy_rapier2d::geometry::Group::GROUP_1,
                     bevy_rapier2d::geometry::Group::GROUP_1
                         | bevy_rapier2d::geometry::Group::GROUP_2
-                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                        | bevy_rapier2d::geometry::Group::GROUP_3
+                        | bevy_rapier2d::geometry::Group::GROUP_5
+                        | bevy_rapier2d::geometry::Group::GROUP_6,
                 ),
                 ActiveEvents::COLLISION_EVENTS,
                 Sleeping::disabled(),
@@ -900,7 +916,9 @@ pub fn spawn_asteroid_with_vertices(
                     bevy_rapier2d::geometry::Group::GROUP_1,
                     bevy_rapier2d::geometry::Group::GROUP_1
                         | bevy_rapier2d::geometry::Group::GROUP_2
-                        | bevy_rapier2d::geometry::Group::GROUP_3,
+                        | bevy_rapier2d::geometry::Group::GROUP_3
+                        | bevy_rapier2d::geometry::Group::GROUP_5
+                        | bevy_rapier2d::geometry::Group::GROUP_6,
                 ),
                 ActiveEvents::COLLISION_EVENTS,
                 Sleeping::disabled(),

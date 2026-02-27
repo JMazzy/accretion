@@ -2918,9 +2918,18 @@ pub fn ore_shop_button_system(
 pub fn cleanup_game_world(
     mut commands: Commands,
     asteroids: Query<Entity, With<crate::asteroid::Asteroid>>,
-    players: Query<Entity, With<crate::player::Player>>,
-    projectiles: Query<Entity, With<crate::player::state::Projectile>>,
-    missiles: Query<Entity, With<crate::player::state::Missile>>,
+    players_and_enemies: Query<
+        Entity,
+        Or<(With<crate::player::Player>, With<crate::enemy::Enemy>)>,
+    >,
+    projectiles: Query<
+        Entity,
+        Or<(
+            With<crate::player::state::Projectile>,
+            With<crate::player::state::Missile>,
+            With<crate::enemy::EnemyProjectile>,
+        )>,
+    >,
     particles: Query<Entity, With<crate::particles::Particle>>,
     ore_pickups: Query<Entity, With<crate::mining::OrePickup>>,
     hud: Query<
@@ -2959,9 +2968,8 @@ pub fn cleanup_game_world(
 ) {
     for e in asteroids
         .iter()
-        .chain(players.iter())
+        .chain(players_and_enemies.iter())
         .chain(projectiles.iter())
-        .chain(missiles.iter())
         .chain(particles.iter())
         .chain(ore_pickups.iter())
         .chain(hud.iter())

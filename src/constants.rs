@@ -237,6 +237,95 @@ pub const TRACTOR_BEAM_FREEZE_MAX_TARGET_SIZE_MULTIPLIER: f32 = 0.75;
 /// Keeps freeze mode stable by rejecting faster-moving targets.
 pub const TRACTOR_BEAM_FREEZE_MAX_TARGET_SPEED_MULTIPLIER: f32 = 0.8;
 
+// ── Enemy Ships: Foundation ──────────────────────────────────────────────────
+
+/// Seconds between enemy spawn attempts at session progression stage 0.
+pub const ENEMY_SPAWN_BASE_COOLDOWN: f32 = 16.0;
+
+/// Cooldown reduction per progression stage (seconds).
+pub const ENEMY_SPAWN_COOLDOWN_PER_STAGE: f32 = 1.2;
+
+/// Minimum allowed spawn cooldown regardless of progression.
+pub const ENEMY_SPAWN_COOLDOWN_MIN: f32 = 4.0;
+
+/// Maximum simultaneous enemy ships at progression stage 0.
+pub const ENEMY_MAX_COUNT_BASE: u32 = 1;
+
+/// Additional simultaneous enemies per progression stage.
+pub const ENEMY_MAX_COUNT_PER_STAGE: u32 = 1;
+
+/// Hard cap on simultaneous enemies for stability/performance.
+pub const ENEMY_MAX_COUNT_CAP: u32 = 6;
+
+/// Session time (seconds) that contributes one progression stage.
+pub const ENEMY_STAGE_TIME_SECS: f32 = 45.0;
+
+/// Score points that contribute one progression stage.
+pub const ENEMY_STAGE_SCORE_POINTS: u32 = 350;
+
+/// Spawn ring radius around the player (world units).
+pub const ENEMY_SPAWN_RADIUS: f32 = 640.0;
+
+/// Minimum distance from player required for enemy spawns.
+pub const ENEMY_MIN_PLAYER_SPAWN_DISTANCE: f32 = 300.0;
+
+/// Minimum spacing between enemies when selecting deterministic spawn points.
+pub const ENEMY_MIN_ENEMY_SPACING: f32 = 180.0;
+
+/// Steering force magnitude used by enemies while seeking the player.
+pub const ENEMY_SEEK_FORCE: f32 = 4_800.0;
+
+/// Maximum linear speed for enemy ships (u/s).
+pub const ENEMY_MAX_SPEED: f32 = 165.0;
+
+/// Radius where seek force starts tapering down to avoid overshoot.
+pub const ENEMY_ARRIVE_RADIUS: f32 = 120.0;
+
+/// Enemy collider radius (u).
+pub const ENEMY_COLLIDER_RADIUS: f32 = 10.0;
+
+/// Enemy linear damping.
+pub const ENEMY_LINEAR_DAMPING: f32 = 1.8;
+
+/// Enemy angular damping.
+pub const ENEMY_ANGULAR_DAMPING: f32 = 8.0;
+
+/// Baseline HP for enemy ships.
+pub const ENEMY_BASE_HP: f32 = 60.0;
+
+/// Base cooldown between enemy shots (seconds).
+pub const ENEMY_FIRE_COOLDOWN_BASE: f32 = 2.1;
+
+/// Enemy projectile speed (u/s).
+pub const ENEMY_PROJECTILE_SPEED: f32 = 360.0;
+
+/// Enemy projectile lifetime (seconds).
+pub const ENEMY_PROJECTILE_LIFETIME: f32 = 3.4;
+
+/// Maximum range from origin before enemy projectile despawns.
+pub const ENEMY_PROJECTILE_MAX_DIST: f32 = 2200.0;
+
+/// Enemy projectile collider radius (u).
+pub const ENEMY_PROJECTILE_COLLIDER_RADIUS: f32 = 3.0;
+
+/// Damage dealt to the player on enemy projectile impact.
+pub const ENEMY_PROJECTILE_DAMAGE: f32 = 12.0;
+
+/// Damage dealt to enemy ships by player primary projectiles.
+pub const ENEMY_DAMAGE_FROM_PLAYER_PROJECTILE: f32 = 25.0;
+
+/// Damage dealt to enemy ships by player missiles.
+pub const ENEMY_DAMAGE_FROM_PLAYER_MISSILE: f32 = 60.0;
+
+/// Relative collision speed threshold where asteroid-enemy impacts start dealing damage.
+pub const ENEMY_ASTEROID_COLLISION_DAMAGE_THRESHOLD: f32 = 32.0;
+
+/// Scale factor applied to asteroid-enemy impact speed above threshold.
+pub const ENEMY_ASTEROID_COLLISION_DAMAGE_SCALE: f32 = 0.42;
+
+/// Score awarded on enemy destruction.
+pub const ENEMY_KILL_SCORE: u32 = 35;
+
 // ── Player: Combat ────────────────────────────────────────────────────────────
 
 /// Speed (u/s) of fired projectiles.

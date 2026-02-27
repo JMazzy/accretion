@@ -23,6 +23,7 @@ src/
 ├── main.rs               - Bevy app setup, window configuration, test mode routing
 ├── constants.rs          - All tuneable physics and gameplay constants (compile-time defaults)
 ├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup and hot-reloaded at runtime
+├── enemy.rs              - Enemy components, deterministic spawning, seek movement, enemy mesh attachment
 ├── menu.rs               - GameState enum (MainMenu / ScenarioSelect / Playing / Paused / GameOver), SelectedScenario resource, MainMenuPlugin, splash screen + scenario-select + pause menu UI
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
@@ -170,6 +171,34 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
   - emission is burst-throttled and capped per fixed-step to keep frame-time stable
 - **Stability controls**: strict speed/mass/range/cone gating, frozen-mode size/speed multipliers, and freeze force caps avoid runaway acceleration.
 
+### Enemy Ships (Foundation + Spawning)
+
+- **Components**: `Enemy`, `EnemyHealth`, `EnemyRenderMarker` in `src/enemy.rs`.
+- **Spawn state**: `EnemySpawnState` tracks session elapsed time, spawn timer, and deterministic spawn index.
+- **Deterministic spawn rules**:
+  - spawn points use a golden-angle ring sequence around player position
+  - candidates must satisfy `enemy_min_player_spawn_distance`
+  - candidates must satisfy inter-enemy spacing `enemy_min_enemy_spacing`
+- **Progression coupling**:
+  - progression stage combines elapsed-time and score-based stages
+  - stage increases enemy cap and reduces spawn cooldown (bounded by config clamps)
+- **Movement**: `enemy_seek_player_system` applies seek/arrive steering force toward player with `enemy_max_speed` clamp.
+
+### Enemy Combat Loop
+
+- **Enemy firing**: `enemy_fire_system` spawns `EnemyProjectile` entities aimed at player on cooldown.
+- **Projectile ownership / friendly-fire rules**:
+  - enemy projectiles are in a dedicated collision group and collide with player + asteroids only
+  - enemy projectiles do not collide with enemy ships
+- **Damage intake**:
+  - `enemy_damage_from_player_weapons_system` applies damage from player projectiles and missiles
+  - `enemy_collision_damage_system` applies impact damage from asteroid contacts based on relative speed threshold
+- **Player damage path**:
+  - `enemy_projectile_hit_system` applies enemy projectile damage to player HP using existing invincibility/lives semantics
+- **Lifecycle completion**:
+  - enemies now execute spawn → seek → fire → take damage → die loop
+  - enemy kills contribute score progression via `enemy_kill_score`
+
 ## ECS Systems Execution Order
 
 ### Update Schedule
@@ -275,6 +304,7 @@ Built-in scenarios are variants of `SelectedScenario` (in `menu.rs`) and spawned
 - `large_small_pair` - Mixed-size asteroid gravity interaction
 - `gravity_boundary` - Behavior at maximum gravity distance
 - `mixed_size_asteroids` - Complex 5-body N-body system
+- `enemy_combat_scripted` - Deterministic player/enemy/asteroid scripted fire sequence validating runtime collision contracts and particle emission
 
 ### Test Logging
 

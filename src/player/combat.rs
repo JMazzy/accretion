@@ -131,7 +131,7 @@ pub fn projectile_fire_system(
         Ccd { enabled: true },
         CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_3,
-            bevy_rapier2d::geometry::Group::GROUP_1,
+            bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_5,
         ),
         ActiveCollisionTypes::DYNAMIC_KINEMATIC,
         ActiveEvents::COLLISION_EVENTS,
@@ -239,7 +239,7 @@ pub fn missile_fire_system(
         Ccd { enabled: true },
         CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_3,
-            bevy_rapier2d::geometry::Group::GROUP_1,
+            bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_5,
         ),
         ActiveCollisionTypes::DYNAMIC_KINEMATIC,
         ActiveEvents::COLLISION_EVENTS,
@@ -708,7 +708,10 @@ pub fn player_respawn_system(
         bevy_rapier2d::prelude::Restitution::coefficient(config.player_restitution),
         bevy_rapier2d::prelude::CollisionGroups::new(
             bevy_rapier2d::geometry::Group::GROUP_2,
-            bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_4,
+            bevy_rapier2d::geometry::Group::GROUP_1
+                | bevy_rapier2d::geometry::Group::GROUP_4
+                | bevy_rapier2d::geometry::Group::GROUP_5
+                | bevy_rapier2d::geometry::Group::GROUP_6,
         ),
         bevy_rapier2d::prelude::ActiveEvents::COLLISION_EVENTS,
         Transform::from_translation(Vec3::ZERO),

@@ -169,6 +169,51 @@ tractor_beam_freeze_max_hold_offset = 180.0
 tractor_beam_freeze_max_target_size_multiplier = 0.75
 tractor_beam_freeze_max_target_speed_multiplier = 0.8
 
+# ── Enemy Ships: Foundation ─────────────────────────────────────────────────
+
+# Spawn pacing and deterministic progression.
+enemy_spawn_base_cooldown = 16.0
+enemy_spawn_cooldown_per_stage = 1.2
+enemy_spawn_cooldown_min = 4.0
+
+# Simultaneous enemy limits.
+enemy_max_count_base = 1
+enemy_max_count_per_stage = 1
+enemy_max_count_cap = 6
+
+# Session progression stage inputs.
+enemy_stage_time_secs = 45.0
+enemy_stage_score_points = 350
+
+# Deterministic spawn geometry constraints.
+enemy_spawn_radius = 640.0
+enemy_min_player_spawn_distance = 300.0
+enemy_min_enemy_spacing = 180.0
+
+# Basic seek-movement tuning.
+enemy_seek_force = 4800.0
+enemy_max_speed = 165.0
+enemy_arrive_radius = 120.0
+
+# Enemy body defaults.
+enemy_collider_radius = 10.0
+enemy_linear_damping = 1.8
+enemy_angular_damping = 8.0
+enemy_base_hp = 60.0
+
+# Enemy combat loop tuning.
+enemy_fire_cooldown_base = 2.1
+enemy_projectile_speed = 360.0
+enemy_projectile_lifetime = 3.4
+enemy_projectile_max_dist = 2200.0
+enemy_projectile_collider_radius = 3.0
+enemy_projectile_damage = 12.0
+enemy_damage_from_player_projectile = 25.0
+enemy_damage_from_player_missile = 60.0
+enemy_asteroid_collision_damage_threshold = 32.0
+enemy_asteroid_collision_damage_scale = 0.42
+enemy_kill_score = 35
+
 # ── Player: Combat ────────────────────────────────────────────────────────────
 
 # Projectile muzzle speed (u/s).

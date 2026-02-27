@@ -1,5 +1,125 @@
 # Accretion Changelog
 
+## Enemy Projectile/Ship Collision Filter Fix — February 26, 2026
+
+### Fixed player projectile/missile misses against enemy ships in live gameplay
+
+**Root cause**:
+- Enemy ship collision filters excluded `GROUP_3` (player weapon membership), so Rapier rejected projectile↔enemy contacts even though projectile filters allowed enemies.
+
+**What changed**:
+- Updated enemy collision groups in `src/enemy.rs` to include `GROUP_3` in the enemy filter mask.
+- Added regression test `enemy_collision_filter_accepts_player_weapon_group` in `src/enemy.rs`.
+- Aligned scripted test enemy collision mask in `src/testing.rs` and adjusted scripted asteroid placement to reduce incidental contact ambiguity.
+
+**Validation**:
+- `cargo test enemy::tests::enemy_collision_filter_accepts_player_weapon_group` ✅
+- `ACCRETION_TEST=enemy_combat_scripted cargo run --release` ✅ PASS
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+## Scripted Enemy Combat Test Mode — February 26, 2026
+
+### Added deterministic runtime collision validation scenario for player/enemy/asteroid combat
+
+Implemented new test-mode scenario **`ACCRETION_TEST=enemy_combat_scripted`**.
+
+**What changed**:
+- Added scripted test scenario and runtime systems in `src/testing.rs`:
+  - `spawn_test_enemy_combat_scripted`
+  - `enemy_combat_script_system`
+  - `enemy_combat_observer_system`
+- Scenario now spawns deterministic targets and pre-scripted shots:
+  - player projectile → enemy
+  - enemy projectile → player
+  - enemy projectile → asteroid
+- Added explicit pass/fail observation reporting at test completion for:
+  - enemy damage observed
+  - player damage observed
+  - asteroid hit/despawn observed
+  - impact particles observed
+- Wired test into `ACCRETION_TEST` routing in `src/main.rs` and included observer system in PostUpdate test chain.
+
+**Validation**:
+- `ACCRETION_TEST=enemy_combat_scripted cargo run --release` ✅ PASS
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+## Enemy Ships Combat Loop — February 26, 2026
+
+### Added enemy firing, projectile ownership rules, and enemy damage/death lifecycle
+
+Implemented backlog item **Enemy ships: combat loop**.
+
+**What changed**:
+- Extended `src/enemy.rs` with combat systems:
+  - `enemy_fire_system`
+  - `despawn_old_enemy_projectiles_system`
+  - `enemy_projectile_hit_system`
+  - `enemy_damage_from_player_weapons_system`
+  - `enemy_collision_damage_system`
+- Added new enemy combat components:
+  - `EnemyFireCooldown`
+  - `EnemyProjectile`
+  - `EnemyProjectileRenderMarker`
+- Added enemy combat tuning fields across `src/constants.rs`, `src/config.rs`, and `assets/physics.toml`:
+  - fire cooldown/projectile speed/lifetime/range/collider/damage
+  - player-weapon damage vs enemies
+  - asteroid-impact enemy damage threshold/scale
+  - enemy kill score value
+- Updated player weapon collision masks in `src/player/combat.rs` so projectiles/missiles can hit enemies.
+- Updated world cleanup in `src/menu.rs` to despawn enemy projectiles on session teardown.
+
+**Backlog update**:
+- Removed completed item **Enemy ships: combat loop** from `BACKLOG.md`.
+- Cleared dependency tag from **Ion Cannon MVP** now that enemy combat loop is in place.
+
+**Validation**:
+- `cargo test enemy::` ✅
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+## Enemy Ships Foundation + Spawning — February 26, 2026
+
+### Added enemy entity type, deterministic spawn progression, and baseline seek movement
+
+Implemented backlog item **Enemy ships: foundation + spawning**.
+
+**What changed**:
+- Added `src/enemy.rs` with:
+  - `Enemy` and `EnemyHealth` components
+  - `EnemySpawnState` resource for session-time progression + deterministic spawn indexing
+  - deterministic spawn profile and ring-offset placement logic
+  - `enemy_seek_player_system` for baseline target-follow movement
+  - `attach_enemy_mesh_system` for visual enemy meshes
+- Added runtime tuning support for enemy foundation fields across:
+  - `src/constants.rs`
+  - `src/config.rs`
+  - `assets/physics.toml`
+- Integrated `EnemyPlugin` into app startup in both normal and test-mode paths (`src/main.rs`).
+- Updated session cleanup so enemies are removed on return to main menu (`cleanup_game_world` in `src/menu.rs`).
+- Added unit tests in `src/enemy.rs` for deterministic spawn offsets and progression profile behavior.
+
+**Backlog update**:
+- Removed completed item **Enemy ships: foundation + spawning** from `BACKLOG.md`.
+- Cleared dependency tag from **Enemy ships: combat loop** now that spawning foundation is complete.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
 ## Tractor Hold/Freeze Stability Pass — February 26, 2026
 
 ### Completed spring-damper hold model with explicit frozen-mode safeguards

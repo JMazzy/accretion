@@ -8,6 +8,7 @@ mod asteroid;
 mod asteroid_rendering;
 mod config;
 mod constants;
+mod enemy;
 mod error;
 mod graphics;
 mod menu;
@@ -24,11 +25,12 @@ use config::PhysicsConfig;
 use menu::{GameState, SelectedScenario};
 use testing::{
     spawn_test_all_three, spawn_test_baseline_100, spawn_test_culling_verification,
-    spawn_test_gentle_approach, spawn_test_gravity, spawn_test_gravity_boundary,
-    spawn_test_high_speed_collision, spawn_test_kdtree_only, spawn_test_large_small_pair,
-    spawn_test_mixed_size_asteroids, spawn_test_near_miss, spawn_test_orbit_pair,
-    spawn_test_passing_asteroid, spawn_test_perf_benchmark, spawn_test_soft_boundary_only,
-    spawn_test_three_triangles, spawn_test_tidal_only, spawn_test_two_triangles, TestConfig,
+    spawn_test_enemy_combat_scripted, spawn_test_gentle_approach, spawn_test_gravity,
+    spawn_test_gravity_boundary, spawn_test_high_speed_collision, spawn_test_kdtree_only,
+    spawn_test_large_small_pair, spawn_test_mixed_size_asteroids, spawn_test_near_miss,
+    spawn_test_orbit_pair, spawn_test_passing_asteroid, spawn_test_perf_benchmark,
+    spawn_test_soft_boundary_only, spawn_test_three_triangles, spawn_test_tidal_only,
+    spawn_test_two_triangles, TestConfig,
 };
 
 /// Spawn the initial asteroid world for the chosen scenario.
@@ -159,6 +161,7 @@ fn main() {
         app.insert_state(GameState::Playing)
             .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin)
+            .add_plugins(enemy::EnemyPlugin)
             .add_plugins(mining::MiningPlugin);
     } else {
         // World and player spawned only when transitioning from ScenarioSelect → Playing.
@@ -169,6 +172,7 @@ fn main() {
         app.add_plugins(menu::MainMenuPlugin)
             .add_plugins(particles::ParticlesPlugin)
             .add_plugins(simulation::SimulationPlugin)
+            .add_plugins(enemy::EnemyPlugin)
             .add_plugins(mining::MiningPlugin)
             .add_systems(
                 OnTransition {
@@ -286,11 +290,22 @@ fn main() {
                 Startup,
                 spawn_test_orbit_pair.after(config::load_physics_config),
             ),
+            "enemy_combat_scripted" => app.add_systems(
+                Startup,
+                (player::spawn_player, spawn_test_enemy_combat_scripted)
+                    .chain()
+                    .after(config::load_physics_config),
+            ),
             _ => app.add_systems(
                 Startup,
                 spawn_test_two_triangles.after(config::load_physics_config),
             ),
         };
+
+        app.add_systems(
+            Update,
+            testing::enemy_combat_script_system.run_if(in_state(GameState::Playing)),
+        );
 
         // Test systems must run AFTER asteroid_formation_system in PostUpdate
         // Ensure formations happen before we verify
@@ -299,6 +314,7 @@ fn main() {
             (
                 testing::test_logging_system,
                 testing::orbit_pair_calibrate_and_track_system,
+                testing::enemy_combat_observer_system,
                 testing::test_verification_system,
             )
                 .chain()

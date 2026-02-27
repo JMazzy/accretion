@@ -190,6 +190,26 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
 - Beam force/range and all envelope limits are runtime-tunable via `assets/physics.toml` (`tractor_beam_*` keys).
 - **Persistence**: tractor beam level is saved/restored in save slots.
 
+### Enemy Ships (Foundation)
+
+- Enemy ships now spawn during active sessions with deterministic spacing and progression-aware pacing.
+- Spawn cadence and cap scale with both elapsed session time and player score progression.
+- Spawns use deterministic ring offsets around the player plus minimum-spacing checks to avoid overlap clusters.
+- Enemy movement is currently a basic seek/arrive model that steers toward the player with bounded max speed.
+- Enemy base HP and all spawn/movement tunables are configurable via `assets/physics.toml` (`enemy_*` keys).
+
+### Enemy Combat Loop
+
+- Enemies now fire projectiles toward the player on cooldown.
+- Enemy projectiles use explicit ownership/friendly-fire rules:
+  - collide with player and asteroids
+  - do **not** collide with other enemies
+- Player weapons now damage enemies:
+  - primary projectile hits apply enemy damage and consume the projectile hit
+  - missile hits apply heavier enemy damage and consume the missile
+- Enemy ships also take collision damage from high-speed asteroid impacts.
+- Enemy death now contributes to score progression (`enemy_kill_score`) and increments the destroyed tally in score HUD.
+
 ## Visual Feedback
 
 ### Score HUD
