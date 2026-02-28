@@ -75,7 +75,7 @@
 
 ### Lives System
 
-- The player starts each session with **3 lives** (displayed as ♥ hearts in the HUD, below the score).
+- The player starts each session with **3 lives** (displayed as repeated `⮝` symbols in the HUD, below the score).
 - Each time the ship is destroyed one heart is consumed and a respawn countdown begins.
 - The `player_lives` count (default `PLAYER_LIVES = 3`) and all timing constants can be tuned in `assets/physics.toml` without recompilation, and changes hot-reload at runtime.
 
@@ -137,7 +137,7 @@ Ore consumables and upgrades are purchased from the **Ore Shop** overlay (open w
 | Restock missile | 1 ore | +1 missile, capped at `missile_ammo_max` |
 
 - Ore is **not spent** if the corresponding stat is already full.
-- The ore HUD row now shows all progression levels in one compact line, including tractor hold-mode state (`[ON]`/`[OFF]`), e.g. `Ore: 12 | Blaster: 3 | Missile: 2 | Tractor: 1 [ON] | Ion: 2 (2.1s, T≤1, CD: READY)`.
+- The ore HUD row uses compact symbol status indicators: upgrade levels use circled numbers (`①..⑩`), missiles use slot circles (`●` available / `○` empty), tractor shows `○` (off), `⚡` (ready), `⌛` (cooldown), and ion shows `⚡` (ready) or `⌛` (cooldown).
 - Passive HP regen and passive missile recharge have been **removed**; ore-shop spending is the only way to replenish them.
 
 ### Primary Weapon Upgrades
@@ -250,7 +250,7 @@ Score: 42  (30 hits, 12 destroyed)
 
 **Hit-streak multiplier** — consecutive hits without missing build a streak; the multiplier increases at thresholds (×2 at 5, ×3 at 10, ×4 at 20, ×5 at 40). Missing a shot or dying resets the streak.
 
-**Missile ammo** — starts at 5; replenished via Ore Shop missile restock (1 ore = 1 missile). HUD row 3 shows current ammo (`M M M - -`).
+**Missile ammo** — starts at 5; replenished via Ore Shop missile restock (1 ore = 1 missile). HUD row 3 shows current ammo as slots (`● ● ● ○ ○`).
 
 ### On-Screen Statistics Display
 

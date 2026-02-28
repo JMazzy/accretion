@@ -290,20 +290,43 @@ fn off_text() -> Color {
     Color::srgb(0.65, 0.65, 0.65)
 }
 
-fn roman_numeral_level(level: u32) -> &'static str {
+fn circled_number_level(level: u32) -> &'static str {
     match level {
-        1 => "Ⅰ",
-        2 => "Ⅱ",
-        3 => "Ⅲ",
-        4 => "Ⅳ",
-        5 => "Ⅴ",
-        6 => "Ⅵ",
-        7 => "Ⅶ",
-        8 => "Ⅷ",
-        9 => "Ⅸ",
-        10 => "Ⅹ",
+        1 => "①",
+        2 => "②",
+        3 => "③",
+        4 => "④",
+        5 => "⑤",
+        6 => "⑥",
+        7 => "⑦",
+        8 => "⑧",
+        9 => "⑨",
+        10 => "⑩",
         _ => "?",
     }
+}
+
+fn repeated_symbol(symbol: &str, count: u32) -> String {
+    let mut out = String::new();
+    for index in 0..count {
+        if index > 0 {
+            out.push(' ');
+        }
+        out.push_str(symbol);
+    }
+    out
+}
+
+fn slot_indicator(available: u32, max_slots: u32) -> String {
+    let clamped = available.min(max_slots);
+    let mut out = String::new();
+    for index in 0..max_slots {
+        if index > 0 {
+            out.push(' ');
+        }
+        out.push_str(if index < clamped { "●" } else { "○" });
+    }
+    out
 }
 
 fn line_segments_mesh(segments: &[(Vec2, Vec2)], half_width: f32) -> Mesh {
@@ -510,18 +533,9 @@ pub fn setup_lives_hud(
                 })
                 .with_children(|row| {
                     row.spawn((
-                        Text::new("⮝"),
+                        Text::new(repeated_symbol("⮝", config.player_lives.max(0) as u32)),
                         TextFont {
                             font: symbol_font_2.0.clone(),
-                            font_size: config.stats_font_size,
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.95, 0.45, 0.45)),
-                    ));
-                    row.spawn((
-                        Text::new(format!("{}/{}", config.player_lives, config.player_lives)),
-                        TextFont {
-                            font: font.0.clone(),
                             font_size: config.stats_font_size,
                             ..default()
                         },
@@ -548,7 +562,6 @@ pub fn setup_lives_hud(
 #[allow(clippy::type_complexity)]
 pub fn lives_hud_display_system(
     lives: Res<PlayerLives>,
-    config: Res<PhysicsConfig>,
     mut text_query: Query<(
         &mut Text,
         Option<&mut Visibility>,
@@ -559,11 +572,10 @@ pub fn lives_hud_display_system(
     if !lives.is_changed() {
         return;
     }
-    let total = config.player_lives.max(0);
     let remaining = lives.remaining.max(0);
     for (mut text, vis, respawn_tag, lives_value_tag) in text_query.iter_mut() {
         if lives_value_tag.is_some() {
-            *text = Text::new(format!("{remaining}/{total}"));
+            *text = Text::new(repeated_symbol("⮝", remaining as u32));
             continue;
         }
 
@@ -601,7 +613,7 @@ pub fn missile_hud_display_system(
         return;
     }
     for mut text in text_query.iter_mut() {
-        *text = Text::new(format!("{}/{}", ammo.count, config.missile_ammo_max));
+        *text = Text::new(slot_indicator(ammo.count, config.missile_ammo_max));
     }
 }
 
@@ -679,7 +691,7 @@ pub fn setup_ore_hud(
                             TextColor(Color::srgb(1.0, 0.92, 0.3)),
                         ));
                         entry.spawn((
-                            Text::new("Ⅰ"),
+                            Text::new("①"),
                             TextFont {
                                 font: symbol_font.0.clone(),
                                 font_size: config.stats_font_size,
@@ -708,7 +720,7 @@ pub fn setup_ore_hud(
                             TextColor(Color::srgb(1.0, 0.55, 0.1)),
                         ));
                         entry.spawn((
-                            Text::new("Ⅰ"),
+                            Text::new("①"),
                             TextFont {
                                 font: symbol_font.0.clone(),
                                 font_size: config.stats_font_size,
@@ -718,12 +730,12 @@ pub fn setup_ore_hud(
                             MissileLevelHudValueText,
                         ));
                         entry.spawn((
-                            Text::new(format!(
-                                "{}/{}",
-                                config.missile_ammo_max, config.missile_ammo_max
+                            Text::new(slot_indicator(
+                                config.missile_ammo_max,
+                                config.missile_ammo_max,
                             )),
                             TextFont {
-                                font: font.0.clone(),
+                                font: unicode_fallback_font.0.clone(),
                                 font_size: config.stats_font_size,
                                 ..default()
                             },
@@ -750,7 +762,7 @@ pub fn setup_ore_hud(
                             TextColor(Color::srgb(0.95, 0.35, 0.35)),
                         ));
                         entry.spawn((
-                            Text::new("Ⅰ"),
+                            Text::new("①"),
                             TextFont {
                                 font: symbol_font.0.clone(),
                                 font_size: config.stats_font_size,
@@ -779,9 +791,9 @@ pub fn setup_ore_hud(
                             TextColor(Color::srgb(0.35, 0.9, 0.95)),
                         ));
                         entry.spawn((
-                            Text::new("Ⅰ OFF/RDY"),
+                            Text::new("① ○"),
                             TextFont {
-                                font: symbol_font.0.clone(),
+                                font: unicode_fallback_font.0.clone(),
                                 font_size: config.stats_font_size - 1.0,
                                 ..default()
                             },
@@ -808,9 +820,9 @@ pub fn setup_ore_hud(
                             TextColor(Color::srgb(0.55, 0.85, 1.0)),
                         ));
                         entry.spawn((
-                            Text::new("Ⅰ RDY"),
+                            Text::new("① ⚡"),
                             TextFont {
-                                font: symbol_font.0.clone(),
+                                font: unicode_fallback_font.0.clone(),
                                 font_size: config.stats_font_size - 1.0,
                                 ..default()
                             },
@@ -863,25 +875,22 @@ pub fn ore_hud_display_system(
         return;
     }
 
-    let blaster_text = roman_numeral_level(weapon_level.display_level()).to_string();
-    let missile_text = roman_numeral_level(missile_level.display_level()).to_string();
-    let magnet_text = roman_numeral_level(magnet_level.display_level()).to_string();
-    let tractor_level_text = roman_numeral_level(tractor_level.display_level()).to_string();
-    let ion_level_text = roman_numeral_level(ion_level.display_level()).to_string();
-    let ion_cd_text = if ion_cooldown.timer_secs <= 0.0 {
-        "RDY".to_string()
+    let blaster_text = circled_number_level(weapon_level.display_level()).to_string();
+    let missile_text = circled_number_level(missile_level.display_level()).to_string();
+    let magnet_text = circled_number_level(magnet_level.display_level()).to_string();
+    let tractor_level_text = circled_number_level(tractor_level.display_level()).to_string();
+    let ion_level_text = circled_number_level(ion_level.display_level()).to_string();
+    let ion_state_text = if ion_cooldown.timer_secs <= 0.0 {
+        "⚡"
     } else {
-        format!("{:.1}s", ion_cooldown.timer_secs)
+        "⌛"
     };
-    let tractor_mode_text = if tractor_hold_state.engaged {
-        "ON"
+    let tractor_state_text = if !tractor_hold_state.engaged {
+        "○"
+    } else if tractor_throw_cooldown.timer_secs <= 0.0 {
+        "⚡"
     } else {
-        "OFF"
-    };
-    let tractor_cd_text = if tractor_throw_cooldown.timer_secs <= 0.0 {
-        "RDY".to_string()
-    } else {
-        format!("{:.1}s", tractor_throw_cooldown.timer_secs)
+        "⌛"
     };
 
     for (mut text, tags) in text_query.iter_mut() {
@@ -894,12 +903,9 @@ pub fn ore_hud_display_system(
         } else if tags.3.is_some() {
             *text = Text::new(magnet_text.clone());
         } else if tags.4.is_some() {
-            *text = Text::new(format!(
-                "{} {}/{}",
-                tractor_level_text, tractor_mode_text, tractor_cd_text
-            ));
+            *text = Text::new(format!("{} {}", tractor_level_text, tractor_state_text));
         } else if tags.5.is_some() {
-            *text = Text::new(format!("{} {}", ion_level_text, ion_cd_text));
+            *text = Text::new(format!("{} {}", ion_level_text, ion_state_text));
         }
     }
 }

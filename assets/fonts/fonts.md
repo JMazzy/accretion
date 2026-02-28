@@ -34,21 +34,27 @@ Whenever there is a symbol that is not represented in Tektur, use symbol fallbac
 
 ### Resource/Unit symbols
 
-🚀 - use as missile unit where missile is a countable unit
+● / ○ - use for missile ammo slots (filled = available, empty = empty)
 💎 - use as ore unit where ore is a spendable/countable unit
 ❤️ - use as HP unit in shop/readout text
 
 ### Upgrade Levels
 
-Use single-char roman numeral symbols for upgrade levels, in the same color and right after the other symbol:
+Use single-char circled number symbols for upgrade levels, in the same color and right after the other symbol:
 
-Ⅰ
-Ⅱ
-Ⅲ
-Ⅳ
-Ⅴ
-Ⅵ
-Ⅶ
-Ⅷ
-Ⅸ
-Ⅹ
+①
+②
+③
+④
+⑤
+⑥
+⑦
+⑧
+⑨
+⑩
+
+### Ability State Symbols
+
+○ - off/inactive
+⚡ - ready
+⌛ - cooldown
