@@ -16,11 +16,13 @@
 
 use super::state::{
     AimDirection, AimIdleTimer, Player, PlayerIntent, PreferredGamepad, TractorBeamLevel,
-    TractorHoldState,
+    TractorCaptureState, TractorHoldState, TractorThrowCooldown,
 };
 use crate::asteroid::{Asteroid, AsteroidSize, Planet};
 use crate::config::PhysicsConfig;
-use crate::particles::{spawn_tractor_beam_particles, TractorBeamVfxMode};
+use crate::particles::{
+    spawn_ship_thrust_particles, spawn_tractor_beam_particles, TractorBeamVfxMode,
+};
 use bevy::input::gamepad::{GamepadAxis, GamepadButton, GamepadConnection, GamepadConnectionEvent};
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -176,6 +178,7 @@ pub fn tractor_hold_toggle_system(
     preferred: Res<PreferredGamepad>,
     gamepads: Query<&Gamepad>,
     mut state: ResMut<TractorHoldState>,
+    cooldown: Res<TractorThrowCooldown>,
 ) {
     let kb_toggle = keys.just_pressed(KeyCode::KeyQ);
     let gp_toggle = preferred
@@ -184,8 +187,19 @@ pub fn tractor_hold_toggle_system(
         .is_some_and(|gp| gp.just_pressed(GamepadButton::West));
 
     if kb_toggle || gp_toggle {
-        state.engaged = !state.engaged;
+        if state.engaged {
+            state.engaged = false;
+        } else if cooldown.timer_secs <= 0.0 {
+            state.engaged = true;
+        }
     }
+}
+
+pub fn tractor_throw_cooldown_tick_system(
+    time: Res<Time>,
+    mut cooldown: ResMut<TractorThrowCooldown>,
+) {
+    cooldown.timer_secs = (cooldown.timer_secs - time.delta_secs()).max(0.0);
 }
 
 // ── Step 3: Apply intent → physics ───────────────────────────────────────────
@@ -260,6 +274,61 @@ pub fn apply_player_intent_system(
     }
 }
 
+pub fn player_thrust_particles_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+    intent: Res<PlayerIntent>,
+    q: Query<(&Transform, &Velocity), With<Player>>,
+    mut emit_timer: Local<f32>,
+) {
+    const THRUST_PARTICLE_INTERVAL_SECS: f32 = 0.028;
+
+    let Ok((transform, velocity)) = q.single() else {
+        return;
+    };
+
+    let forward = transform.rotation.mul_vec3(Vec3::Y).truncate();
+    let right = transform.rotation.mul_vec3(Vec3::X).truncate();
+
+    let mut exhaust_dir = Vec2::ZERO;
+    if intent.thrust_forward > 0.0 {
+        exhaust_dir -= forward * intent.thrust_forward;
+    }
+    if intent.thrust_reverse > 0.0 {
+        exhaust_dir += forward * intent.thrust_reverse;
+    }
+    if intent.strafe_local.abs() > 0.0 {
+        exhaust_dir -= right * intent.strafe_local;
+    }
+    if intent.strafe_world.length_squared() > 0.0 {
+        exhaust_dir -= intent.strafe_world.clamp_length_max(1.0);
+    }
+
+    let thrust_intensity = exhaust_dir.length().clamp(0.0, 1.0);
+    if thrust_intensity <= 1e-4 {
+        *emit_timer = 0.0;
+        return;
+    }
+
+    let emit_dir = exhaust_dir.normalize_or_zero();
+    let spawn_pos = transform.translation.truncate()
+        + emit_dir * (config.player_collider_radius + 1.5)
+        + velocity.linvel.normalize_or_zero() * 0.75;
+
+    *emit_timer += time.delta_secs();
+    while *emit_timer >= THRUST_PARTICLE_INTERVAL_SECS {
+        *emit_timer -= THRUST_PARTICLE_INTERVAL_SECS;
+        spawn_ship_thrust_particles(
+            &mut commands,
+            spawn_pos,
+            emit_dir,
+            velocity.linvel,
+            thrust_intensity,
+        );
+    }
+}
+
 // ── Aim idle snap ─────────────────────────────────────────────────────────────
 
 /// Snap the aim direction back to the ship's local forward when no aim input
@@ -301,24 +370,26 @@ pub fn tractor_beam_force_system(
     time: Res<Time>,
     aim: Res<AimDirection>,
     mut hold_state: ResMut<TractorHoldState>,
+    mut capture_state: ResMut<TractorCaptureState>,
+    mut throw_cooldown: ResMut<TractorThrowCooldown>,
     mut particle_emit_cooldown: Local<f32>,
-    q_player: Query<(&Transform, &Velocity), With<Player>>,
-    mut q_asteroids: Query<
-        (
-            Entity,
-            &Transform,
-            &Velocity,
-            &AsteroidSize,
-            &mut ExternalForce,
-        ),
-        (With<Asteroid>, Without<Planet>),
-    >,
+    mut was_engaged: Local<bool>,
+    q_player: Query<(&Transform, &Velocity), (With<Player>, Without<Asteroid>)>,
+    mut q_asteroids: ParamSet<(
+        Query<(Entity, &Transform, &Velocity, &AsteroidSize), (With<Asteroid>, Without<Planet>)>,
+        Query<
+            (&Transform, &mut Velocity, &AsteroidSize, &mut ExternalForce),
+            (With<Asteroid>, Without<Planet>),
+        >,
+    )>,
     beam_level: Res<TractorBeamLevel>,
     config: Res<PhysicsConfig>,
 ) {
     const TRACTOR_VFX_EMIT_INTERVAL_SECS: f32 = 0.05;
-    const TRACTOR_VFX_MAX_TARGETS_PER_BURST: usize = 8;
-    const TRACTOR_HOLD_DISTANCE: f32 = 34.0;
+    const TRACTOR_PULL_RATE_UNITS_PER_SEC: f32 = 95.0;
+    const TRACTOR_RELEASE_RANGE_MULTIPLIER: f32 = 1.8;
+    const TRACTOR_FORCE_POSITION_FACTOR: f32 = 0.12;
+    const TRACTOR_FORCE_VELOCITY_FACTOR: f32 = 0.30;
 
     let gamepad = preferred.0.and_then(|entity| gamepads.get(entity).ok());
     let pull_mode = keys.pressed(KeyCode::KeyE)
@@ -326,13 +397,29 @@ pub fn tractor_beam_force_system(
     let throw_mode = keys.just_pressed(KeyCode::KeyR)
         || gamepad.is_some_and(|gp| gp.just_pressed(GamepadButton::RightTrigger));
 
+    let player_linvel = q_player
+        .single()
+        .map(|(_, velocity)| velocity.linvel)
+        .unwrap_or(Vec2::ZERO);
+
     if !hold_state.engaged {
+        if *was_engaged {
+            if let Some(target_entity) = capture_state.target {
+                if let Ok((_, mut velocity, _, mut external_force)) =
+                    q_asteroids.p1().get_mut(target_entity)
+                {
+                    velocity.linvel = player_linvel;
+                    external_force.force = Vec2::ZERO;
+                }
+            }
+        }
+        capture_state.target = None;
+        capture_state.hold_distance = 0.0;
+        *was_engaged = false;
         return;
     }
 
-    if !pull_mode && !throw_mode {
-        return;
-    }
+    *was_engaged = true;
 
     let Ok((player_transform, player_velocity)) = q_player.single() else {
         return;
@@ -359,7 +446,8 @@ pub fn tractor_beam_force_system(
     let force_base = beam_level.force_at_level(&config);
     let range_sq = range * range;
     let min_dist_sq = min_dist * min_dist;
-    let hold_dist = TRACTOR_HOLD_DISTANCE.max(min_dist);
+    let safe_hold_min = (config.player_collider_radius + 14.0).max(min_dist + 4.0);
+    let hold_max = (range * 0.9).max(safe_hold_min + 1.0);
 
     let emit_particles = *particle_emit_cooldown <= 0.0;
     if emit_particles {
@@ -367,90 +455,150 @@ pub fn tractor_beam_force_system(
     } else {
         *particle_emit_cooldown = (*particle_emit_cooldown - time.delta_secs()).max(0.0);
     }
-    let mut emitted_targets = 0_usize;
 
-    for (_entity, transform, velocity, size, mut external_force) in q_asteroids.iter_mut() {
-        if size.0 > max_size || velocity.linvel.length() > max_speed {
-            continue;
-        }
-
-        let asteroid_pos = transform.translation.truncate();
-        let to_target = asteroid_pos - player_pos;
-        let dist_sq = to_target.length_squared();
-        if dist_sq < min_dist_sq || dist_sq > range_sq {
-            continue;
-        }
-
-        let dist = dist_sq.sqrt();
-        let target_dir = to_target / dist;
-        if beam_dir.dot(target_dir) < config.tractor_beam_aim_cone_dot {
-            continue;
-        }
-
-        if throw_mode {
-            let throw_force = target_dir * force_base;
-            external_force.force += throw_force;
-            if emit_particles && emitted_targets < TRACTOR_VFX_MAX_TARGETS_PER_BURST {
-                spawn_tractor_beam_particles(
-                    &mut commands,
-                    asteroid_pos,
-                    throw_force.normalize_or_zero(),
-                    velocity.linvel,
-                    TractorBeamVfxMode::Push,
-                    1.0,
-                );
-                emitted_targets += 1;
-            }
-            continue;
-        }
-
-        let toward_player = (player_pos - asteroid_pos).normalize_or_zero();
-        if dist > hold_dist {
-            let dist_alpha = ((dist - hold_dist) / (range - hold_dist)).clamp(0.0, 1.0);
-            let falloff = 1.0 - dist_alpha;
-            if falloff <= 0.0 || toward_player == Vec2::ZERO {
-                continue;
-            }
-
-            let applied_force = toward_player * (force_base * falloff);
-            external_force.force += applied_force;
-
-            if emit_particles && emitted_targets < TRACTOR_VFX_MAX_TARGETS_PER_BURST {
-                let intensity = falloff.clamp(0.1, 1.0);
-                spawn_tractor_beam_particles(
-                    &mut commands,
-                    asteroid_pos,
-                    applied_force.normalize_or_zero(),
-                    velocity.linvel,
-                    TractorBeamVfxMode::Pull,
-                    intensity,
-                );
-                emitted_targets += 1;
-            }
-        } else {
-            let hold_damping = -(velocity.linvel - player_velocity.linvel)
-                * config.tractor_beam_freeze_velocity_damping
-                * 0.35;
-            let anti_collision = target_dir * (force_base * 0.2);
-            let applied_force = hold_damping + anti_collision;
-            external_force.force += applied_force;
-
-            if emit_particles && emitted_targets < TRACTOR_VFX_MAX_TARGETS_PER_BURST {
-                spawn_tractor_beam_particles(
-                    &mut commands,
-                    asteroid_pos,
-                    toward_player,
-                    velocity.linvel,
-                    TractorBeamVfxMode::Freeze,
-                    0.6,
-                );
-                emitted_targets += 1;
-            }
+    if let Some(entity) = capture_state.target {
+        let keep_target = q_asteroids
+            .p0()
+            .get(entity)
+            .is_ok_and(|(_, transform, _, size)| {
+                let asteroid_pos = transform.translation.truncate();
+                let dist = asteroid_pos.distance(player_pos);
+                size.0 <= max_size && dist <= range * TRACTOR_RELEASE_RANGE_MULTIPLIER
+            });
+        if !keep_target {
+            capture_state.target = None;
         }
     }
 
+    if capture_state.target.is_none() {
+        let mut best: Option<(Entity, f32)> = None;
+        for (entity, transform, velocity, size) in q_asteroids.p0().iter() {
+            if size.0 > max_size || velocity.linvel.length() > max_speed {
+                continue;
+            }
+
+            let asteroid_pos = transform.translation.truncate();
+            let to_target = asteroid_pos - player_pos;
+            let dist_sq = to_target.length_squared();
+            if dist_sq < min_dist_sq || dist_sq > range_sq {
+                continue;
+            }
+
+            let target_dir = to_target.normalize_or_zero();
+            if beam_dir.dot(target_dir) < config.tractor_beam_aim_cone_dot {
+                continue;
+            }
+
+            if best.is_none_or(|(_, best_dist_sq)| dist_sq < best_dist_sq) {
+                best = Some((entity, dist_sq));
+            }
+        }
+
+        if let Some((entity, dist_sq)) = best {
+            capture_state.target = Some(entity);
+            capture_state.hold_distance = dist_sq.sqrt().clamp(safe_hold_min, hold_max);
+        }
+    }
+
+    let Some(target_entity) = capture_state.target else {
+        return;
+    };
+
+    let mut asteroid_mut = q_asteroids.p1();
+    let Ok((transform, mut velocity, size, mut external_force)) =
+        asteroid_mut.get_mut(target_entity)
+    else {
+        capture_state.target = None;
+        return;
+    };
+    if size.0 > max_size {
+        capture_state.target = None;
+        return;
+    }
+
+    let asteroid_pos = transform.translation.truncate();
+    let to_target = asteroid_pos - player_pos;
+    let dist = to_target.length();
+    if dist <= 1e-4 {
+        capture_state.target = None;
+        return;
+    }
+
+    if capture_state.hold_distance <= 0.0 {
+        capture_state.hold_distance = dist.clamp(safe_hold_min, hold_max);
+    }
+
     if throw_mode {
+        let throw_dir = if beam_dir.length_squared() > 1e-6 {
+            beam_dir
+        } else {
+            to_target.normalize_or_zero()
+        };
+        let throw_force = throw_dir * (force_base * 0.45);
+        external_force.force += throw_force;
+        velocity.linvel = player_velocity.linvel + throw_dir * (force_base * 0.010);
+
+        if emit_particles {
+            spawn_tractor_beam_particles(
+                &mut commands,
+                asteroid_pos,
+                throw_dir,
+                velocity.linvel,
+                TractorBeamVfxMode::Push,
+                1.0,
+            );
+        }
+
+        capture_state.target = None;
+        capture_state.hold_distance = 0.0;
         hold_state.engaged = false;
+        throw_cooldown.timer_secs = beam_level.throw_cooldown_secs(&config);
+        *was_engaged = false;
+        return;
+    }
+
+    if pull_mode {
+        capture_state.hold_distance = (capture_state.hold_distance
+            - TRACTOR_PULL_RATE_UNITS_PER_SEC * time.delta_secs())
+        .max(safe_hold_min);
+    }
+    capture_state.hold_distance = capture_state.hold_distance.clamp(safe_hold_min, hold_max);
+
+    let desired_pos = player_pos + beam_dir * capture_state.hold_distance;
+    let position_error = desired_pos - asteroid_pos;
+    let relative_velocity = player_velocity.linvel - velocity.linvel;
+    let position_force = position_error * (force_base * TRACTOR_FORCE_POSITION_FACTOR);
+    let velocity_force = relative_velocity
+        * (config.tractor_beam_freeze_velocity_damping * TRACTOR_FORCE_VELOCITY_FACTOR);
+
+    let mut applied_force = position_force + velocity_force;
+    if dist < safe_hold_min {
+        let outward = to_target.normalize_or_zero();
+        applied_force += outward * (force_base * 0.6);
+    }
+    external_force.force += applied_force;
+
+    if emit_particles {
+        let mode = if pull_mode {
+            TractorBeamVfxMode::Pull
+        } else {
+            TractorBeamVfxMode::Freeze
+        };
+        let dir = if pull_mode {
+            (player_pos - asteroid_pos).normalize_or_zero()
+        } else {
+            applied_force.normalize_or_zero()
+        };
+        let intensity = if pull_mode { 0.95 } else { 0.7 };
+
+        spawn_tractor_beam_particles(
+            &mut commands,
+            asteroid_pos,
+            dir,
+            velocity.linvel,
+            mode,
+            intensity,
+        );
     }
 }
 
@@ -744,8 +892,11 @@ mod tests {
         app.insert_resource(PhysicsConfig::default());
         app.insert_resource(TractorBeamLevel::default());
         app.insert_resource(TractorHoldState::default());
+        app.insert_resource(TractorCaptureState::default());
+        app.insert_resource(TractorThrowCooldown::default());
         app.insert_resource(PreferredGamepad::default());
         app.insert_resource(AimDirection::default());
+        app.add_systems(Update, tractor_beam_force_system);
         app
     }
 
@@ -770,142 +921,30 @@ mod tests {
     }
 
     fn run_tractor_once(app: &mut App) {
-        app.add_systems(Update, tractor_beam_force_system);
         app.update();
     }
 
     #[test]
-    fn tractor_pull_holds_toward_player_when_engaged() {
+    fn tractor_engage_captures_nearest_target() {
         let mut app = build_tractor_test_app();
         spawn_tractor_player(
             &mut app,
             Transform::from_rotation(Quat::IDENTITY),
             Velocity::zero(),
         );
-        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
+        let near = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
+        let _far = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 220.0), Vec2::ZERO);
 
         app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyE);
 
         run_tractor_once(&mut app);
 
-        let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
-        assert!(
-            force.y < 0.0,
-            "expected pull force toward player, got {force:?}"
-        );
+        let captured = app.world().resource::<TractorCaptureState>().target;
+        assert_eq!(captured, Some(near), "expected nearest asteroid capture");
     }
 
     #[test]
-    fn tractor_throw_pushes_away_and_disengages() {
-        let mut app = build_tractor_test_app();
-        spawn_tractor_player(
-            &mut app,
-            Transform::from_rotation(Quat::IDENTITY),
-            Velocity::zero(),
-        );
-        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
-
-        app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyR);
-
-        run_tractor_once(&mut app);
-
-        let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
-        assert!(
-            force.y > 0.0,
-            "expected throw force away from player, got {force:?}"
-        );
-        let engaged = app.world().resource::<TractorHoldState>().engaged;
-        assert!(!engaged, "expected throw to disengage hold mode");
-    }
-
-    #[test]
-    fn tractor_hold_zone_damps_relative_velocity() {
-        let mut app = build_tractor_test_app();
-        spawn_tractor_player(
-            &mut app,
-            Transform::from_rotation(Quat::IDENTITY),
-            Velocity {
-                linvel: Vec2::new(5.0, 0.0),
-                angvel: 0.0,
-            },
-        );
-        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 28.0), Vec2::new(45.0, 0.0));
-
-        app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyE);
-
-        run_tractor_once(&mut app);
-
-        let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
-        let rel_vel = Vec2::new(40.0, 0.0);
-        assert!(
-            force.dot(rel_vel) < 0.0,
-            "expected hold-zone force to oppose relative velocity, got force={force:?}, rel={rel_vel:?}"
-        );
-    }
-
-    #[test]
-    fn tractor_ignores_targets_behind_ship_forward_cone() {
-        let mut app = build_tractor_test_app();
-        spawn_tractor_player(
-            &mut app,
-            Transform::from_rotation(Quat::IDENTITY),
-            Velocity::zero(),
-        );
-        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, -120.0), Vec2::ZERO);
-
-        app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyE);
-
-        run_tractor_once(&mut app);
-
-        let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
-        assert_eq!(
-            force,
-            Vec2::ZERO,
-            "expected no tractor force for asteroid outside ship-front cone, got {force:?}"
-        );
-    }
-
-    #[test]
-    fn tractor_uses_aim_direction_not_ship_forward() {
-        let mut app = build_tractor_test_app();
-        // Ship still faces +Y.
-        spawn_tractor_player(
-            &mut app,
-            Transform::from_rotation(Quat::IDENTITY),
-            Velocity::zero(),
-        );
-        // Target is on +X, outside ship-forward axis but aligned with explicit aim.
-        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(120.0, 0.0), Vec2::ZERO);
-
-        app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
-        app.world_mut().insert_resource(AimDirection(Vec2::X));
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyE);
-
-        run_tractor_once(&mut app);
-
-        let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
-        assert!(
-            force.length() > 0.0,
-            "expected tractor force when asteroid is inside aim cone, got {force:?}"
-        );
-    }
-
-    #[test]
-    fn tractor_pull_emits_particles() {
+    fn tractor_hold_emits_particles_without_pull_input() {
         let mut app = build_tractor_test_app();
         spawn_tractor_player(
             &mut app,
@@ -915,9 +954,6 @@ mod tests {
         let _asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
 
         app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
-        app.world_mut()
-            .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyE);
 
         run_tractor_once(&mut app);
 
@@ -930,21 +966,25 @@ mod tests {
         };
         assert!(
             particle_count > 0,
-            "expected tractor pull to emit particles, got {particle_count}"
+            "expected hold mode to emit particles, got {particle_count}"
         );
     }
 
     #[test]
-    fn tractor_pull_stops_inside_hold_distance() {
+    fn tractor_pull_force_moves_target_toward_ship() {
         let mut app = build_tractor_test_app();
         spawn_tractor_player(
             &mut app,
             Transform::from_rotation(Quat::IDENTITY),
             Velocity::zero(),
         );
-        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 24.0), Vec2::ZERO);
+        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
 
         app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
+        app.world_mut().resource_mut::<TractorCaptureState>().target = Some(asteroid);
+        app.world_mut()
+            .resource_mut::<TractorCaptureState>()
+            .hold_distance = 50.0;
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
             .press(KeyCode::KeyE);
@@ -953,33 +993,109 @@ mod tests {
 
         let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
         assert!(
-            force.y > 0.0,
-            "expected anti-collision hold force outward when inside hold distance, got {force:?}"
+            force.y < 0.0,
+            "expected pull force toward player/hold point, got {force:?}"
         );
     }
 
     #[test]
-    fn tractor_does_nothing_when_not_engaged() {
+    fn tractor_throw_releases_capture_and_pushes_target() {
         let mut app = build_tractor_test_app();
         spawn_tractor_player(
             &mut app,
             Transform::from_rotation(Quat::IDENTITY),
             Velocity::zero(),
         );
-        let asteroid =
-            spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::new(40.0, 0.0));
+        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
 
+        app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
+        app.world_mut().resource_mut::<TractorCaptureState>().target = Some(asteroid);
+        app.world_mut()
+            .resource_mut::<TractorCaptureState>()
+            .hold_distance = 100.0;
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
-            .press(KeyCode::KeyE);
+            .press(KeyCode::KeyR);
 
         run_tractor_once(&mut app);
 
-        let force = app.world().get::<ExternalForce>(asteroid).unwrap().force;
+        let captured = app.world().resource::<TractorCaptureState>().target;
+        let vel = app.world().get::<Velocity>(asteroid).unwrap().linvel;
+        let engaged = app.world().resource::<TractorHoldState>().engaged;
+        let cooldown = app.world().resource::<TractorThrowCooldown>().timer_secs;
+        assert_eq!(captured, None, "expected throw to release captured target");
+        assert!(!engaged, "expected throw to disengage tractor mode");
+        assert!(cooldown > 0.0, "expected throw to start cooldown");
+        assert!(
+            vel.y > 0.0,
+            "expected throw to push target outward, got {vel:?}"
+        );
+    }
+
+    #[test]
+    fn tractor_disengage_releases_target_at_player_velocity() {
+        let mut app = build_tractor_test_app();
+        let player_vel = Vec2::new(27.0, -11.0);
+        spawn_tractor_player(
+            &mut app,
+            Transform::from_rotation(Quat::IDENTITY),
+            Velocity {
+                linvel: player_vel,
+                angvel: 0.0,
+            },
+        );
+        let asteroid = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
+
+        app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
+        app.world_mut().resource_mut::<TractorCaptureState>().target = Some(asteroid);
+        app.world_mut()
+            .resource_mut::<TractorCaptureState>()
+            .hold_distance = 80.0;
+
+        run_tractor_once(&mut app);
+
+        app.world_mut().resource_mut::<TractorHoldState>().engaged = false;
+        app.world_mut()
+            .get_mut::<Velocity>(asteroid)
+            .unwrap()
+            .linvel = Vec2::new(-90.0, 45.0);
+
+        run_tractor_once(&mut app);
+
+        let capture = *app.world().resource::<TractorCaptureState>();
+        let released_vel = app.world().get::<Velocity>(asteroid).unwrap().linvel;
+        assert_eq!(capture.target, None, "expected capture clear on disengage");
+        assert!(
+            capture.hold_distance <= 0.0,
+            "expected hold distance reset on disengage"
+        );
         assert_eq!(
-            force,
-            Vec2::ZERO,
-            "expected frozen-mode stricter speed guard to reject target, got {force:?}"
+            released_vel, player_vel,
+            "expected disengage release velocity to match player velocity"
+        );
+    }
+
+    #[test]
+    fn tractor_capture_uses_aim_direction() {
+        let mut app = build_tractor_test_app();
+        spawn_tractor_player(
+            &mut app,
+            Transform::from_rotation(Quat::IDENTITY),
+            Velocity::zero(),
+        );
+        let aimed = spawn_tractor_asteroid(&mut app, Vec2::new(120.0, 0.0), Vec2::ZERO);
+        let _other = spawn_tractor_asteroid(&mut app, Vec2::new(0.0, 120.0), Vec2::ZERO);
+
+        app.world_mut().resource_mut::<TractorHoldState>().engaged = true;
+        app.world_mut().insert_resource(AimDirection(Vec2::X));
+
+        run_tractor_once(&mut app);
+
+        let captured = app.world().resource::<TractorCaptureState>().target;
+        assert_eq!(
+            captured,
+            Some(aimed),
+            "expected aim-direction capture selection"
         );
     }
 }

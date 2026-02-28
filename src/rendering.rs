@@ -45,7 +45,7 @@ use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{
     IonCannonCooldown, IonCannonLevel, PlayerLives, PlayerScore, PrimaryWeaponLevel,
-    SecondaryWeaponLevel, TractorBeamLevel,
+    SecondaryWeaponLevel, TractorBeamLevel, TractorHoldState, TractorThrowCooldown,
 };
 use crate::simulation::{ProfilerStats, SimulationStats};
 use crate::spatial_partition::SpatialGrid;
@@ -577,6 +577,8 @@ pub fn ore_hud_display_system(
     weapon_level: Res<PrimaryWeaponLevel>,
     missile_level: Res<SecondaryWeaponLevel>,
     tractor_level: Res<TractorBeamLevel>,
+    tractor_hold_state: Res<TractorHoldState>,
+    tractor_throw_cooldown: Res<TractorThrowCooldown>,
     ion_level: Res<IonCannonLevel>,
     ion_cooldown: Res<IonCannonCooldown>,
     parent_query: Query<&Children, With<OreHudDisplay>>,
@@ -586,6 +588,8 @@ pub fn ore_hud_display_system(
         && !weapon_level.is_changed()
         && !missile_level.is_changed()
         && !tractor_level.is_changed()
+        && !tractor_hold_state.is_changed()
+        && !tractor_throw_cooldown.is_changed()
         && !ion_level.is_changed()
         && !ion_cooldown.is_changed()
     {
@@ -616,12 +620,24 @@ pub fn ore_hud_display_system(
     } else {
         format!("{:.1}s", ion_cooldown.timer_secs)
     };
+    let tractor_mode_text = if tractor_hold_state.engaged {
+        "ON"
+    } else {
+        "OFF"
+    };
+    let tractor_cd_text = if tractor_throw_cooldown.timer_secs <= 0.0 {
+        "READY".to_string()
+    } else {
+        format!("{:.1}s", tractor_throw_cooldown.timer_secs)
+    };
     let display = format!(
-        "Ore: {} | Blaster: {} | Missile: {} | Tractor: {} | Ion: {} ({:.1}s, T≤{}, CD: {})",
+        "Ore: {} | Blaster: {} | Missile: {} | Tractor: {} [{} / CD:{}] | Ion: {} ({:.1}s, T≤{}, CD: {})",
         ore.count,
         blaster_text,
         missile_text,
         tractor_text,
+        tractor_mode_text,
+        tractor_cd_text,
         ion_text,
         ion_level.stun_duration_secs(),
         ion_level.max_enemy_tier_affected(),

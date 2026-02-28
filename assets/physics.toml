@@ -172,6 +172,12 @@ tractor_beam_freeze_max_hold_offset = 180.0
 tractor_beam_freeze_max_target_size_multiplier = 0.75
 tractor_beam_freeze_max_target_speed_multiplier = 0.8
 
+# Throw cooldown at level 0 (seconds).
+tractor_throw_cooldown_base = 5.0
+
+# Cooldown reduction per tractor level (seconds).
+tractor_throw_cooldown_per_level = 0.4
+
 # ── Enemy Ships: Foundation ─────────────────────────────────────────────────
 
 # Spawn pacing and deterministic progression.

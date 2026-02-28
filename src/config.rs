@@ -122,6 +122,8 @@ pub struct PhysicsConfig {
     pub tractor_beam_freeze_max_hold_offset: f32,
     pub tractor_beam_freeze_max_target_size_multiplier: f32,
     pub tractor_beam_freeze_max_target_speed_multiplier: f32,
+    pub tractor_throw_cooldown_base: f32,
+    pub tractor_throw_cooldown_per_level: f32,
 
     // ── Enemy Ships: Foundation ─────────────────────────────────────────────
     pub enemy_spawn_base_cooldown: f32,
@@ -292,6 +294,8 @@ impl Default for PhysicsConfig {
                 TRACTOR_BEAM_FREEZE_MAX_TARGET_SIZE_MULTIPLIER,
             tractor_beam_freeze_max_target_speed_multiplier:
                 TRACTOR_BEAM_FREEZE_MAX_TARGET_SPEED_MULTIPLIER,
+            tractor_throw_cooldown_base: TRACTOR_THROW_COOLDOWN_BASE,
+            tractor_throw_cooldown_per_level: TRACTOR_THROW_COOLDOWN_PER_LEVEL,
             // Enemy Ships: Foundation
             enemy_spawn_base_cooldown: ENEMY_SPAWN_BASE_COOLDOWN,
             enemy_spawn_cooldown_per_stage: ENEMY_SPAWN_COOLDOWN_PER_STAGE,

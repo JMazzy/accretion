@@ -8,7 +8,9 @@ use crate::asteroid_rendering::filled_polygon_mesh;
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::mining::spawn_ore_drop;
-use crate::particles::{spawn_debris_particles, spawn_impact_particles};
+use crate::particles::{
+    spawn_debris_particles, spawn_impact_particles, spawn_ship_thrust_particles,
+};
 use crate::player::state::{Missile, Projectile};
 use crate::player::{
     Player, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
@@ -36,6 +38,11 @@ pub struct EnemyRenderMarker;
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyFireCooldown {
+    pub timer: f32,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EnemyThrustVfxTimer {
     pub timer: f32,
 }
 
@@ -144,6 +151,17 @@ fn initial_enemy_fire_timer(spawn_index: u64, base_cooldown: f32) -> f32 {
     base_cooldown * (0.4 + 0.6 * phase)
 }
 
+fn shortest_angle_diff(target: f32, current: f32) -> f32 {
+    let mut diff = target - current;
+    while diff > std::f32::consts::PI {
+        diff -= std::f32::consts::TAU;
+    }
+    while diff < -std::f32::consts::PI {
+        diff += std::f32::consts::TAU;
+    }
+    diff
+}
+
 #[allow(clippy::too_many_arguments)]
 fn enemy_spawn_system(
     mut commands: Commands,
@@ -224,6 +242,7 @@ fn enemy_spawn_system(
             EnemyFireCooldown {
                 timer: initial_enemy_fire_timer(spawn_index, config.enemy_fire_cooldown_base),
             },
+            EnemyThrustVfxTimer { timer: 0.0 },
             Transform::from_translation(pos.extend(0.25)),
             Visibility::default(),
             RigidBody::Dynamic,
@@ -272,19 +291,34 @@ fn enemy_stun_tick_system(time: Res<Time>, mut q_enemy: Query<&mut EnemyStun, Wi
 }
 
 fn enemy_seek_player_system(
+    mut commands: Commands,
+    time: Res<Time>,
     q_player: Query<&Transform, With<Player>>,
-    mut q_enemy: Query<(&Transform, &mut ExternalForce, &mut Velocity, &EnemyStun), With<Enemy>>,
+    mut q_enemy: Query<
+        (
+            &Transform,
+            &mut ExternalForce,
+            &mut Velocity,
+            &EnemyStun,
+            &mut EnemyThrustVfxTimer,
+        ),
+        With<Enemy>,
+    >,
     config: Res<PhysicsConfig>,
 ) {
+    const ENEMY_THRUST_PARTICLE_INTERVAL_SECS: f32 = 0.032;
+
     let Ok(player_transform) = q_player.single() else {
         return;
     };
     let player_pos = player_transform.translation.truncate();
+    let dt = time.delta_secs();
 
-    for (transform, mut force, mut velocity, stun) in q_enemy.iter_mut() {
+    for (transform, mut force, mut velocity, stun, mut thrust_vfx) in q_enemy.iter_mut() {
         if stun.remaining_secs > 0.0 {
             force.force = Vec2::ZERO;
             force.torque = 0.0;
+            thrust_vfx.timer = 0.0;
             continue;
         }
 
@@ -297,15 +331,40 @@ fn enemy_seek_player_system(
 
         let dir = to_player / dist;
         let arrive_alpha = (dist / config.enemy_arrive_radius.max(1.0)).clamp(0.2, 1.0);
-        force.force += dir * (config.enemy_seek_force * arrive_alpha);
+        force.force = dir * (config.enemy_seek_force * arrive_alpha);
+        force.torque = 0.0;
 
         let speed = velocity.linvel.length();
         if speed > config.enemy_max_speed {
             velocity.linvel = velocity.linvel.normalize_or_zero() * config.enemy_max_speed;
         }
 
-        let angle = dir.y.atan2(dir.x) - std::f32::consts::FRAC_PI_2;
-        velocity.angvel = angle * 0.2;
+        let target_angle = dir.y.atan2(dir.x) - std::f32::consts::FRAC_PI_2;
+        let current_angle = transform.rotation.to_euler(EulerRot::ZYX).0;
+        let angle_diff = shortest_angle_diff(target_angle, current_angle);
+        velocity.angvel = if angle_diff.abs() > config.gamepad_heading_snap_threshold {
+            config.rotation_speed * angle_diff.signum()
+        } else {
+            0.0
+        };
+
+        let thrust_intensity = arrive_alpha.clamp(0.2, 1.0);
+        let exhaust_dir = -dir;
+        let spawn_pos = transform.translation.truncate()
+            + exhaust_dir * (config.enemy_collider_radius + 1.3)
+            + velocity.linvel.normalize_or_zero() * 0.6;
+
+        thrust_vfx.timer += dt;
+        while thrust_vfx.timer >= ENEMY_THRUST_PARTICLE_INTERVAL_SECS {
+            thrust_vfx.timer -= ENEMY_THRUST_PARTICLE_INTERVAL_SECS;
+            spawn_ship_thrust_particles(
+                &mut commands,
+                spawn_pos,
+                exhaust_dir,
+                velocity.linvel,
+                thrust_intensity,
+            );
+        }
     }
 }
 

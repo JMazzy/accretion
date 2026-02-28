@@ -1,4 +1,4 @@
-//! Particle effects: impact sparks, missile trails, debris dust, and merge glows.
+//! Particle effects: impact sparks, missile trails, ship thrust exhaust, debris dust, and merge glows.
 //!
 //! ## Design
 //!
@@ -223,6 +223,58 @@ pub fn spawn_missile_trail_particles(
         let lifetime = rng.gen_range(0.10_f32..0.22_f32);
         let lateral = Vec2::new(-base.y, base.x) * rng.gen_range(-1.1_f32..1.1_f32);
         let back_offset = base * rng.gen_range(0.0_f32..2.5_f32);
+
+        commands.spawn((
+            Particle {
+                velocity,
+                age: 0.0,
+                lifetime,
+                r,
+                g,
+                b,
+                material: None,
+            },
+            Transform::from_translation((pos + lateral + back_offset).extend(0.9)),
+            Visibility::default(),
+        ));
+    }
+}
+
+/// Spawn a short exhaust burst opposite to an applied ship thrust vector.
+pub fn spawn_ship_thrust_particles(
+    commands: &mut Commands,
+    pos: Vec2,
+    exhaust_dir: Vec2,
+    ship_vel: Vec2,
+    intensity: f32,
+) {
+    let mut rng = rand::thread_rng();
+    let clamped_intensity = intensity.clamp(0.15, 1.0);
+    let count = if clamped_intensity >= 0.7 {
+        3_u32
+    } else {
+        2_u32
+    };
+
+    let base = if exhaust_dir.length_squared() > 1e-6 {
+        exhaust_dir.normalize()
+    } else {
+        Vec2::NEG_Y
+    };
+    let base_angle = base.y.atan2(base.x);
+
+    for _ in 0..count {
+        let angle = base_angle + rng.gen_range(-0.42_f32..0.42_f32);
+        let speed = rng.gen_range(25.0_f32..75.0_f32) * (0.75 + 0.5 * clamped_intensity);
+        let velocity = Vec2::new(angle.cos(), angle.sin()) * speed + ship_vel * 0.12;
+
+        let r = rng.gen_range(0.92_f32..1.0_f32);
+        let g = rng.gen_range(0.40_f32..0.66_f32);
+        let b = rng.gen_range(0.05_f32..0.18_f32);
+
+        let lifetime = rng.gen_range(0.10_f32..0.20_f32) * (0.8 + 0.4 * clamped_intensity);
+        let lateral = Vec2::new(-base.y, base.x) * rng.gen_range(-1.2_f32..1.2_f32);
+        let back_offset = base * rng.gen_range(0.0_f32..3.0_f32);
 
         commands.spawn((
             Particle {

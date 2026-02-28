@@ -243,6 +243,12 @@ pub const TRACTOR_BEAM_FREEZE_MAX_TARGET_SIZE_MULTIPLIER: f32 = 0.75;
 /// Keeps freeze mode stable by rejecting faster-moving targets.
 pub const TRACTOR_BEAM_FREEZE_MAX_TARGET_SPEED_MULTIPLIER: f32 = 0.8;
 
+/// Throw cooldown at tractor level 0 (seconds).
+pub const TRACTOR_THROW_COOLDOWN_BASE: f32 = 5.0;
+
+/// Cooldown reduction per tractor level (seconds).
+pub const TRACTOR_THROW_COOLDOWN_PER_LEVEL: f32 = 0.4;
+
 // ── Enemy Ships: Foundation ──────────────────────────────────────────────────
 
 /// Seconds between enemy spawn attempts at session progression stage 0.

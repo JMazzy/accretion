@@ -151,6 +151,22 @@ pub struct TractorHoldState {
     pub engaged: bool,
 }
 
+/// Persistent tractor-beam capture state.
+///
+/// Stores which asteroid is currently captured (if any) and the maintained
+/// hold distance from the player while tractor mode is engaged.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct TractorCaptureState {
+    pub target: Option<Entity>,
+    pub hold_distance: f32,
+}
+
+/// Cooldown timer after using tractor throw.
+#[derive(Resource, Default, Debug, Clone, Copy)]
+pub struct TractorThrowCooldown {
+    pub timer_secs: f32,
+}
+
 /// Multiplier tier thresholds (streak → multiplier).
 ///
 /// | Streak | Multiplier |
@@ -372,6 +388,13 @@ impl TractorBeamLevel {
     pub fn max_target_speed_at_level(&self, config: &PhysicsConfig) -> f32 {
         config.tractor_beam_max_target_speed_base
             + self.level as f32 * config.tractor_beam_max_target_speed_per_level
+    }
+
+    #[inline]
+    pub fn throw_cooldown_secs(&self, config: &PhysicsConfig) -> f32 {
+        (config.tractor_throw_cooldown_base
+            - self.level as f32 * config.tractor_throw_cooldown_per_level)
+            .max(0.5)
     }
 
     /// Whether the tractor beam can be upgraded further.

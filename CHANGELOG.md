@@ -1,5 +1,43 @@
 # Accretion Changelog
 
+## Tractor Balance Pass: Release Velocity + Throw Cooldown — February 27, 2026
+
+### Reduced throw abuse and added upgrade-scaled throw cooldown gating
+
+**What changed**:
+- Updated tractor release behavior in `src/player/control.rs`:
+  - When tractor is disengaged (`Q`/`X` off), a held asteroid is released at exactly player linear velocity.
+  - This removes excessive side-fling energy from rotational release exploits.
+- Retuned throw behavior in `src/player/control.rs`:
+  - Reduced throw force/velocity bonus to lower base overpower.
+  - Throw now disengages tractor mode and starts cooldown.
+- Added throw cooldown state + tuning:
+  - New `TractorThrowCooldown` resource in `src/player/state.rs`.
+  - New runtime tunables in `PhysicsConfig` / `assets/physics.toml`:
+    - `tractor_throw_cooldown_base`
+    - `tractor_throw_cooldown_per_level`
+  - Defaults in `src/constants.rs`: 5.0s base, reduced per tractor upgrade level.
+- Added cooldown ticking + engage gating:
+  - New `tractor_throw_cooldown_tick_system` in `src/player/control.rs`.
+  - `tractor_hold_toggle_system` now blocks re-engage while cooldown is active.
+- Updated tractor HUD row in `src/rendering.rs` to show tractor cooldown readiness alongside ON/OFF mode.
+
+## Tractor Beam V2: Persistent Capture/Hold Rework — February 27, 2026
+
+### Re-implemented tractor flow around single-target capture, stable hold, pull-closer, and throw-release
+
+**What changed**:
+- Added persistent tractor capture state in `src/player/state.rs` (`TractorCaptureState`) and wired it into simulation startup.
+- Reworked `tractor_beam_force_system` in `src/player/control.rs` to use a captured-target model:
+  - While tractor mode is engaged, beam acquires one eligible asteroid in cone/range.
+  - Captured asteroid is held stably relative to the ship (freeze/hold behavior).
+  - Holding `E`/`LB` pulls the captured asteroid closer to a safe minimum distance.
+  - Pressing `R`/`RB` throws and releases the captured asteroid (without forcing tractor-mode disengage).
+  - Disengaging tractor mode (`Q`/`X`) drops any captured target immediately.
+- Updated tractor-related tests in `src/player/control.rs` to validate capture selection, hold behavior, throw-release, disengage release, and aim-direction capture.
+- Updated user-facing controls/docs in `FEATURES.md` to match the new tractor semantics.
+
+
 ## Control Overhaul + Gamepad Parity (P0) — February 27, 2026
 
 ### Cursor-facing KB/mouse strafe model with tractor hold/throw flow and full gamepad parity

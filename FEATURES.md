@@ -15,7 +15,7 @@
 | **C**                       | Fire a large ion shot in the current aim direction (fast recharge, stuns enemies on hit) |
 | **Q**                       | Toggle tractor hold mode on/off                                                |
 | **Hold E**                  | While hold mode is on: pull/hold targets (stops before ship collision)         |
-| **R**                       | While hold mode is on: throw targets outward and disengage hold mode           |
+| **R**                       | While hold mode is on: throw held target, then tractor enters cooldown           |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
 | **Tab**                     | Open / close ore shop (from Playing or Paused)                                |
@@ -39,7 +39,7 @@
 | **Y (North)**   | Fire ion cannon                                                        |
 | **X (West)**    | Toggle tractor hold mode                                               |
 | **LB**          | While hold mode is on: pull/hold targets                               |
-| **RB**          | While hold mode is on: throw targets and disengage                     |
+| **RB**          | While hold mode is on: throw held target, then tractor enters cooldown |
 
 - **Right-stick facing**: the ship rotates toward right-stick heading using the same steering model used for mouse-facing.
 - **Left-stick strafe**: lateral motion is world-space and intentionally weaker than thrust authority for readable handling.
@@ -137,7 +137,7 @@ Ore consumables and upgrades are purchased from the **Ore Shop** overlay (open w
 | Restock missile | 1 ore | +1 missile, capped at `missile_ammo_max` |
 
 - Ore is **not spent** if the corresponding stat is already full.
-- The ore HUD row now shows all progression levels in one compact line, e.g. `Ore: 12 | Blaster: 3 | Missile: 2 | Tractor: 1 | Ion: 2 (2.1s, T≤1)`.
+- The ore HUD row now shows all progression levels in one compact line, including tractor hold-mode state (`[ON]`/`[OFF]`), e.g. `Ore: 12 | Blaster: 3 | Missile: 2 | Tractor: 1 [ON] | Ion: 2 (2.1s, T≤1, CD: READY)`.
 - Passive HP regen and passive missile recharge have been **removed**; ore-shop spending is the only way to replenish them.
 
 ### Primary Weapon Upgrades
@@ -177,8 +177,12 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
 ### Tractor Beam (MVP)
 
 - Press **Q** (keyboard) / **X** (gamepad) to toggle tractor hold mode.
-- While hold mode is engaged, hold **E** / **LB** to pull asteroids and hold them outside the collision envelope.
-- While hold mode is engaged, press **R** / **RB** to throw affected asteroids outward and disengage hold mode.
+- When hold mode is engaged, the beam captures one eligible target in the beam cone and keeps it held relative to the ship.
+- While hold mode is engaged, hold **E** / **LB** to pull the held target closer (stopping at a safe offset before collision).
+- While hold mode is engaged, press **R** / **RB** to throw the held target outward and release it.
+- Press **Q** / **X** again to disengage tractor mode and drop the held target without throw impulse.
+- On disengage release (`Q`/`X` off), held target exits at the player's current linear velocity (prevents rotational slingshot exploits).
+- Throw starts a tractor cooldown (base 5.0s, reduced by tractor upgrade level); tractor cannot re-engage until cooldown completes.
 - Beam targeting is constrained by a configurable cone around active **AimDirection** (ship-forward only fallback when aim is unavailable) and a distance envelope.
 - Tractor beam has its own ore-shop upgrade card (**TRACTOR**) up to Level 10.
 - Each level increases beam range/force and expands the max affected size/speed envelope.
