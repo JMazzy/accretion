@@ -20,7 +20,12 @@ use super::*;
 /// │              [ BACK ]                         │
 /// └───────────────────────────────────────────────┘
 /// ```
-pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
+fn setup_scenario_select(
+    mut commands: Commands,
+    font: Res<GameFont>,
+    unicode_font: Res<crate::graphics::UnicodeFallbackFont>,
+    emoji_font: Res<crate::graphics::EmojiFont>,
+) {
     commands
         .spawn((
             Node {
@@ -36,27 +41,68 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
         ))
         .with_children(|root| {
             // ── Title ────────────────────────────────────────────────────────
-            root.spawn((
-                Text::new("SCENARIOS & SAVES"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: 42.0,
-                    ..default()
-                },
-                TextColor(title_color()),
-            ));
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|title| {
+                title.spawn((
+                    Text::new("✦ "),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 42.0,
+                        ..default()
+                    },
+                    TextColor(title_color()),
+                ));
+                title.spawn((
+                    Text::new("SCENARIOS & SAVES"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 42.0,
+                        ..default()
+                    },
+                    TextColor(title_color()),
+                ));
+                title.spawn((
+                    Text::new(" ✧"),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 42.0,
+                        ..default()
+                    },
+                    TextColor(title_color()),
+                ));
+            });
 
             spacer(root, 8.0);
 
-            root.spawn((
-                Text::new("Choose a scenario to play"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(subtitle_color()),
-            ));
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                ..default()
+            })
+            .with_children(|subtitle| {
+                subtitle.spawn((
+                    Text::new("Choose a scenario to play "),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(subtitle_color()),
+                ));
+                subtitle.spawn((
+                    Text::new("✦"),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(subtitle_color()),
+                ));
+            });
 
             spacer(root, 36.0);
 
@@ -81,15 +127,40 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 ScenarioFieldButton,
             ))
             .with_children(|card| {
-                card.spawn((
-                    Text::new("FIELD"),
-                    TextFont {
-                        font: font.0.clone(),
-                        font_size: 22.0,
-                        ..default()
-                    },
-                    TextColor(scenario_label_color()),
-                ));
+                card.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|label| {
+                    label.spawn((
+                        Text::new("🪨 "),
+                        TextFont {
+                            font: emoji_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new("FIELD"),
+                        TextFont {
+                            font: font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new(" 🪨"),
+                        TextFont {
+                            font: emoji_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                });
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
@@ -128,15 +199,40 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 ScenarioOrbitButton,
             ))
             .with_children(|card| {
-                card.spawn((
-                    Text::new("ORBIT"),
-                    TextFont {
-                        font: font.0.clone(),
-                        font_size: 22.0,
-                        ..default()
-                    },
-                    TextColor(scenario_label_color()),
-                ));
+                card.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|label| {
+                    label.spawn((
+                        Text::new("🪐 "),
+                        TextFont {
+                            font: emoji_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new("ORBIT"),
+                        TextFont {
+                            font: font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new(" 🪐"),
+                        TextFont {
+                            font: emoji_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                });
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
@@ -175,15 +271,40 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 ScenarioCometButton,
             ))
             .with_children(|card| {
-                card.spawn((
-                    Text::new("COMETS"),
-                    TextFont {
-                        font: font.0.clone(),
-                        font_size: 22.0,
-                        ..default()
-                    },
-                    TextColor(scenario_label_color()),
-                ));
+                card.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|label| {
+                    label.spawn((
+                        Text::new("☄ "),
+                        TextFont {
+                            font: unicode_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new("COMETS"),
+                        TextFont {
+                            font: font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new(" ☄"),
+                        TextFont {
+                            font: unicode_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                });
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
@@ -222,15 +343,40 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                 ScenarioShowerButton,
             ))
             .with_children(|card| {
-                card.spawn((
-                    Text::new("SHOWER"),
-                    TextFont {
-                        font: font.0.clone(),
-                        font_size: 22.0,
-                        ..default()
-                    },
-                    TextColor(scenario_label_color()),
-                ));
+                card.spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    ..default()
+                })
+                .with_children(|label| {
+                    label.spawn((
+                        Text::new("🌠 "),
+                        TextFont {
+                            font: emoji_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new("SHOWER"),
+                        TextFont {
+                            font: font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                    label.spawn((
+                        Text::new(" 🌠"),
+                        TextFont {
+                            font: emoji_font.0.clone(),
+                            font_size: 22.0,
+                            ..default()
+                        },
+                        TextColor(scenario_label_color()),
+                    ));
+                });
                 spacer(card, 6.0);
                 card.spawn((
                     Text::new(
@@ -265,6 +411,15 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
             ))
             .with_children(|btn| {
                 btn.spawn((
+                    Text::new("✧ "),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(back_text()),
+                ));
+                btn.spawn((
                     Text::new("BACK"),
                     TextFont {
                         font: font.0.clone(),
@@ -273,8 +428,40 @@ pub fn setup_scenario_select(mut commands: Commands, font: Res<GameFont>) {
                     },
                     TextColor(back_text()),
                 ));
+                btn.spawn((
+                    Text::new(" ✧"),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(back_text()),
+                ));
             });
         });
+}
+
+/// Spawn scenario select only after the required fonts are loaded.
+pub fn setup_scenario_select_when_fonts_ready(
+    commands: Commands,
+    font: Res<GameFont>,
+    unicode_font: Res<crate::graphics::UnicodeFallbackFont>,
+    emoji_font: Res<crate::graphics::EmojiFont>,
+    loaded_fonts: Res<Assets<Font>>,
+    existing_menu: Query<Entity, With<ScenarioSelectRoot>>,
+) {
+    if !existing_menu.is_empty() {
+        return;
+    }
+
+    if !loaded_fonts.contains(font.0.id())
+        || !loaded_fonts.contains(unicode_font.0.id())
+        || !loaded_fonts.contains(emoji_font.0.id())
+    {
+        return;
+    }
+
+    setup_scenario_select(commands, font, unicode_font, emoji_font);
 }
 
 /// Recursively despawn all scenario-select entities.
@@ -315,9 +502,27 @@ pub fn scenario_select_button_system(
     >,
     back_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<ScenarioBackButton>)>,
     mut btn_text: Query<&mut TextColor>,
+    child_nodes: Query<&Children>,
     mut next_state: ResMut<NextState<GameState>>,
     mut selected: ResMut<SelectedScenario>,
 ) {
+    fn set_descendant_text_color(
+        root_children: &Children,
+        color: Color,
+        text_query: &mut Query<&mut TextColor>,
+        children_query: &Query<&Children>,
+    ) {
+        let mut stack: Vec<Entity> = root_children.iter().collect();
+        while let Some(entity) = stack.pop() {
+            if let Ok(mut text_color) = text_query.get_mut(entity) {
+                *text_color = TextColor(color);
+            }
+            if let Ok(children) = children_query.get(entity) {
+                stack.extend(children.iter());
+            }
+        }
+    }
+
     for (interaction, children) in field_query.iter() {
         match interaction {
             Interaction::Pressed => {
@@ -325,18 +530,20 @@ pub fn scenario_select_button_system(
                 next_state.set(GameState::Playing);
             }
             Interaction::Hovered => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_active_text());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_active_text(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
             Interaction::None => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_label_color());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_label_color(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
         }
     }
@@ -348,18 +555,20 @@ pub fn scenario_select_button_system(
                 next_state.set(GameState::Playing);
             }
             Interaction::Hovered => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_active_text());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_active_text(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
             Interaction::None => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_label_color());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_label_color(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
         }
     }
@@ -371,18 +580,20 @@ pub fn scenario_select_button_system(
                 next_state.set(GameState::Playing);
             }
             Interaction::Hovered => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_active_text());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_active_text(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
             Interaction::None => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_label_color());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_label_color(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
         }
     }
@@ -394,18 +605,20 @@ pub fn scenario_select_button_system(
                 next_state.set(GameState::Playing);
             }
             Interaction::Hovered => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_active_text());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_active_text(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
             Interaction::None => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(scenario_label_color());
-                    }
-                }
+                set_descendant_text_color(
+                    children,
+                    scenario_label_color(),
+                    &mut btn_text,
+                    &child_nodes,
+                );
             }
         }
     }
@@ -416,18 +629,10 @@ pub fn scenario_select_button_system(
                 next_state.set(GameState::MainMenu);
             }
             Interaction::Hovered => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(Color::WHITE);
-                    }
-                }
+                set_descendant_text_color(children, Color::WHITE, &mut btn_text, &child_nodes);
             }
             Interaction::None => {
-                for child in children.iter() {
-                    if let Ok(mut color) = btn_text.get_mut(child) {
-                        *color = TextColor(back_text());
-                    }
-                }
+                set_descendant_text_color(children, back_text(), &mut btn_text, &child_nodes);
             }
         }
     }

@@ -14,7 +14,12 @@ use super::*;
 /// │          v0.1.0  ·  Bevy 0.17               │
 /// └─────────────────────────────────────────────┘
 /// ```
-fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
+fn setup_main_menu(
+    mut commands: Commands,
+    font: Res<GameFont>,
+    unicode_font: Res<crate::graphics::UnicodeFallbackFont>,
+    emoji_font: Res<crate::graphics::EmojiFont>,
+) {
     commands
         .spawn((
             Node {
@@ -29,15 +34,41 @@ fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
             MainMenuRoot,
         ))
         .with_children(|root| {
-            root.spawn((
-                Text::new("Accretion"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: 56.0,
-                    ..default()
-                },
-                TextColor(title_color()),
-            ));
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(10.0),
+                ..default()
+            })
+            .with_children(|title| {
+                title.spawn((
+                    Text::new("🌌"),
+                    TextFont {
+                        font: emoji_font.0.clone(),
+                        font_size: 56.0,
+                        ..default()
+                    },
+                    TextColor(title_color()),
+                ));
+                title.spawn((
+                    Text::new("Accretion"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 56.0,
+                        ..default()
+                    },
+                    TextColor(title_color()),
+                ));
+                title.spawn((
+                    Text::new("🌌"),
+                    TextFont {
+                        font: emoji_font.0.clone(),
+                        font_size: 56.0,
+                        ..default()
+                    },
+                    TextColor(title_color()),
+                ));
+            });
 
             spacer(root, 10.0);
 
@@ -69,9 +100,27 @@ fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
             ))
             .with_children(|btn| {
                 btn.spawn((
+                    Text::new("✦ "),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(start_text()),
+                ));
+                btn.spawn((
                     Text::new("START GAME"),
                     TextFont {
                         font: font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(start_text()),
+                ));
+                btn.spawn((
+                    Text::new(" ✦"),
+                    TextFont {
+                        font: unicode_font.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -97,9 +146,27 @@ fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
             ))
             .with_children(|btn| {
                 btn.spawn((
+                    Text::new("✧ "),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(pause_debug_text()),
+                ));
+                btn.spawn((
                     Text::new("LOAD GAME"),
                     TextFont {
                         font: font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(pause_debug_text()),
+                ));
+                btn.spawn((
+                    Text::new(" ✧"),
+                    TextFont {
+                        font: unicode_font.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -125,9 +192,27 @@ fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
             ))
             .with_children(|btn| {
                 btn.spawn((
+                    Text::new("↭ "),
+                    TextFont {
+                        font: unicode_font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(quit_text()),
+                ));
+                btn.spawn((
                     Text::new("QUIT"),
                     TextFont {
                         font: font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(quit_text()),
+                ));
+                btn.spawn((
+                    Text::new(" ↭"),
+                    TextFont {
+                        font: unicode_font.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -156,6 +241,9 @@ fn setup_main_menu(mut commands: Commands, font: Res<GameFont>) {
 pub(super) fn setup_main_menu_when_font_ready(
     commands: Commands,
     font: Res<GameFont>,
+    unicode_font: Res<crate::graphics::UnicodeFallbackFont>,
+    emoji_font: Res<crate::graphics::EmojiFont>,
+    symbol_font_2: Res<crate::graphics::SymbolFont2>,
     loaded_fonts: Res<Assets<Font>>,
     existing_menu: Query<Entity, With<MainMenuRoot>>,
 ) {
@@ -163,11 +251,15 @@ pub(super) fn setup_main_menu_when_font_ready(
         return;
     }
 
-    if !loaded_fonts.contains(font.0.id()) {
+    if !loaded_fonts.contains(font.0.id())
+        || !loaded_fonts.contains(symbol_font_2.0.id())
+        || !loaded_fonts.contains(unicode_font.0.id())
+        || !loaded_fonts.contains(emoji_font.0.id())
+    {
         return;
     }
 
-    setup_main_menu(commands, font);
+    setup_main_menu(commands, font, unicode_font, emoji_font);
 }
 
 /// Recursively despawn all main-menu entities.

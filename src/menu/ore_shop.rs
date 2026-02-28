@@ -21,7 +21,7 @@ fn spawn_ore_shop_overlay(
     ion_level: &IonCannonLevel,
     font: &GameFont,
 ) {
-    let ore_text = format!("Ore available: {ore}");
+    let ore_text = format!("💎 available: {ore}");
 
     let can_heal = ore > 0 && hp < max_hp;
     let heal_btn_bg = if can_heal {
@@ -40,7 +40,7 @@ fn spawn_ore_shop_overlay(
         Color::srgb(0.38, 0.38, 0.38)
     };
     let heal_label = format!(
-        "HEAL  (HP: {:.0} / {:.0})  -  1 ore -> +{:.0} HP",
+        "❤️ HEAL ❤️  (❤️: {:.0} / {:.0})  -  1 💎 -> +{:.0} ❤️",
         hp, max_hp, heal_amount
     );
 
@@ -60,7 +60,7 @@ fn spawn_ore_shop_overlay(
     } else {
         Color::srgb(0.38, 0.38, 0.38)
     };
-    let missile_label = format!("MISSILE  ({ammo} / {ammo_max})  -  1 ore -> +1 missile",);
+    let missile_label = format!("🚀 MISSILE 🚀  ({ammo} / {ammo_max})  -  1 💎 -> +1 🚀",);
 
     commands
         .spawn((
@@ -95,7 +95,7 @@ fn spawn_ore_shop_overlay(
                 ))
                 .with_children(|card| {
                     card.spawn((
-                        Text::new("ORE SHOP"),
+                        Text::new("💎 ORE SHOP 💎"),
                         TextFont {
                             font: font.0.clone(),
                             font_size: 32.0,
@@ -240,16 +240,16 @@ fn spawn_ore_shop_overlay(
                                     "— MAX LEVEL —".to_string()
                                 } else {
                                     let cost = weapon_level.cost_for_next_level().unwrap_or(0);
-                                    format!("UPGRADE ({cost} ore)")
+                                    format!("UPGRADE ({cost} 💎)")
                                 };
                                 let cost_status = if weapon_level.is_maxed() {
                                     "MAX LEVEL REACHED".to_string()
                                 } else {
                                     let cost = weapon_level.cost_for_next_level().unwrap_or(0);
                                     if can_upgrade {
-                                        format!("Cost: {cost} ore")
+                                        format!("Cost: {cost} 💎")
                                     } else {
-                                        format!("Need {cost} ore")
+                                        format!("Need {cost} 💎")
                                     }
                                 };
                                 let level_text = format!(
@@ -268,7 +268,7 @@ fn spawn_ore_shop_overlay(
                                 };
 
                                 card_col.spawn((
-                                    Text::new("BLASTER"),
+                                    Text::new("⛯ BLASTER ⛯"),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,
@@ -373,16 +373,16 @@ fn spawn_ore_shop_overlay(
                                     "— MAX LEVEL —".to_string()
                                 } else {
                                     let cost = missile_level.cost_for_next_level().unwrap_or(0);
-                                    format!("UPGRADE ({cost} ore)")
+                                    format!("UPGRADE ({cost} 💎)")
                                 };
                                 let cost_status = if missile_level.is_maxed() {
                                     "MAX LEVEL REACHED".to_string()
                                 } else {
                                     let cost = missile_level.cost_for_next_level().unwrap_or(0);
                                     if can_upgrade {
-                                        format!("Cost: {cost} ore")
+                                        format!("Cost: {cost} 💎")
                                     } else {
-                                        format!("Need {cost} ore")
+                                        format!("Need {cost} 💎")
                                     }
                                 };
                                 let level_text = format!(
@@ -401,7 +401,7 @@ fn spawn_ore_shop_overlay(
                                 };
 
                                 card_col.spawn((
-                                    Text::new("MISSILE"),
+                                    Text::new("🚀 MISSILE 🚀"),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,
@@ -506,16 +506,16 @@ fn spawn_ore_shop_overlay(
                                     "— MAX LEVEL —".to_string()
                                 } else {
                                     let cost = magnet_level.cost_for_next_level().unwrap_or(0);
-                                    format!("UPGRADE ({cost} ore)")
+                                    format!("UPGRADE ({cost} 💎)")
                                 };
                                 let cost_status = if magnet_level.is_maxed() {
                                     "MAX LEVEL REACHED".to_string()
                                 } else {
                                     let cost = magnet_level.cost_for_next_level().unwrap_or(0);
                                     if can_upgrade {
-                                        format!("Cost: {cost} ore")
+                                        format!("Cost: {cost} 💎")
                                     } else {
-                                        format!("Need {cost} ore")
+                                        format!("Need {cost} 💎")
                                     }
                                 };
                                 let level_text = format!(
@@ -534,7 +534,7 @@ fn spawn_ore_shop_overlay(
                                 };
 
                                 card_col.spawn((
-                                    Text::new("MAGNET"),
+                                    Text::new("🧲 MAGNET 🧲"),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,
@@ -639,16 +639,16 @@ fn spawn_ore_shop_overlay(
                                     "— MAX LEVEL —".to_string()
                                 } else {
                                     let cost = tractor_level.cost_for_next_level().unwrap_or(0);
-                                    format!("UPGRADE ({cost} ore)")
+                                    format!("UPGRADE ({cost} 💎)")
                                 };
                                 let cost_status = if tractor_level.is_maxed() {
                                     "MAX LEVEL REACHED".to_string()
                                 } else {
                                     let cost = tractor_level.cost_for_next_level().unwrap_or(0);
                                     if can_upgrade {
-                                        format!("Cost: {cost} ore")
+                                        format!("Cost: {cost} 💎")
                                     } else {
-                                        format!("Need {cost} ore")
+                                        format!("Need {cost} 💎")
                                     }
                                 };
                                 let level_text = format!(
@@ -670,7 +670,7 @@ fn spawn_ore_shop_overlay(
                                 };
 
                                 card_col.spawn((
-                                    Text::new("TRACTOR"),
+                                    Text::new("↭ TRACTOR ↭"),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,
@@ -775,16 +775,16 @@ fn spawn_ore_shop_overlay(
                                     "— MAX LEVEL —".to_string()
                                 } else {
                                     let cost = ion_level.cost_for_next_level().unwrap_or(0);
-                                    format!("UPGRADE ({cost} ore)")
+                                    format!("UPGRADE ({cost} 💎)")
                                 };
                                 let cost_status = if ion_level.is_maxed() {
                                     "MAX LEVEL REACHED".to_string()
                                 } else {
                                     let cost = ion_level.cost_for_next_level().unwrap_or(0);
                                     if can_upgrade {
-                                        format!("Cost: {cost} ore")
+                                        format!("Cost: {cost} 💎")
                                     } else {
-                                        format!("Need {cost} ore")
+                                        format!("Need {cost} 💎")
                                     }
                                 };
 
@@ -819,7 +819,7 @@ fn spawn_ore_shop_overlay(
                                 };
 
                                 card_col.spawn((
-                                    Text::new("ION CANNON"),
+                                    Text::new("⚛ ION CANNON ⚛"),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,

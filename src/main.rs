@@ -116,6 +116,10 @@ fn main() {
     // Insert GameFont resource early so menu systems can access it; the actual
     // font handle will be loaded during Startup via load_game_font.
     .insert_resource(graphics::GameFont::default())
+    .insert_resource(graphics::SymbolFont::default())
+    .insert_resource(graphics::SymbolFont2::default())
+    .insert_resource(graphics::UnicodeFallbackFont::default())
+    .insert_resource(graphics::EmojiFont::default())
     // pixels_per_meter(1.0) keeps world units identical to old physics behaviour
     // (scale = 1.0 was the default in bevy_rapier2d 0.18).  Setting this to any
     // larger value shrinks collider mass in physics-space quadratically and causes
@@ -134,6 +138,11 @@ fn main() {
             config::load_physics_config,
             config::init_physics_hot_reload_state.after(config::load_physics_config),
             graphics::load_game_font,
+            graphics::load_symbol_font,
+            graphics::load_symbol_font_2,
+            graphics::load_unicode_fallback_font,
+            graphics::load_emoji_font,
+            graphics::log_font_substitution_diagnostics,
             graphics::setup_camera.after(config::load_physics_config),
             setup_physics_config,
         ),

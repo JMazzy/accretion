@@ -39,8 +39,8 @@
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::config::PhysicsConfig;
-use crate::graphics::GameFont;
-use crate::mining::PlayerOre;
+use crate::graphics::{EmojiFont, GameFont, SymbolFont, SymbolFont2, UnicodeFallbackFont};
+use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{
@@ -98,9 +98,17 @@ pub struct OverlayState {
 #[derive(Component)]
 pub struct StatsTextDisplay;
 
+/// Marker for simulation stats text child.
+#[derive(Component)]
+pub struct StatsOverlayText;
+
 /// Marker for the permanent score HUD node.
 #[derive(Component)]
 pub struct HudScoreDisplay;
+
+/// Marker for score HUD text child.
+#[derive(Component)]
+pub struct HudScoreText;
 
 /// Marker for the retrained GPU boundary-ring entity.
 #[derive(Component)]
@@ -118,21 +126,61 @@ pub struct LivesHudDisplay;
 #[derive(Component)]
 pub struct RespawnCountdownText;
 
+/// Marker for the lives numeric readout text.
+#[derive(Component)]
+pub struct LivesHudValueText;
+
 /// Marker for the missile-ammo HUD node (row 3, below lives HUD).
 #[derive(Component)]
 pub struct MissileHudDisplay;
+
+/// Marker for the missile ammo numeric readout text.
+#[derive(Component)]
+pub struct MissileHudValueText;
 
 /// Marker for the ore-count HUD node (row 4, below missiles HUD).
 #[derive(Component)]
 pub struct OreHudDisplay;
 
+/// Marker for ore count readout text.
+#[derive(Component)]
+pub struct OreHudValueText;
+
+/// Marker for blaster level readout text.
+#[derive(Component)]
+pub struct BlasterHudValueText;
+
+/// Marker for missile level readout text.
+#[derive(Component)]
+pub struct MissileLevelHudValueText;
+
+/// Marker for ore magnet level readout text.
+#[derive(Component)]
+pub struct MagnetHudValueText;
+
+/// Marker for tractor level and state readout text.
+#[derive(Component)]
+pub struct TractorHudValueText;
+
+/// Marker for ion cannon level and cooldown readout text.
+#[derive(Component)]
+pub struct IonHudValueText;
+
 /// Marker for the physics-inspector text node.
 #[derive(Component)]
 pub struct PhysicsInspectorDisplay;
 
+/// Marker for physics-inspector text child.
+#[derive(Component)]
+pub struct PhysicsInspectorText;
+
 /// Marker for the profiler text node.
 #[derive(Component)]
 pub struct ProfilerDisplay;
+
+/// Marker for profiler text child.
+#[derive(Component)]
+pub struct ProfilerText;
 
 /// Marker for retained asteroid wireframe overlay line mesh.
 #[derive(Component)]
@@ -240,6 +288,22 @@ fn on_text() -> Color {
 }
 fn off_text() -> Color {
     Color::srgb(0.65, 0.65, 0.65)
+}
+
+fn roman_numeral_level(level: u32) -> &'static str {
+    match level {
+        1 => "Ⅰ",
+        2 => "Ⅱ",
+        3 => "Ⅲ",
+        4 => "Ⅳ",
+        5 => "Ⅴ",
+        6 => "Ⅵ",
+        7 => "Ⅶ",
+        8 => "Ⅷ",
+        9 => "Ⅸ",
+        10 => "Ⅹ",
+        _ => "?",
+    }
 }
 
 fn line_segments_mesh(segments: &[(Vec2, Vec2)], half_width: f32) -> Mesh {
@@ -382,13 +446,13 @@ pub fn sync_boundary_ring_visibility_system(
 
 // ── Startup: score HUD ────────────────────────────────────────────────────────
 
-/// Spawn the permanent top-left score HUD (always visible).
+/// Spawn the permanent score HUD (always visible).
 pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
+                right: Val::Px(14.0),
                 top: Val::Px(10.0),
                 ..default()
             },
@@ -396,13 +460,14 @@ pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>, font:
         ))
         .with_children(|parent| {
             parent.spawn((
-                Text::new("Score: 0"),
+                Text::new("0"),
                 TextFont {
                     font: font.0.clone(),
-                    font_size: config.stats_font_size,
+                    font_size: (config.stats_font_size * 2.0).max(28.0),
                     ..default()
                 },
-                TextColor(Color::srgb(0.95, 0.88, 0.45)),
+                TextColor(Color::WHITE),
+                HudScoreText,
             ));
         });
 }
@@ -416,14 +481,18 @@ pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>, font:
 ///  Lives: ♥ ♥ ♥
 ///  RESPAWNING IN 2.4s   ← hidden while alive
 /// ```
-pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
-    let row_h = config.stats_font_size + 6.0;
+pub fn setup_lives_hud(
+    mut commands: Commands,
+    config: Res<PhysicsConfig>,
+    font: Res<GameFont>,
+    symbol_font_2: Res<SymbolFont2>,
+) {
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
-                top: Val::Px(10.0 + row_h),
+                top: Val::Px(10.0),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(2.0),
                 ..default()
@@ -432,15 +501,34 @@ pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>, font:
         ))
         .with_children(|parent| {
             // Lives counter row
-            parent.spawn((
-                Text::new("Lives: * * *"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: config.stats_font_size,
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(5.0),
                     ..default()
-                },
-                TextColor(Color::srgb(0.95, 0.45, 0.45)),
-            ));
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        Text::new("⮝"),
+                        TextFont {
+                            font: symbol_font_2.0.clone(),
+                            font_size: config.stats_font_size,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.95, 0.45, 0.45)),
+                    ));
+                    row.spawn((
+                        Text::new(format!("{}/{}", config.player_lives, config.player_lives)),
+                        TextFont {
+                            font: font.0.clone(),
+                            font_size: config.stats_font_size,
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.95, 0.45, 0.45)),
+                        LivesHudValueText,
+                    ));
+                });
             // Respawn countdown — hidden while alive
             parent.spawn((
                 Text::new(""),
@@ -457,112 +545,280 @@ pub fn setup_lives_hud(mut commands: Commands, config: Res<PhysicsConfig>, font:
 }
 
 /// Refresh the lives HUD and respawn-countdown text each frame.
+#[allow(clippy::type_complexity)]
 pub fn lives_hud_display_system(
     lives: Res<PlayerLives>,
     config: Res<PhysicsConfig>,
-    parent_query: Query<&Children, With<LivesHudDisplay>>,
-    mut text_query: Query<(&mut Text, &mut Visibility, Option<&RespawnCountdownText>)>,
+    mut text_query: Query<(
+        &mut Text,
+        Option<&mut Visibility>,
+        Option<&RespawnCountdownText>,
+        Option<&LivesHudValueText>,
+    )>,
 ) {
     if !lives.is_changed() {
         return;
     }
-    for children in parent_query.iter() {
-        for child in children.iter() {
-            let Ok((mut text, mut vis, respawn_tag)) = text_query.get_mut(child) else {
+    let total = config.player_lives.max(0);
+    let remaining = lives.remaining.max(0);
+    for (mut text, vis, respawn_tag, lives_value_tag) in text_query.iter_mut() {
+        if lives_value_tag.is_some() {
+            *text = Text::new(format!("{remaining}/{total}"));
+            continue;
+        }
+
+        if respawn_tag.is_some() {
+            let Some(mut vis) = vis else {
                 continue;
             };
-            if respawn_tag.is_some() {
-                // Respawn countdown text
-                if let Some(t) = lives.respawn_timer {
-                    *text = Text::new(format!("RESPAWNING IN {t:.1}s…"));
-                    *vis = Visibility::Visible;
-                } else {
-                    *text = Text::new("");
-                    *vis = Visibility::Hidden;
-                }
+            if let Some(t) = lives.respawn_timer {
+                *text = Text::new(format!("RESPAWNING IN {t:.1}s…"));
+                *vis = Visibility::Visible;
             } else {
-                // Lives counter — filled (*) and lost (-) markers
-                let total = config.player_lives.max(0) as usize;
-                let filled = lives.remaining.max(0) as usize;
-                let stars: String =
-                    "* ".repeat(filled) + &"- ".repeat(total.saturating_sub(filled));
-                *text = Text::new(format!("Lives: {}", stars.trim_end()));
+                *text = Text::new("");
+                *vis = Visibility::Hidden;
             }
         }
     }
 }
 
 /// Startup: spawn the missile-ammo indicator HUD (row 3, below lives HUD).
-pub fn setup_missile_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
-    let row_h = config.stats_font_size + 6.0;
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(10.0),
-                top: Val::Px(10.0 + row_h * 3.0),
-                ..default()
-            },
-            MissileHudDisplay,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new("Missiles: M M M M M"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: config.stats_font_size,
-                    ..default()
-                },
-                TextColor(Color::srgb(1.0, 0.55, 0.1)),
-            ));
-        });
+pub fn setup_missile_hud(
+    _commands: Commands,
+    _config: Res<PhysicsConfig>,
+    _font: Res<GameFont>,
+    _emoji_font: Res<EmojiFont>,
+) {
 }
 
 /// Refresh the missile ammo HUD each frame.
 pub fn missile_hud_display_system(
     ammo: Res<MissileAmmo>,
     config: Res<PhysicsConfig>,
-    parent_query: Query<&Children, With<MissileHudDisplay>>,
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<&mut Text, With<MissileHudValueText>>,
 ) {
     if !ammo.is_changed() {
         return;
     }
-    for children in parent_query.iter() {
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                let max = config.missile_ammo_max as usize;
-                let count = ammo.count as usize;
-                let filled: String = "M ".repeat(count) + &"- ".repeat(max.saturating_sub(count));
-                *text = Text::new(format!("Missiles: {}", filled.trim_end()));
-            }
-        }
+    for mut text in text_query.iter_mut() {
+        *text = Text::new(format!("{}/{}", ammo.count, config.missile_ammo_max));
     }
 }
 
-/// Startup: ore-count HUD (row 4, below missiles).
-pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
-    let row_h = config.stats_font_size + 6.0;
+/// Startup: bottom-left HUD indicator block.
+pub fn setup_ore_hud(
+    mut commands: Commands,
+    config: Res<PhysicsConfig>,
+    font: Res<GameFont>,
+    symbol_font: Res<SymbolFont>,
+    emoji_font: Res<EmojiFont>,
+    unicode_fallback_font: Res<UnicodeFallbackFont>,
+) {
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
-                top: Val::Px(10.0 + row_h * 4.0),
+                bottom: Val::Px(12.0),
                 ..default()
             },
             OreHudDisplay,
         ))
         .with_children(|parent| {
-            parent.spawn((
-                Text::new("Ore: 0"),
-                TextFont {
-                    font: font.0.clone(),
-                    font_size: config.stats_font_size,
+            parent
+                .spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(2.0),
                     ..default()
-                },
-                TextColor(Color::srgb(0.35, 1.0, 0.55)),
-            ));
+                })
+                .with_children(|col| {
+                    // Ore count
+                    col.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(5.0),
+                        ..default()
+                    })
+                    .with_children(|row| {
+                        row.spawn((
+                            Text::new("💎"),
+                            TextFont {
+                                font: emoji_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.35, 1.0, 0.55)),
+                        ));
+                        row.spawn((
+                            Text::new("0"),
+                            TextFont {
+                                font: font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.35, 1.0, 0.55)),
+                            OreHudValueText,
+                        ));
+                    });
+
+                    // Blaster
+                    col.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(3.0),
+                        ..default()
+                    })
+                    .with_children(|entry| {
+                        entry.spawn((
+                            Text::new("⛯"),
+                            TextFont {
+                                font: symbol_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(1.0, 0.92, 0.3)),
+                        ));
+                        entry.spawn((
+                            Text::new("Ⅰ"),
+                            TextFont {
+                                font: symbol_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(1.0, 0.92, 0.3)),
+                            BlasterHudValueText,
+                        ));
+                    });
+
+                    // Missile [symbol] [level] [count]
+                    col.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(3.0),
+                        ..default()
+                    })
+                    .with_children(|entry| {
+                        entry.spawn((
+                            Text::new("🚀"),
+                            TextFont {
+                                font: emoji_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(1.0, 0.55, 0.1)),
+                        ));
+                        entry.spawn((
+                            Text::new("Ⅰ"),
+                            TextFont {
+                                font: symbol_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(1.0, 0.55, 0.1)),
+                            MissileLevelHudValueText,
+                        ));
+                        entry.spawn((
+                            Text::new(format!(
+                                "{}/{}",
+                                config.missile_ammo_max, config.missile_ammo_max
+                            )),
+                            TextFont {
+                                font: font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(1.0, 0.55, 0.1)),
+                            MissileHudValueText,
+                        ));
+                    });
+
+                    // Magnet
+                    col.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(3.0),
+                        ..default()
+                    })
+                    .with_children(|entry| {
+                        entry.spawn((
+                            Text::new("🧲"),
+                            TextFont {
+                                font: emoji_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.95, 0.35, 0.35)),
+                        ));
+                        entry.spawn((
+                            Text::new("Ⅰ"),
+                            TextFont {
+                                font: symbol_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.95, 0.35, 0.35)),
+                            MagnetHudValueText,
+                        ));
+                    });
+
+                    // Tractor
+                    col.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(3.0),
+                        ..default()
+                    })
+                    .with_children(|entry| {
+                        entry.spawn((
+                            Text::new("↭"),
+                            TextFont {
+                                font: unicode_fallback_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.35, 0.9, 0.95)),
+                        ));
+                        entry.spawn((
+                            Text::new("Ⅰ OFF/RDY"),
+                            TextFont {
+                                font: symbol_font.0.clone(),
+                                font_size: config.stats_font_size - 1.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.35, 0.9, 0.95)),
+                            TractorHudValueText,
+                        ));
+                    });
+
+                    // Ion Cannon
+                    col.spawn(Node {
+                        flex_direction: FlexDirection::Row,
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(3.0),
+                        ..default()
+                    })
+                    .with_children(|entry| {
+                        entry.spawn((
+                            Text::new("⚛"),
+                            TextFont {
+                                font: symbol_font.0.clone(),
+                                font_size: config.stats_font_size,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.55, 0.85, 1.0)),
+                        ));
+                        entry.spawn((
+                            Text::new("Ⅰ RDY"),
+                            TextFont {
+                                font: symbol_font.0.clone(),
+                                font_size: config.stats_font_size - 1.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(0.55, 0.85, 1.0)),
+                            IonHudValueText,
+                        ));
+                    });
+                });
         });
 }
 
@@ -571,22 +827,33 @@ pub fn setup_ore_hud(mut commands: Commands, config: Res<PhysicsConfig>, font: R
 /// When ore > 0 the text includes key-binding hints for spending it so players
 /// can discover the mechanic passively.  The primary weapon upgrade level is
 /// shown inline so players always know their current tier.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn ore_hud_display_system(
     ore: Res<PlayerOre>,
     weapon_level: Res<PrimaryWeaponLevel>,
     missile_level: Res<SecondaryWeaponLevel>,
+    magnet_level: Res<OreAffinityLevel>,
     tractor_level: Res<TractorBeamLevel>,
     tractor_hold_state: Res<TractorHoldState>,
     tractor_throw_cooldown: Res<TractorThrowCooldown>,
     ion_level: Res<IonCannonLevel>,
     ion_cooldown: Res<IonCannonCooldown>,
-    parent_query: Query<&Children, With<OreHudDisplay>>,
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<(
+        &mut Text,
+        AnyOf<(
+            &OreHudValueText,
+            &BlasterHudValueText,
+            &MissileLevelHudValueText,
+            &MagnetHudValueText,
+            &TractorHudValueText,
+            &IonHudValueText,
+        )>,
+    )>,
 ) {
     if !ore.is_changed()
         && !weapon_level.is_changed()
         && !missile_level.is_changed()
+        && !magnet_level.is_changed()
         && !tractor_level.is_changed()
         && !tractor_hold_state.is_changed()
         && !tractor_throw_cooldown.is_changed()
@@ -595,28 +862,14 @@ pub fn ore_hud_display_system(
     {
         return;
     }
-    let blaster_text = if weapon_level.is_maxed() {
-        "MAX".to_string()
-    } else {
-        weapon_level.display_level().to_string()
-    };
-    let missile_text = if missile_level.is_maxed() {
-        "MAX".to_string()
-    } else {
-        missile_level.display_level().to_string()
-    };
-    let tractor_text = if tractor_level.is_maxed() {
-        "MAX".to_string()
-    } else {
-        tractor_level.display_level().to_string()
-    };
-    let ion_text = if ion_level.is_maxed() {
-        "MAX".to_string()
-    } else {
-        ion_level.display_level().to_string()
-    };
+
+    let blaster_text = roman_numeral_level(weapon_level.display_level()).to_string();
+    let missile_text = roman_numeral_level(missile_level.display_level()).to_string();
+    let magnet_text = roman_numeral_level(magnet_level.display_level()).to_string();
+    let tractor_level_text = roman_numeral_level(tractor_level.display_level()).to_string();
+    let ion_level_text = roman_numeral_level(ion_level.display_level()).to_string();
     let ion_cd_text = if ion_cooldown.timer_secs <= 0.0 {
-        "READY".to_string()
+        "RDY".to_string()
     } else {
         format!("{:.1}s", ion_cooldown.timer_secs)
     };
@@ -626,28 +879,27 @@ pub fn ore_hud_display_system(
         "OFF"
     };
     let tractor_cd_text = if tractor_throw_cooldown.timer_secs <= 0.0 {
-        "READY".to_string()
+        "RDY".to_string()
     } else {
         format!("{:.1}s", tractor_throw_cooldown.timer_secs)
     };
-    let display = format!(
-        "Ore: {} | Blaster: {} | Missile: {} | Tractor: {} [{} / CD:{}] | Ion: {} ({:.1}s, T≤{}, CD: {})",
-        ore.count,
-        blaster_text,
-        missile_text,
-        tractor_text,
-        tractor_mode_text,
-        tractor_cd_text,
-        ion_text,
-        ion_level.stun_duration_secs(),
-        ion_level.max_enemy_tier_affected(),
-        ion_cd_text
-    );
-    for children in parent_query.iter() {
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                *text = Text::new(display.clone());
-            }
+
+    for (mut text, tags) in text_query.iter_mut() {
+        if tags.0.is_some() {
+            *text = Text::new(ore.count.to_string());
+        } else if tags.1.is_some() {
+            *text = Text::new(blaster_text.clone());
+        } else if tags.2.is_some() {
+            *text = Text::new(missile_text.clone());
+        } else if tags.3.is_some() {
+            *text = Text::new(magnet_text.clone());
+        } else if tags.4.is_some() {
+            *text = Text::new(format!(
+                "{} {}/{}",
+                tractor_level_text, tractor_mode_text, tractor_cd_text
+            ));
+        } else if tags.5.is_some() {
+            *text = Text::new(format!("{} {}", ion_level_text, ion_cd_text));
         }
     }
 }
@@ -655,13 +907,12 @@ pub fn ore_hud_display_system(
 /// Startup: stats overlay text — Spawn the toggleable simulation-stats overlay (starts hidden; enable via debug panel).
 pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
     let row_h = config.stats_font_size + 6.0;
-    // Position below score (row 0), lives HUD (rows 1-2), missile HUD (row 3), ore HUD (row 4).
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
-                top: Val::Px(10.0 + row_h * 5.0),
+                top: Val::Px(10.0 + row_h * 2.0),
                 ..default()
             },
             StatsTextDisplay,
@@ -676,6 +927,7 @@ pub fn setup_stats_text(mut commands: Commands, config: Res<PhysicsConfig>, font
                     ..default()
                 },
                 TextColor(Color::srgb(0.0, 1.0, 1.0)),
+                StatsOverlayText,
             ));
         });
 }
@@ -692,7 +944,7 @@ pub fn setup_physics_inspector_text(
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
-                top: Val::Px(10.0 + row_h * 6.0),
+                top: Val::Px(10.0 + row_h * 3.0),
                 ..default()
             },
             PhysicsInspectorDisplay,
@@ -707,6 +959,7 @@ pub fn setup_physics_inspector_text(
                     ..default()
                 },
                 TextColor(Color::srgb(0.75, 0.95, 0.95)),
+                PhysicsInspectorText,
             ));
         });
 }
@@ -723,7 +976,7 @@ pub fn setup_profiler_text(
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(10.0),
-                top: Val::Px(10.0 + row_h * 12.0),
+                top: Val::Px(10.0 + row_h * 9.0),
                 ..default()
             },
             ProfilerDisplay,
@@ -738,6 +991,7 @@ pub fn setup_profiler_text(
                     ..default()
                 },
                 TextColor(Color::srgb(0.88, 0.95, 0.75)),
+                ProfilerText,
             ));
         });
 }
@@ -888,35 +1142,13 @@ fn spawn_toggle_row(
 /// Refresh the permanent score HUD each frame.
 pub fn hud_score_display_system(
     score: Res<PlayerScore>,
-    parent_query: Query<&Children, With<HudScoreDisplay>>,
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<&mut Text, With<HudScoreText>>,
 ) {
     if !score.is_changed() {
         return;
     }
-    for children in parent_query.iter() {
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                let multiplier = score.multiplier();
-                if multiplier > 1 {
-                    *text = Text::new(format!(
-                        "Score: {}  ({} hits, {} destroyed)  ×{} COMBO! [{}]",
-                        score.total(),
-                        score.hits,
-                        score.destroyed,
-                        multiplier,
-                        score.streak,
-                    ));
-                } else {
-                    *text = Text::new(format!(
-                        "Score: {}  ({} hits, {} destroyed)",
-                        score.total(),
-                        score.hits,
-                        score.destroyed
-                    ));
-                }
-            }
-        }
+    for mut text in text_query.iter_mut() {
+        *text = Text::new(score.total().to_string());
     }
 }
 
@@ -983,30 +1215,29 @@ pub fn sync_profiler_visibility_system(
 /// Refresh the stats text content each frame.
 pub fn stats_display_system(
     stats: Res<SimulationStats>,
-    parent_query: Query<&Children, With<StatsTextDisplay>>,
-    mut text_query: Query<&mut Text>,
+    score: Res<PlayerScore>,
+    mut text_query: Query<&mut Text, With<StatsOverlayText>>,
 ) {
-    for children in parent_query.iter() {
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                *text = Text::new(format!(
-                    "Live: {} | Culled: {} | Merged: {} | Split: {} | Destroyed: {}",
-                    stats.live_count,
-                    stats.culled_total,
-                    stats.merged_total,
-                    stats.split_total,
-                    stats.destroyed_total
-                ));
-            }
-        }
+    for mut text in text_query.iter_mut() {
+        *text = Text::new(format!(
+            "Live: {} | Culled: {} | Merged: {} | Split: {} | Destroyed: {}\nScoreDBG: hits={} destroyed={} combo={} streak={}",
+            stats.live_count,
+            stats.culled_total,
+            stats.merged_total,
+            stats.split_total,
+            stats.destroyed_total,
+            score.hits,
+            score.destroyed,
+            score.multiplier(),
+            score.streak,
+        ));
     }
 }
 
 /// Refresh the physics inspector text with IDs, velocities, and active contact counts.
 pub fn physics_inspector_display_system(
     overlay: Res<OverlayState>,
-    parent_query: Query<&Children, With<PhysicsInspectorDisplay>>,
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<&mut Text, With<PhysicsInspectorText>>,
     q_player: Query<(Entity, &Transform, &Velocity), With<Player>>,
     q_asteroids: Query<(Entity, &Transform, &Velocity), With<Asteroid>>,
     rapier_context: ReadRapierContext,
@@ -1074,12 +1305,8 @@ pub fn physics_inspector_display_system(
     }
 
     let display = lines.join("\n");
-    for children in parent_query.iter() {
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                *text = Text::new(display.clone());
-            }
-        }
+    for mut text in text_query.iter_mut() {
+        *text = Text::new(display.clone());
     }
 }
 
@@ -1088,8 +1315,7 @@ pub fn profiler_display_system(
     overlay: Res<OverlayState>,
     profiler: Res<ProfilerStats>,
     diagnostics: Res<DiagnosticsStore>,
-    parent_query: Query<&Children, With<ProfilerDisplay>>,
-    mut text_query: Query<&mut Text>,
+    mut text_query: Query<&mut Text, With<ProfilerText>>,
 ) {
     if !overlay.show_profiler {
         return;
@@ -1114,12 +1340,8 @@ pub fn profiler_display_system(
         po = profiler.post_update_ms,
     );
 
-    for children in parent_query.iter() {
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                *text = Text::new(display.clone());
-            }
-        }
+    for mut text in text_query.iter_mut() {
+        *text = Text::new(display.clone());
     }
 }
 

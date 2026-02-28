@@ -42,7 +42,7 @@ pub(super) fn setup_game_over(
                 ))
                 .with_children(|card| {
                     card.spawn((
-                        Text::new("GAME OVER"),
+                        Text::new("❤️ GAME OVER ❤️"),
                         TextFont {
                             font: font.0.clone(),
                             font_size: 46.0,
@@ -55,7 +55,7 @@ pub(super) fn setup_game_over(
 
                     card.spawn((
                         Text::new(format!(
-                            "Score: {}   ({} hits · {} destroyed)",
+                            "💎 Score: {}   ({} hits · {} destroyed)",
                             score.total(),
                             score.hits,
                             score.destroyed
@@ -86,7 +86,7 @@ pub(super) fn setup_game_over(
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("PLAY AGAIN"),
+                            Text::new("⮝ PLAY AGAIN ⮝"),
                             TextFont {
                                 font: font.0.clone(),
                                 font_size: 18.0,
@@ -112,7 +112,7 @@ pub(super) fn setup_game_over(
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("QUIT"),
+                            Text::new("↭ QUIT ↭"),
                             TextFont {
                                 font: font.0.clone(),
                                 font_size: 18.0,
@@ -125,7 +125,7 @@ pub(super) fn setup_game_over(
                     pause_spacer(card, 4.0);
 
                     card.spawn((
-                        Text::new("Press Enter to play again"),
+                        Text::new("Press Enter to ⮝ play again"),
                         TextFont {
                             font: font.0.clone(),
                             font_size: 12.0,

@@ -103,7 +103,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                 .with_children(|card| {
                     // Title
                     card.spawn((
-                        Text::new("PAUSED"),
+                        Text::new("⮝ PAUSED ⮝"),
                         TextFont {
                             font: font.0.clone(),
                             font_size: 38.0,
@@ -131,7 +131,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("RESUME"),
+                            Text::new("⮝ RESUME ⮝"),
                             TextFont {
                                 font: font.0.clone(),
                                 font_size: 18.0,
@@ -158,7 +158,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("DEBUG OVERLAYS"),
+                            Text::new("⚛ DEBUG OVERLAYS ⚛"),
                             TextFont {
                                 font: font.0.clone(),
                                 font_size: 18.0,
@@ -192,7 +192,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                         ))
                         .with_children(|btn| {
                             btn.spawn((
-                                Text::new("SAVE 1"),
+                                Text::new("💎 SAVE 1"),
                                 TextFont {
                                     font: font.0.clone(),
                                     font_size: 12.0,
@@ -218,7 +218,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                         ))
                         .with_children(|btn| {
                             btn.spawn((
-                                Text::new("SAVE 2"),
+                                Text::new("💎 SAVE 2"),
                                 TextFont {
                                     font: font.0.clone(),
                                     font_size: 12.0,
@@ -244,7 +244,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                         ))
                         .with_children(|btn| {
                             btn.spawn((
-                                Text::new("SAVE 3"),
+                                Text::new("💎 SAVE 3"),
                                 TextFont {
                                     font: font.0.clone(),
                                     font_size: 12.0,
@@ -274,7 +274,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("MAIN MENU"),
+                            Text::new("↭ MAIN MENU ↭"),
                             TextFont {
                                 font: font.0.clone(),
                                 font_size: 18.0,
@@ -288,7 +288,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
 
                     // Hint text
                     card.spawn((
-                        Text::new("ESC → resume  ·  Tab → ore shop  ·  SAVE 1/2/3"),
+                        Text::new("ESC → ⮝ resume  ·  Tab → 💎 shop  ·  💎 SAVE 1/2/3"),
                         TextFont {
                             font: font.0.clone(),
                             font_size: 12.0,

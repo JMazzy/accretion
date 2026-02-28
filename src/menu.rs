@@ -66,7 +66,7 @@ use menu_load_game::{cleanup_load_game_menu, load_game_menu_button_system, setup
 #[path = "menu/scenario_select.rs"]
 mod menu_scenario_select;
 use menu_scenario_select::{
-    cleanup_scenario_select, scenario_select_button_system, setup_scenario_select,
+    cleanup_scenario_select, scenario_select_button_system, setup_scenario_select_when_fonts_ready,
 };
 #[path = "menu/pause.rs"]
 mod menu_pause;
@@ -114,7 +114,10 @@ impl Plugin for MainMenuPlugin {
                 load_game_menu_button_system.run_if(in_state(GameState::LoadGameMenu)),
             )
             // ── Scenario select ───────────────────────────────────────────────
-            .add_systems(OnEnter(GameState::ScenarioSelect), setup_scenario_select)
+            .add_systems(
+                Update,
+                setup_scenario_select_when_fonts_ready.run_if(in_state(GameState::ScenarioSelect)),
+            )
             .add_systems(OnExit(GameState::ScenarioSelect), cleanup_scenario_select)
             .add_systems(
                 Update,

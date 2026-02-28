@@ -14,6 +14,7 @@ bevy_asset = "0.17"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+ttf-parser = "0.25"
 
 [dev-dependencies]
 

@@ -16,7 +16,7 @@ pub fn setup_load_game_menu(mut commands: Commands, font: Res<GameFont>) {
         ))
         .with_children(|root| {
             root.spawn((
-                Text::new("LOAD GAME"),
+                Text::new("💎 LOAD GAME 💎"),
                 TextFont {
                     font: font.0.clone(),
                     font_size: 42.0,
@@ -28,7 +28,7 @@ pub fn setup_load_game_menu(mut commands: Commands, font: Res<GameFont>) {
             spacer(root, 10.0);
 
             root.spawn((
-                Text::new("Choose a save slot"),
+                Text::new("Choose a save slot ↭"),
                 TextFont {
                     font: font.0.clone(),
                     font_size: 16.0,
@@ -61,11 +61,11 @@ pub fn setup_load_game_menu(mut commands: Commands, font: Res<GameFont>) {
                     Color::srgb(0.45, 0.45, 0.45)
                 };
                 let label = if meta.loadable {
-                    format!("LOAD SLOT {}", meta.slot)
+                    format!("↭ LOAD SLOT {}", meta.slot)
                 } else if meta.exists {
-                    format!("SLOT {} ({})", meta.slot, meta.status)
+                    format!("↭ SLOT {} ({})", meta.slot, meta.status)
                 } else {
-                    format!("SLOT {} (EMPTY)", meta.slot)
+                    format!("↭ SLOT {} (EMPTY)", meta.slot)
                 };
                 let details = if let Some(scenario) = meta.scenario {
                     let ts = meta.saved_at_unix.unwrap_or(0);
@@ -145,7 +145,7 @@ pub fn setup_load_game_menu(mut commands: Commands, font: Res<GameFont>) {
             ))
             .with_children(|btn| {
                 btn.spawn((
-                    Text::new("BACK"),
+                    Text::new("↭ BACK ↭"),
                     TextFont {
                         font: font.0.clone(),
                         font_size: 16.0,

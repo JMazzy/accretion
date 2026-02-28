@@ -1,5 +1,20 @@
 # Accretion Changelog
 
+## Symbol HUD Pass: Noto Symbols Secondary Font — February 27, 2026
+
+### Added symbol-font HUD icons for lives, ore, and weapon/tool status
+
+**What changed**:
+- Added a dedicated symbol font resource in [src/graphics.rs](src/graphics.rs):
+  - `SymbolFont` now loads `assets/fonts/Noto_Sans_Symbols/static/NotoSansSymbols-Regular.ttf` at startup.
+- Wired symbol-font startup initialization in [src/main.rs](src/main.rs) via `insert_resource(SymbolFont::default())` and `graphics::load_symbol_font`.
+- Updated gameplay HUD rows in [src/rendering.rs](src/rendering.rs):
+  - Lives now display `⮝` + numeric readout (`remaining/total`) using separate text components.
+  - Missile ammo now displays `🚀` + numeric readout (`count/max`) using separate text components.
+  - Ore row now displays `💎` + count.
+  - Weapon/tool strip now uses symbols (`⛯`, `🚀`, `🧲`, `↭`, `⚛`) with per-item readouts.
+  - Upgrade levels are shown with Roman numeral glyphs (`Ⅰ`..`Ⅹ`) for concise UI feedback.
+
 ## Tractor Balance Pass: Release Velocity + Throw Cooldown — February 27, 2026
 
 ### Reduced throw abuse and added upgrade-scaled throw cooldown gating
