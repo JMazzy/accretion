@@ -112,7 +112,7 @@ pub(super) fn setup_game_over(
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("↭ QUIT ↭"),
+                            Text::new("✦ QUIT ✦"),
                             TextFont {
                                 font: font.0.clone(),
                                 font_size: 18.0,

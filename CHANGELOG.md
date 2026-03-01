@@ -1,5 +1,15 @@
 # Accretion Changelog
 
+## HUD Symbol Coverage Cleanup — February 28, 2026
+
+### Replaced unsupported tractor glyph and aligned symbol-to-font assignments
+
+**What changed**:
+- Replaced tractor symbol `↭` with `✦` across HUD and menus.
+- Updated HUD symbol mappings so state/slot symbols (`●`, `○`, `⚡`, `⌛`) are assigned to `SymbolFont2` for direct coverage.
+- Updated font diagnostics assignments in `src/graphics.rs` to match actual runtime font usage.
+- Updated docs in `assets/fonts/fonts.md` and `FEATURES.md` to match the new symbol set.
+
 ## Symbol HUD Pass: Noto Symbols Secondary Font — February 27, 2026
 
 ### Added symbol-font HUD icons for lives, ore, and weapon/tool status

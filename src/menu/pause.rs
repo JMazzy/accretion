@@ -274,7 +274,7 @@ pub fn setup_pause_menu(mut commands: Commands, font: Res<GameFont>) {
                     ))
                     .with_children(|btn| {
                         btn.spawn((
-                            Text::new("↭ MAIN MENU ↭"),
+                            Text::new("✦ MAIN MENU ✦"),
                             TextFont {
                                 font: font.0.clone(),
                                 font_size: 18.0,

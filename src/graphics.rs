@@ -3,6 +3,22 @@ use std::collections::HashSet;
 use std::fs;
 use ttf_parser::Face;
 
+fn preferred_unicode_fallback() -> (&'static str, &'static str, &'static str) {
+    if fs::metadata("assets/fonts/NotoSans-Regular.ttf").is_ok() {
+        (
+            "noto_sans",
+            "fonts/NotoSans-Regular.ttf",
+            "assets/fonts/NotoSans-Regular.ttf",
+        )
+    } else {
+        (
+            "unicode",
+            "fonts/DejaVuSans.ttf",
+            "assets/fonts/DejaVuSans.ttf",
+        )
+    }
+}
+
 /// Game font resource — stores the loaded Tektur font handle.
 ///
 /// All UI text in menus and HUDs references `font.0.clone()` instead of
@@ -18,7 +34,7 @@ pub struct SymbolFont(pub Handle<Font>);
 #[derive(Resource, Default)]
 pub struct SymbolFont2(pub Handle<Font>);
 
-/// Unicode fallback font for specific symbols missing in Noto symbol fonts.
+/// Noto Sans fallback font for symbols not covered by primary UI fonts.
 #[derive(Resource, Default)]
 pub struct UnicodeFallbackFont(pub Handle<Font>);
 
@@ -49,14 +65,15 @@ pub fn load_symbol_font_2(mut font: ResMut<SymbolFont2>, asset_server: Res<Asset
     eprintln!("[SETUP] Symbol font 2 loaded");
 }
 
-/// Load unicode fallback font used for selected missing symbols.
+/// Load Noto Sans fallback font used for selected missing symbols.
 pub fn load_unicode_fallback_font(
     mut font: ResMut<UnicodeFallbackFont>,
     asset_server: Res<AssetServer>,
 ) {
-    let font_handle = asset_server.load("fonts/DejaVuSans.ttf");
+    let (font_name, asset_path, _) = preferred_unicode_fallback();
+    let font_handle = asset_server.load(asset_path);
     font.0 = font_handle;
-    eprintln!("[SETUP] Unicode fallback font loaded");
+    eprintln!("[SETUP] {} fallback font loaded", font_name);
 }
 
 /// Load emoji fallback font used for selected missing emoji symbols.
@@ -87,11 +104,12 @@ fn load_font_codepoints(path: &str) -> Option<HashSet<u32>> {
 
 /// Log symbol font coverage and probable substitutions for configured UI symbols.
 pub fn log_font_substitution_diagnostics() {
+    let (unicode_font_name, _, unicode_font_disk_path) = preferred_unicode_fallback();
     let font_catalog = [
         ("game", "assets/fonts/Tektur-Regular.ttf"),
+        (unicode_font_name, unicode_font_disk_path),
         ("symbol1", "assets/fonts/NotoSansSymbols-Regular.ttf"),
         ("symbol2", "assets/fonts/NotoSansSymbols2-Regular.ttf"),
-        ("unicode", "assets/fonts/DejaVuSans.ttf"),
         ("emoji", "assets/fonts/NotoEmoji-Regular.ttf"),
     ];
 
@@ -110,7 +128,7 @@ pub fn log_font_substitution_diagnostics() {
         ("hud_blaster", "⛯", "symbol1"),
         ("hud_missile", "🚀", "emoji"),
         ("hud_magnet", "🧲", "emoji"),
-        ("hud_tractor", "↭", "unicode"),
+        ("hud_tractor", "✦", "symbol2"),
         ("hud_ion", "⚛", "symbol1"),
         ("hud_ore", "💎", "emoji"),
         ("hud_level_1", "①", "symbol1"),
@@ -123,28 +141,28 @@ pub fn log_font_substitution_diagnostics() {
         ("hud_level_8", "⑧", "symbol1"),
         ("hud_level_9", "⑨", "symbol1"),
         ("hud_level_10", "⑩", "symbol1"),
-        ("hud_missile_slot_full", "●", "unicode"),
-        ("hud_missile_slot_empty", "○", "unicode"),
-        ("hud_tractor_off", "○", "unicode"),
-        ("hud_tractor_ready", "⚡", "unicode"),
-        ("hud_tractor_cooldown", "⌛", "unicode"),
-        ("hud_ion_ready", "⚡", "unicode"),
-        ("hud_ion_cooldown", "⌛", "unicode"),
+        ("hud_missile_slot_full", "●", "symbol2"),
+        ("hud_missile_slot_empty", "○", "symbol2"),
+        ("hud_tractor_off", "○", "symbol2"),
+        ("hud_tractor_ready", "⚡", "symbol2"),
+        ("hud_tractor_cooldown", "⌛", "symbol2"),
+        ("hud_ion_ready", "⚡", "symbol2"),
+        ("hud_ion_cooldown", "⌛", "symbol2"),
         ("hud_hp", "❤️", "emoji"),
         ("menu_symbol_ore", "💎", "emoji"),
         ("menu_symbol_missile", "🚀", "emoji"),
         ("menu_symbol_magnet", "🧲", "emoji"),
-        ("menu_symbol_tractor", "↭", "unicode"),
+        ("menu_symbol_tractor", "✦", "symbol2"),
         ("menu_symbol_ion", "⚛", "symbol1"),
         ("menu_symbol_lives", "⮝", "symbol2"),
         ("menu_symbol_blaster", "⛯", "symbol1"),
         ("menu_symbol_hp", "❤️", "emoji"),
         ("menu_main_spiral", "🌌", "emoji"),
-        ("menu_main_star_fill", "✦", "unicode"),
-        ("menu_main_star_outline", "✧", "unicode"),
+        ("menu_main_star_fill", "✦", "symbol2"),
+        ("menu_main_star_outline", "✧", "symbol2"),
         ("menu_scenario_field", "🪨", "emoji"),
         ("menu_scenario_orbit", "🪐", "emoji"),
-        ("menu_scenario_comets", "☄", "unicode"),
+        ("menu_scenario_comets", "☄", "symbol2"),
         ("menu_scenario_shower", "🌠", "emoji"),
     ];
 

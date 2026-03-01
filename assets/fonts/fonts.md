@@ -2,17 +2,19 @@
 
 ## Fonts to use
 
-For text, use Tektur font throughout the application.
+Use this font priority list throughout the application:
+
+1. Tektur
+2. Noto Sans
+3. Noto Sans Symbols
+4. Noto Sans Symbols 2
+5. Noto Emoji
 
 All active `.ttf` files are stored directly in `assets/fonts/` (no nested font folders).
 
-Whenever there is a symbol that is not represented in Tektur, use symbol fallbacks in this order:
-
-1. Noto Sans Symbols
-2. Noto Sans Symbols 2
-3. Targeted fallback fonts for known missing glyphs:
-	- DejaVu Sans for specific unicode symbols (for example ↭)
-	- Noto Emoji for emoji glyphs (for example 🚀 🧲 💎)
+Whenever there is a symbol that is not represented in an earlier font, move to the next font in the list.
+Noto Sans is the preferred non-emoji fallback for unicode symbols.
+If Noto Sans is not present in `assets/fonts`, runtime currently falls back to DejaVu Sans.
 
 ## Unicode symbols to use in UI
 
@@ -25,7 +27,7 @@ Whenever there is a symbol that is not represented in Tektur, use symbol fallbac
 ⛯ - use for blaster/primary weapon, rendered yellow
 🚀 - use for missiles, rendered orange
 🧲 - use for the ore magnet, rendered red
-↭ - use for tractor beam, rendered cyan
+✦ - use for tractor beam, rendered cyan
 ⚛ - use for ion cannon, rendered light blue
 
 ### Collectable items

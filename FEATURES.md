@@ -76,7 +76,7 @@
 ### Lives System
 
 - The player starts each session with **3 lives** (displayed as repeated `⮝` symbols in the HUD, below the score).
-- Each time the ship is destroyed one heart is consumed and a respawn countdown begins.
+- Each time the ship is destroyed one life symbol is consumed and a respawn countdown begins.
 - The `player_lives` count (default `PLAYER_LIVES = 3`) and all timing constants can be tuned in `assets/physics.toml` without recompilation, and changes hot-reload at runtime.
 
 ### Respawn
@@ -137,7 +137,7 @@ Ore consumables and upgrades are purchased from the **Ore Shop** overlay (open w
 | Restock missile | 1 ore | +1 missile, capped at `missile_ammo_max` |
 
 - Ore is **not spent** if the corresponding stat is already full.
-- The ore HUD row uses compact symbol status indicators: upgrade levels use circled numbers (`①..⑩`), missiles use slot circles (`●` available / `○` empty), tractor shows `○` (off), `⚡` (ready), `⌛` (cooldown), and ion shows `⚡` (ready) or `⌛` (cooldown).
+- The ore HUD row uses compact symbol status indicators: tractor icon is `✦`; upgrade levels use circled numbers (`①..⑩`); missiles use slot circles (`●` available / `○` empty); tractor shows `○` (off), `⚡` (ready), `⌛` (cooldown); ion shows `⚡` (ready) or `⌛` (cooldown).
 - Passive HP regen and passive missile recharge have been **removed**; ore-shop spending is the only way to replenish them.
 
 ### Primary Weapon Upgrades

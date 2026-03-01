@@ -623,8 +623,9 @@ pub fn setup_ore_hud(
     config: Res<PhysicsConfig>,
     font: Res<GameFont>,
     symbol_font: Res<SymbolFont>,
+    symbol_font_2: Res<SymbolFont2>,
     emoji_font: Res<EmojiFont>,
-    unicode_fallback_font: Res<UnicodeFallbackFont>,
+    _unicode_fallback_font: Res<UnicodeFallbackFont>,
 ) {
     commands
         .spawn((
@@ -735,7 +736,7 @@ pub fn setup_ore_hud(
                                 config.missile_ammo_max,
                             )),
                             TextFont {
-                                font: unicode_fallback_font.0.clone(),
+                                font: symbol_font_2.0.clone(),
                                 font_size: config.stats_font_size,
                                 ..default()
                             },
@@ -782,9 +783,9 @@ pub fn setup_ore_hud(
                     })
                     .with_children(|entry| {
                         entry.spawn((
-                            Text::new("↭"),
+                            Text::new("✦"),
                             TextFont {
-                                font: unicode_fallback_font.0.clone(),
+                                font: symbol_font_2.0.clone(),
                                 font_size: config.stats_font_size,
                                 ..default()
                             },
@@ -793,7 +794,7 @@ pub fn setup_ore_hud(
                         entry.spawn((
                             Text::new("① ○"),
                             TextFont {
-                                font: unicode_fallback_font.0.clone(),
+                                font: symbol_font_2.0.clone(),
                                 font_size: config.stats_font_size - 1.0,
                                 ..default()
                             },
@@ -822,7 +823,7 @@ pub fn setup_ore_hud(
                         entry.spawn((
                             Text::new("① ⚡"),
                             TextFont {
-                                font: unicode_fallback_font.0.clone(),
+                                font: symbol_font_2.0.clone(),
                                 font_size: config.stats_font_size - 1.0,
                                 ..default()
                             },

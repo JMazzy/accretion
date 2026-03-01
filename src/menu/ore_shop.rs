@@ -670,7 +670,7 @@ fn spawn_ore_shop_overlay(
                                 };
 
                                 card_col.spawn((
-                                    Text::new("↭ TRACTOR ↭"),
+                                    Text::new("✦ TRACTOR ✦"),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,

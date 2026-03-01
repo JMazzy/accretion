@@ -17,7 +17,7 @@ use super::*;
 fn setup_main_menu(
     mut commands: Commands,
     font: Res<GameFont>,
-    unicode_font: Res<crate::graphics::UnicodeFallbackFont>,
+    symbol_font_2: Res<crate::graphics::SymbolFont2>,
     emoji_font: Res<crate::graphics::EmojiFont>,
 ) {
     commands
@@ -102,7 +102,7 @@ fn setup_main_menu(
                 btn.spawn((
                     Text::new("✦ "),
                     TextFont {
-                        font: unicode_font.0.clone(),
+                        font: symbol_font_2.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -120,7 +120,7 @@ fn setup_main_menu(
                 btn.spawn((
                     Text::new(" ✦"),
                     TextFont {
-                        font: unicode_font.0.clone(),
+                        font: symbol_font_2.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -148,7 +148,7 @@ fn setup_main_menu(
                 btn.spawn((
                     Text::new("✧ "),
                     TextFont {
-                        font: unicode_font.0.clone(),
+                        font: symbol_font_2.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -166,7 +166,7 @@ fn setup_main_menu(
                 btn.spawn((
                     Text::new(" ✧"),
                     TextFont {
-                        font: unicode_font.0.clone(),
+                        font: symbol_font_2.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -192,9 +192,9 @@ fn setup_main_menu(
             ))
             .with_children(|btn| {
                 btn.spawn((
-                    Text::new("↭ "),
+                    Text::new("✦ "),
                     TextFont {
-                        font: unicode_font.0.clone(),
+                        font: symbol_font_2.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -210,9 +210,9 @@ fn setup_main_menu(
                     TextColor(quit_text()),
                 ));
                 btn.spawn((
-                    Text::new(" ↭"),
+                    Text::new(" ✦"),
                     TextFont {
-                        font: unicode_font.0.clone(),
+                        font: symbol_font_2.0.clone(),
                         font_size: 18.0,
                         ..default()
                     },
@@ -241,7 +241,6 @@ fn setup_main_menu(
 pub(super) fn setup_main_menu_when_font_ready(
     commands: Commands,
     font: Res<GameFont>,
-    unicode_font: Res<crate::graphics::UnicodeFallbackFont>,
     emoji_font: Res<crate::graphics::EmojiFont>,
     symbol_font_2: Res<crate::graphics::SymbolFont2>,
     loaded_fonts: Res<Assets<Font>>,
@@ -253,13 +252,12 @@ pub(super) fn setup_main_menu_when_font_ready(
 
     if !loaded_fonts.contains(font.0.id())
         || !loaded_fonts.contains(symbol_font_2.0.id())
-        || !loaded_fonts.contains(unicode_font.0.id())
         || !loaded_fonts.contains(emoji_font.0.id())
     {
         return;
     }
 
-    setup_main_menu(commands, font, unicode_font, emoji_font);
+    setup_main_menu(commands, font, symbol_font_2, emoji_font);
 }
 
 /// Recursively despawn all main-menu entities.
