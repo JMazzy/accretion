@@ -1,5 +1,37 @@
 # Accretion Changelog
 
+## Backlog Cleanup: Completed Items Removed — March 1, 2026
+
+### Normalized backlog to show only pending work
+
+**What changed**:
+- Removed completed Track A and Track B checklist entries from `BACKLOG.md`.
+- Removed overlapping completed P0 campaign-foundation items that duplicated delivered A1–A6 work.
+- Removed stale dependency annotations that pointed to now-completed items.
+- Kept only outstanding implementation candidates and follow-on items (loadouts, intermission upgrades, campaign-scoped persistence, boss/enemy expansions, performance/tooling roadmap).
+
+**Impact**:
+- `BACKLOG.md` now matches its stated convention: completed work is tracked in `CHANGELOG.md`/`FEATURES.md`, while backlog lists actionable remaining work only.
+
+## Track B: Procedural Spawn-Shape Pass Complete (B1-B4) — March 1, 2026
+
+### Extended irregular spawn geometry to all scenarios with guardrail tests
+
+**What changed**:
+- Applied the spawn-shape variation pipeline beyond Field to Orbit, Comets, and Shower scenario generators in `src/asteroid.rs`.
+- Added `build_spawn_shape_with_variation(...)` helper to keep shape variation + area normalization consistent across spawn paths.
+- Orbit/Comets/Shower now use seeded RNG instances and emit scenario seeds for reproducibility of spawn-shape variation.
+- Added guardrail tests for spawn-shape validity and stability:
+  - convex-hull constructibility after variation,
+  - bounded vertex growth under edge subdivision.
+- Updated docs (`ARCHITECTURE.md`, `FEATURES.md`) and backlog status for Track B completion.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo test spawn_shape_variation -- --nocapture` ✅
+- `cargo test` ✅
+
 ## Campaign Track A: Slot UX + Closeout (A5/A6) — March 2, 2026
 
 ### Added campaign slot-select/rename/start UI and finalized Track A docs/tests

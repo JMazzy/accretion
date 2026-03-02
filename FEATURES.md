@@ -51,7 +51,7 @@
 - A **`PLAYER_BUFFER_RADIUS`** exclusion zone around the player start (origin) keeps the starting area clear
 - **Noise-based clustering**: positions are sampled from a hash-based 2D noise function so asteroids naturally form groups; cluster density and size are controlled by `noise_frequency` in `src/asteroid.rs`
 - Random shapes (triangles, squares, pentagons, hexagons, **heptagons, octagons**) and sizes (`ASTEROID_SIZE_SCALE_MIN`–`ASTEROID_SIZE_SCALE_MAX`×), random initial velocities
-- **Vertex jitter**: each spawned polygon has per-vertex random offsets applied (amplitude proportional to `size_scale × 0.8`) so asteroids appear worn and irregular rather than perfectly geometric
+- **Procedural spawn-shape pass**: initial asteroids use runtime-configurable jitter + optional per-edge subdivision + radial value-noise modulation (`spawn_shape_*` knobs in `assets/physics.toml`) so silhouettes start irregular across all scenarios.
 - One anchored **planet** (16-sided near-circle) spawns at a fixed offset from the origin; it participates in gravity but is excluded from merge/split destruction logic
 
 ### Camera Controls
@@ -316,9 +316,9 @@ Live: XX | Culled: YY | Merged: ZZ
 - Weapon interactions:
   - Projectiles and missiles are consumed on impact
   - Planet hits do **not** grant score and do not split/destroy the planet
-- Current usage: the Field scenario is a pure asteroid-only clustered field (no planet), and the Orbit scenario uses a stronger central anchored planet with jittered orbital debris rings.
-- Comets scenario: large-biased mixed polygons spawn near the soft-boundary annulus with gentle inward trajectories and tangential variance for crossing flows.
-- Shower scenario: dense small-body-biased asteroids also start in the outer annulus, with inward trajectories and mild angular/tangential variance to create inward rain distinct from Comets.
+- Current usage: the Field scenario is a pure asteroid-only clustered field (no planet), and the Orbit scenario uses a stronger central anchored planet with irregular debris rings.
+- Comets scenario: large-biased mixed polygons spawn near the soft-boundary annulus with gentle inward trajectories and tangential variance for crossing flows, with the same spawn-shape pass applied.
+- Shower scenario: dense small-body-biased asteroids also start in the outer annulus, with inward trajectories and mild angular/tangential variance to create inward rain distinct from Comets, with the same spawn-shape pass applied.
 
 ### Asteroid Rendering
 

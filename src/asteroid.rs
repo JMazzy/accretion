@@ -115,8 +115,12 @@ fn apply_vertex_jitter(
                 let edge = v1 - v0;
                 let edge_dir = edge.normalize_or_zero();
                 let normal = Vec2::new(-edge.y, edge.x).normalize_or_zero();
-                let offset = normal * rng.gen_range(-jitter..jitter)
-                    + edge_dir * rng.gen_range(-(jitter * 0.5)..(jitter * 0.5));
+                let offset = if jitter <= 1e-6 {
+                    Vec2::ZERO
+                } else {
+                    normal * rng.gen_range(-jitter..jitter)
+                        + edge_dir * rng.gen_range(-(jitter * 0.5)..(jitter * 0.5))
+                };
                 subdivided.push(midpoint + offset);
             }
         }
@@ -166,6 +170,19 @@ fn apply_vertex_jitter(
             v.normalize_or_zero() * radius * radial_scale
         })
         .collect()
+}
+
+fn build_spawn_shape_with_variation(
+    raw_vertices: Vec<Vec2>,
+    scale: f32,
+    rng: &mut impl Rng,
+    config: &PhysicsConfig,
+) -> (Vec<Vec2>, u32) {
+    let varied = apply_vertex_jitter(raw_vertices, scale, rng, config);
+    let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+    let unit_size = ((polygon_area(&varied) / tri_area).round() as u32).max(1);
+    let normalized = rescale_vertices_to_area(&varied, unit_size as f32 / config.asteroid_density);
+    (normalized, unit_size)
 }
 
 /// Build a safe asteroid collider from local-space polygon vertices.
@@ -334,7 +351,7 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
 
         // Random shape (triangle, square, pentagon, hexagon, heptagon, octagon).
         let shape = rng.gen_range(0..6);
-        let mut vertices = match shape {
+        let vertices = match shape {
             0 => generate_triangle(size_scale, config.triangle_base_side),
             1 => generate_square(size_scale, config.square_base_half),
             2 => generate_pentagon(size_scale, config.polygon_base_radius),
@@ -343,15 +360,9 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
             _ => generate_octagon(size_scale, config.octagon_base_radius),
         };
 
-        // Apply vertex jitter for natural-looking shapes.
-        vertices = apply_vertex_jitter(vertices, size_scale, &mut rng, config);
-
-        // Derive AsteroidSize from actual polygon area so the density invariant
-        // (vertices.area == AsteroidSize / density) holds from the very first frame.
-        // Accounts for the randomised scale and jitter applied above.
-        let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
-        let unit_size = ((polygon_area(&vertices) / tri_area).round() as u32).max(1);
-        vertices = rescale_vertices_to_area(&vertices, unit_size as f32 / config.asteroid_density);
+        // Apply procedural spawn-shape variation and normalize to mass/area invariant.
+        let (vertices, unit_size) =
+            build_spawn_shape_with_variation(vertices, size_scale, &mut rng, config);
 
         // Random velocity (gentle to avoid instant collisions).
         let speed_scale = rng.gen_range(0.35..1.55);
@@ -495,6 +506,10 @@ pub fn spawn_planetoid(commands: &mut Commands, position: Vec2, config: &Physics
 const ORBIT_CENTRAL_MASS: u32 = 2800;
 
 pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
+    let seed = rand::random::<u64>();
+    let mut rng = StdRng::seed_from_u64(seed);
+    info!("Orbit scenario seed: {}", seed);
+
     // ── Central anchored planet ──────────────────────────────────────────────
     //
     // 5.2× the normal planetoid radius gives a visually dominant body.  It is placed
@@ -569,11 +584,8 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
     //   Ring 3: r=680, 30 pentagons/hexs/hepts   — sparse outer ring, larger bodies
     let g = config.gravity_const;
     let cm = ORBIT_CENTRAL_MASS as f32;
-    let mut rng = rand::thread_rng();
-
     // ── Ring 1: unit triangles (inner, unchanged) ────────────────────────────
     let (r1, n1) = (260.0_f32, 16u32);
-    let m_tri = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
     // v = sqrt(G·CM·density/r) — after density rescaling all bodies have
     // m_rapier_i = AsteroidSize_i/density, so centripetal balance gives this.
     let v_orbit = |r: f32| -> f32 { (g * cm * config.asteroid_density / r).sqrt() };
@@ -585,16 +597,18 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
         let tangent = Vec2::new(-angle.sin(), angle.cos());
         let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
         let speed_boost = rng.gen_range(1.08..1.20);
-        let vertices = rescale_vertices_to_area(
-            &generate_triangle(1.0, config.triangle_base_side),
-            1.0 / config.asteroid_density,
+        let (vertices, asteroid_size) = build_spawn_shape_with_variation(
+            generate_triangle(1.0, config.triangle_base_side),
+            1.0,
+            &mut rng,
+            config,
         );
         commands.spawn((
             (
                 Transform::from_translation(pos.extend(0.05)).with_rotation(initial_rotation),
                 GlobalTransform::default(),
                 Asteroid,
-                AsteroidSize(1),
+                AsteroidSize(asteroid_size),
                 NeighborCount(0),
                 Vertices(vertices.clone()),
                 BaseVertices(vertices.clone()),
@@ -647,22 +661,15 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
         let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
         let speed_boost = rng.gen_range(1.02..1.16);
 
-        let (raw_verts, pre_area) = if i % 2 == 0 {
+        let raw_verts = if i % 2 == 0 {
             // Triangle
-            let scaled_side = config.triangle_base_side * scale;
-            let a = 3.0_f32.sqrt() / 4.0 * scaled_side.powi(2);
-            (generate_triangle(scale, config.triangle_base_side), a)
+            generate_triangle(scale, config.triangle_base_side)
         } else {
             // Square
-            let half = config.square_base_half * scale;
-            let a = (2.0 * half).powi(2);
-            (generate_square(scale, config.square_base_half), a)
+            generate_square(scale, config.square_base_half)
         };
-        // Derive AsteroidSize from polygon area, then rescale to the density-consistent
-        // area so the invariant vertices.area == AsteroidSize / density holds at spawn.
-        let asteroid_size = ((pre_area / m_tri).round() as u32).max(4);
-        let vertices =
-            rescale_vertices_to_area(&raw_verts, asteroid_size as f32 / config.asteroid_density);
+        let (vertices, asteroid_size) =
+            build_spawn_shape_with_variation(raw_verts, scale, &mut rng, config);
 
         commands.spawn((
             (
@@ -722,29 +729,22 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
         let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
         let speed_boost = rng.gen_range(0.98..1.12);
 
-        let (raw_verts, pre_area) = match i % 3 {
+        let raw_verts = match i % 3 {
             0 => {
                 // Pentagon (5 sides)
-                let r = config.polygon_base_radius * scale;
-                let a = 5.0 / 2.0 * r.powi(2) * (TAU / 5.0).sin();
-                (generate_pentagon(scale, config.polygon_base_radius), a)
+                generate_pentagon(scale, config.polygon_base_radius)
             }
             1 => {
                 // Hexagon (6 sides)
-                let r = config.polygon_base_radius * scale;
-                let a = 6.0 / 2.0 * r.powi(2) * (TAU / 6.0).sin();
-                (generate_hexagon(scale, config.polygon_base_radius), a)
+                generate_hexagon(scale, config.polygon_base_radius)
             }
             _ => {
                 // Heptagon (7 sides)
-                let r = config.heptagon_base_radius * scale;
-                let a = 7.0 / 2.0 * r.powi(2) * (TAU / 7.0).sin();
-                (generate_heptagon(scale, config.heptagon_base_radius), a)
+                generate_heptagon(scale, config.heptagon_base_radius)
             }
         };
-        let asteroid_size = ((pre_area / m_tri).round() as u32).max(4);
-        let vertices =
-            rescale_vertices_to_area(&raw_verts, asteroid_size as f32 / config.asteroid_density);
+        let (vertices, asteroid_size) =
+            build_spawn_shape_with_variation(raw_verts, scale, &mut rng, config);
 
         commands.spawn((
             (
@@ -801,8 +801,10 @@ pub fn spawn_orbit_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 /// `AsteroidSize` is derived from the ratio of each polygon's area to the
 /// unit-triangle area so that the gravity system weights them correctly.
 pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
-    let mut rng = rand::thread_rng();
-    let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+    let seed = rand::random::<u64>();
+    let mut rng = StdRng::seed_from_u64(seed);
+    info!("Comets scenario seed: {}", seed);
+
     let outer_spawn_max = (config.soft_boundary_radius - 30.0).min(config.cull_distance - 80.0);
     let outer_spawn_min = (outer_spawn_max * 0.74).max(config.player_buffer_radius + 300.0);
 
@@ -827,7 +829,7 @@ pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
             _ => rng.gen_range(10usize..=12),
         };
         let base_radius = config.polygon_base_radius;
-        let vertices = generate_regular_polygon(sides, scale, base_radius);
+        let raw_vertices = generate_regular_polygon(sides, scale, base_radius);
         let initial_rotation = Quat::from_rotation_z(rng.gen_range(0.0..TAU));
 
         // Gentle inward velocity with modest tangential variation.
@@ -838,13 +840,8 @@ pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
         let speed: f32 = rng.gen_range(14.0..34.0);
         let velocity = travel_dir * speed;
 
-        // Derive AsteroidSize from polygon area, then rescale vertices to satisfy
-        // the density invariant: vertices.area == AsteroidSize / density.
-        let pre_area =
-            (sides as f32 / 2.0) * (base_radius * scale).powi(2) * (TAU / sides as f32).sin();
-        let unit_size = ((pre_area / tri_area).round() as u32).max(1);
-        let vertices =
-            rescale_vertices_to_area(&vertices, unit_size as f32 / config.asteroid_density);
+        let (vertices, unit_size) =
+            build_spawn_shape_with_variation(raw_vertices, scale, &mut rng, config);
 
         commands.spawn((
             (
@@ -897,8 +894,10 @@ pub fn spawn_comets_scenario(commands: &mut Commands, config: &PhysicsConfig) {
 /// radius disk with near-zero initial velocity.  Mutual N-body gravity quickly
 /// collapses them into growing clusters — watch the field accrete in real time.
 pub fn spawn_shower_scenario(commands: &mut Commands, config: &PhysicsConfig) {
-    let mut rng = rand::thread_rng();
-    let tri_area = 3.0_f32.sqrt() / 4.0 * config.triangle_base_side.powi(2);
+    let seed = rand::random::<u64>();
+    let mut rng = StdRng::seed_from_u64(seed);
+    info!("Shower scenario seed: {}", seed);
+
     let outer_spawn_max = (config.soft_boundary_radius - 20.0).min(config.cull_distance - 70.0);
     let outer_spawn_min = (outer_spawn_max * 0.72).max(config.player_buffer_radius + 280.0);
     let player_buffer = config.player_buffer_radius;
@@ -923,47 +922,16 @@ pub fn spawn_shower_scenario(commands: &mut Commands, config: &PhysicsConfig) {
         };
 
         let shape = rng.gen_range(0..5);
-        let (raw_vertices, pre_area) = match shape {
-            0 => {
-                let side = config.triangle_base_side * scale;
-                (
-                    generate_triangle(scale, config.triangle_base_side),
-                    3.0_f32.sqrt() / 4.0 * side.powi(2),
-                )
-            }
-            1 => {
-                let half = config.square_base_half * scale;
-                (
-                    generate_square(scale, config.square_base_half),
-                    (2.0 * half).powi(2),
-                )
-            }
-            2 => {
-                let radius = config.polygon_base_radius * scale;
-                (
-                    generate_pentagon(scale, config.polygon_base_radius),
-                    5.0 / 2.0 * radius.powi(2) * (TAU / 5.0).sin(),
-                )
-            }
-            3 => {
-                let radius = config.polygon_base_radius * scale;
-                (
-                    generate_hexagon(scale, config.polygon_base_radius),
-                    6.0 / 2.0 * radius.powi(2) * (TAU / 6.0).sin(),
-                )
-            }
-            _ => {
-                let radius = config.heptagon_base_radius * scale;
-                (
-                    generate_heptagon(scale, config.heptagon_base_radius),
-                    7.0 / 2.0 * radius.powi(2) * (TAU / 7.0).sin(),
-                )
-            }
+        let raw_vertices = match shape {
+            0 => generate_triangle(scale, config.triangle_base_side),
+            1 => generate_square(scale, config.square_base_half),
+            2 => generate_pentagon(scale, config.polygon_base_radius),
+            3 => generate_hexagon(scale, config.polygon_base_radius),
+            _ => generate_heptagon(scale, config.heptagon_base_radius),
         };
 
-        let unit_size = ((pre_area / tri_area).round() as u32).max(1);
-        let vertices =
-            rescale_vertices_to_area(&raw_vertices, unit_size as f32 / config.asteroid_density);
+        let (vertices, unit_size) =
+            build_spawn_shape_with_variation(raw_vertices, scale, &mut rng, config);
 
         let inward = -position.normalize_or_zero();
         let tangent = Vec2::new(-inward.y, inward.x);
@@ -1432,6 +1400,42 @@ mod tests {
         assert_eq!(
             out_a, out_b,
             "spawn-shape variation should be deterministic for identical seed/config"
+        );
+    }
+
+    #[test]
+    fn spawn_shape_variation_keeps_convex_hull_constructible() {
+        let cfg = PhysicsConfig::default();
+        let mut rng = StdRng::seed_from_u64(2026);
+
+        for sides in 3..=10 {
+            let base = generate_regular_polygon(sides, 1.3, 7.0);
+            let varied = apply_vertex_jitter(base, 1.3, &mut rng, &cfg);
+            assert!(
+                Collider::convex_hull(&varied).is_some(),
+                "varied shape with {sides} sides must remain convex-hull constructible"
+            );
+        }
+    }
+
+    #[test]
+    fn spawn_shape_edge_subdivision_growth_is_bounded() {
+        let mut cfg = PhysicsConfig::default();
+        cfg.spawn_shape_edge_subdivision_chance = 1.0;
+        cfg.spawn_shape_subdivision_jitter_fraction = 0.0;
+        cfg.spawn_shape_noise_amplitude = 0.0;
+
+        let mut rng = StdRng::seed_from_u64(99);
+        let base = generate_regular_polygon(8, 1.0, 9.0);
+        let out = apply_vertex_jitter(base.clone(), 1.0, &mut rng, &cfg);
+
+        assert!(
+            out.len() >= base.len(),
+            "subdivision should not reduce vertex count"
+        );
+        assert!(
+            out.len() <= base.len() * 2,
+            "single-pass edge subdivision should add at most one point per edge"
         );
     }
 
