@@ -10,35 +10,174 @@ Last updated: March 1, 2026.
 - Dependency notation: `depends on ...` indicates blocked tasks.
 - Scope guidance: each checkbox should be shippable in one focused implementation cycle with tests/docs updates.
 
+## Immediate Execution Plan (Foundation Sprint)
+
+Goal: deliver a playable campaign foundation (progression + win/fail loop) while completing the next visual quality step for initial asteroid generation.
+
+### Track A — Campaign Foundation (MVP)
+
+- [ ] **A1: Mode/state scaffolding (`Campaign` vs `Practice`)**
+	- Add explicit mode/state model so current scenario loop runs as `Practice` and new flow can run as `Campaign`.
+	- Wire menu entry points and state transitions without changing existing practice behavior.
+	- Likely touchpoints: `src/menu/`, `src/main.rs`, `src/menu/types.rs`, `FEATURES.md`.
+	- Acceptance: both modes launch from menu; practice regression tests/behavior remain intact.
+
+- [ ] **A2: Mission data model + runtime resource** `depends on A1`
+	- Introduce mission descriptor types (mission id, map/scenario source, wave count, reward, next mission id).
+	- Add campaign runtime resource tracking active mission, wave index, and mission state.
+	- Likely touchpoints: `src/test_mode.rs` or new `src/campaign.rs`, `src/main.rs`, `ARCHITECTURE.md`.
+	- Acceptance: campaign boot can load mission-1 definition deterministically from data.
+
+- [ ] **A3: Wave director v1 (spawn/break/escalation loop)** `depends on A2`
+	- Implement minimal wave state machine: `Warmup -> ActiveWave -> InterWaveBreak -> Complete`.
+	- Connect to enemy spawning controls so each wave raises pressure (count/tier/cadence).
+	- Likely touchpoints: `src/enemy.rs`, new `src/campaign.rs`, `src/simulation.rs`.
+	- Acceptance: mission runs 3+ waves with clear breaks and increasing difficulty.
+
+- [ ] **A4: Mission win/fail + progression transitions** `depends on A3`
+	- Win: all waves cleared (boss-gate can be layered later).
+	- Fail: player death/lives exhaustion exits mission with deterministic state reset/continue options.
+	- Likely touchpoints: `src/menu/`, `src/player/state.rs`, `src/campaign.rs`.
+	- Acceptance: end-of-mission transitions advance to next mission or fail screen correctly.
+
+- [ ] **A5: Campaign save slots v1 (name + mission progress)** `depends on A4`
+	- Add campaign slot schema and persistence for slot name, mission index, and campaign progression state.
+	- Keep slot data isolated from practice saves.
+	- Likely touchpoints: `src/save.rs`, `saves/`, `src/menu/load_game.rs`, `src/menu/main_menu.rs`.
+	- Acceptance: create/load/resume campaign slot with persistent mission progression.
+
+- [ ] **A6: Campaign foundation validation + docs update** `depends on A5`
+	- Add targeted tests for mission state transitions and save/load roundtrip.
+	- Update docs for mode split and campaign loop semantics.
+	- Acceptance: `cargo check`, `cargo clippy -- -D warnings`, `cargo test` pass; `ARCHITECTURE.md`/`FEATURES.md`/`CHANGELOG.md` updated.
+
+### Track B — Procedural Shape Pass (spawn-time visual quality)
+
+- [ ] **B1: Spawn-shape tuning config (runtime knobs)**
+	- Add config fields for spawn irregularity controls (radial jitter, edge subdivision chance, noise frequency/amplitude bounds).
+	- Load from `assets/physics.toml` with sensible defaults/fallbacks.
+	- Likely touchpoints: `src/constants.rs`, `src/config.rs`, `assets/physics.toml`, `ARCHITECTURE.md`.
+	- Acceptance: spawn-shape behavior is fully tuneable without recompilation.
+
+- [ ] **B2: Deterministic irregular polygon generation** `depends on B1`
+	- Extend asteroid spawn geometry generation with deterministic per-asteroid noise/jitter (seeded RNG path already used in scenarios).
+	- Preserve local-space vertex assumptions and area/mass normalization.
+	- Likely touchpoints: `src/asteroid.rs`.
+	- Acceptance: initial asteroids display broader silhouettes while preserving mass-density invariants.
+
+- [ ] **B3: Scenario coverage + guardrails** `depends on B2`
+	- Apply shape pass consistently to field/orbit/comets/shower and any direct spawn helper paths.
+	- Maintain collider stability via existing Option A strategy (stable physics collider path).
+	- Acceptance: all major spawn paths produce crater-ready, irregular initial shapes with no collider fallbacks spike.
+
+- [ ] **B4: Regression checks + performance sanity** `depends on B3`
+	- Add/extend tests for generated polygon validity (>=3 verts, finite coords, positive area, convex-hull collider success where required).
+	- Do quick perf sanity at representative spawn counts to avoid excessive vertex growth.
+	- Acceptance: tests pass and no obvious frame-time regression in baseline scenarios.
+
+### Recommended execution order
+
+- [ ] **Run B1 → B2 in parallel with A1 → A2, then finish A3 → A6, and B3 → B4 before boss/loadout expansions**
+	- Rationale: unlock campaign core loop quickly while visual spawn improvements land early and stabilize before broader content scaling.
+
 ## P0 — Next Implementation Candidates
 
 ### Visual Features
 
-- [X] **Concave deformation: damage model + rendering** ✅ Complete (March 1, 2026)
-	- Crater-based deformation with local edge subdivision and inward crater shaping.
-	- Repeated non-lethal hits add crater detail instead of flattening/removing vertices.
-	- Acceptance: repeated non-lethal hits produce stable crater-like dents without collapsing to triangles.
-	- Implementation: asteroid visuals now regenerate from `BaseVertices` + accumulated `CraterData`; impacts add craters (position/depth/radius) with bounded count, then rebuild deformed local vertices.
+- [ ] **Procedural asteroid shape pass (spawn-time noise) for all scenarios**
+	- Extend spawn generators to produce richer irregular silhouettes from the start (not only through combat damage).
+	- Keep physics stable by continuing to use the established collider strategy.
+	- Acceptance: fresh spawns show visibly broader shape variety without collider regressions.
 
-- [X] **Concave deformation: collider/physics strategy** ✅ Complete (March 1, 2026)
-	- Option A strategy implemented: visual concavity with stable convex physics collider.
-	- Collider derives from `BaseVertices` (undeformed convex hull), while render mesh uses crater-deformed `Vertices`.
-	- Acceptance: deformed asteroids remain physically stable/performance-safe with no decomposition overhead.
-	- Implementation: removed decomposition path for deformation handling; convex hull colliders now stay stable while crater visuals update independently.
+### Mission Progression
 
-## P1 — Next Queue
+- [ ] **Campaign mode framework + mode split**
+	- Add `Campaign` as the primary progression mode and relabel current scenario flow as `Practice`.
+	- Route menu and runtime state transitions so both modes are selectable and isolated.
+	- Acceptance: player can launch either mode from menu; practice behavior remains unchanged.
+
+- [ ] **Campaign mission definition + map binding** `depends on Campaign mode framework + mode split`
+	- Define mission descriptor format (mission id, map/scenario seed, wave profile, rewards, next mission).
+	- Reuse existing scenario generators as initial mission-map backends.
+	- Acceptance: campaign can start mission 1 from data and load the correct map profile.
+
+- [ ] **Wave director with inter-wave downtime** `depends on Campaign mission definition + map binding`
+	- Add wave scheduler with clear states: warmup → active wave → break → next wave.
+	- Scale enemy count/tier/composition per wave for increasing challenge.
+	- Acceptance: one mission runs multiple escalating waves with timed breaks for ore collection.
+
+- [ ] **Mission completion + failure + progression rules** `depends on Wave director with inter-wave downtime`
+	- Win condition: all configured waves (and mission boss, when present) are defeated.
+	- Failure condition: standard player death/lives rules terminate mission attempt.
+	- Acceptance: mission end transitions to next mission or mission-failed screen with deterministic outcomes.
+
+- [ ] **Campaign save slots + naming + resume** `depends on Mission completion + failure + progression rules`
+	- Add dedicated campaign slots with user-provided save names and persisted mission index/progression state.
+	- Keep campaign progression isolated per slot (no global cross-save carryover).
+	- Acceptance: player can create, rename, save, and resume campaign runs from the menu.
+
+### Upgrade Enhancements
+
+- [ ] **Campaign loadout selection (primary/secondary/tool)** `depends on Campaign mode framework + mode split`
+	- Add pre-mission loadout selection: one primary, one secondary, one tool.
+	- Initial supported set: primary `blaster`; secondary `missile`/`ion cannon`; tool `ore magnet` (tractor beam TBD).
+	- Acceptance: selected loadout is visible in HUD/state and applied during mission runtime.
+
+- [ ] **Between-mission upgrade/shop flow for campaign** `depends on Mission completion + failure + progression rules`
+	- Add intermission upgrade step where ore can be spent before next mission starts.
+	- Preserve current any-time ore shop behavior in practice mode.
+	- Acceptance: campaign enforces between-mission upgrade cadence; practice remains immediate-access.
+
+- [ ] **Campaign-scoped upgrade persistence** `depends on Campaign save slots + naming + resume`
+	- Persist weapon/tool levels and selected loadout per campaign save slot.
+	- Ensure no upgrade progression leaks across different saves.
+	- Acceptance: upgrades carry across missions in same campaign slot and reset for new slots.
+
+- [ ] **Split blaster upgrade tracks (chip size vs destroy threshold)**
+	- Decouple current blaster progression so chip power and destroy threshold can be tuned independently.
+	- Keep existing balance defaults via migration mapping for old saves.
+	- Acceptance: two independently upgradable stats exist and are reflected in combat behavior.
 
 ### Boss Progression
 
-- [ ] **Boss ships: framework** `depends on Enemy ships: combat loop`
+- [ ] **Boss ships: framework**
 	- Boss entity type, health pool, weak-point/damage gating model.
 	- Intro/outro flow and baseline reward integration.
-	- Acceptance: one boss can spawn and be defeated end-to-end.
+	- Acceptance: one boss can spawn and be defeated end-to-end within a campaign mission.
 
 - [ ] **Boss ships: attack pattern set** `depends on Boss ships: framework`
 	- Multi-phase behavior (at least two phases) with readable telegraphs.
 	- Balance pass for projectile density and survivability.
 	- Acceptance: boss fight has distinct phase transitions and no soft-locks.
+
+- [ ] **Mission end boss-gate integration** `depends on Boss ships: attack pattern set; depends on Mission completion + failure + progression rules`
+	- Make boss defeat the final gate for mission completion.
+	- Integrate rewards/transition to next mission on boss death.
+	- Acceptance: mission cannot complete until boss is defeated; defeat cleanly advances progression.
+
+### Enemy Enhancements
+
+- [ ] **Enemy scaling model pass (campaign-aware levels)** `depends on Wave director with inter-wave downtime`
+	- Tie enemy stat/tier scaling to mission and wave progression curves.
+	- Acceptance: measurable difficulty increase across mission waves without spike regressions.
+
+- [ ] **Enemy HUD health bars**
+	- Add compact world-space health bars for enemies, style-aligned with player readability goals.
+	- Acceptance: enemy remaining HP is visible and updates correctly under damage.
+
+- [ ] **Enemy variety set: silhouettes + movement + attack patterns**
+	- Expand enemy roster with additional hull shapes and at least one new movement and attack behavior.
+	- Acceptance: wave composition includes at least two tactically distinct enemy archetypes.
+
+- [ ] **Enemy formation behavior** `depends on Enemy variety set: silhouettes + movement + attack patterns`
+	- Add formation-capable enemy group behavior (spawn + maintain + break conditions).
+	- Acceptance: at least one wave spawns enemies in a stable formation pattern.
+
+- [ ] **Enemy ore-drop scaling by level**
+	- Award ore on enemy defeat based on enemy tier/mission context.
+	- Acceptance: higher-tier enemies drop more ore and drops are reflected in campaign economy.
+
+## P1 — Next Queue
 
 ### Visual Features
 
