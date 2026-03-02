@@ -93,6 +93,14 @@
 
 ## Save / Load
 
+### Campaign Slots
+
+- From the main menu, click **CAMPAIGN** to open the campaign slot screen.
+- Choose **SLOT 1 / SLOT 2 / SLOT 3** to select where campaign progression is stored.
+- Type a slot name using keyboard input (`A-Z`, `0-9`, space, `-`) and click **SAVE NAME**.
+- Click **START / RESUME** to begin from that slot’s current mission (or create a new run if empty).
+- Campaign progression is saved independently from practice save snapshots.
+
 ### Save Slots
 
 - The game supports **three manual save slots** (`saves/slot_1.toml`, `saves/slot_2.toml`, `saves/slot_3.toml`).

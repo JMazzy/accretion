@@ -96,7 +96,7 @@ fn setup_main_menu(
                 },
                 BackgroundColor(start_bg()),
                 BorderColor::all(start_border()),
-                MenuStartButton,
+                MenuCampaignButton,
             ))
             .with_children(|btn| {
                 btn.spawn((
@@ -109,7 +109,7 @@ fn setup_main_menu(
                     TextColor(start_text()),
                 ));
                 btn.spawn((
-                    Text::new("START GAME"),
+                    Text::new("CAMPAIGN"),
                     TextFont {
                         font: font.0.clone(),
                         font_size: 18.0,
@@ -119,6 +119,52 @@ fn setup_main_menu(
                 ));
                 btn.spawn((
                     Text::new(" ✦"),
+                    TextFont {
+                        font: symbol_font_2.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(start_text()),
+                ));
+            });
+
+            spacer(root, 14.0);
+
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(220.0),
+                    height: Val::Px(50.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(start_bg()),
+                BorderColor::all(start_border()),
+                MenuPracticeButton,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new("✧ "),
+                    TextFont {
+                        font: symbol_font_2.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(start_text()),
+                ));
+                btn.spawn((
+                    Text::new("PRACTICE"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 18.0,
+                        ..default()
+                    },
+                    TextColor(start_text()),
+                ));
+                btn.spawn((
+                    Text::new(" ✧"),
                     TextFont {
                         font: symbol_font_2.0.clone(),
                         font_size: 18.0,
@@ -267,23 +313,57 @@ pub(super) fn cleanup_main_menu(mut commands: Commands, query: Query<Entity, Wit
     }
 }
 
-/// Handle Start Game and Quit button presses.
+/// Handle Campaign / Practice / Load / Quit button presses.
 ///
-/// - **Start Game** → transitions to [`GameState::ScenarioSelect`].
+/// - **Campaign** → sets [`SelectedGameMode::Campaign`] then transitions to [`GameState::CampaignSelect`].
+/// - **Practice** → sets [`SelectedGameMode::Practice`] then transitions to [`GameState::ScenarioSelect`].
 /// - **Load Game** → transitions to [`GameState::LoadGameMenu`].
 /// - **Quit** → sends [`AppExit`] to gracefully shut down.
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub(super) fn menu_button_system(
-    start_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuStartButton>)>,
+    campaign_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<MenuCampaignButton>),
+    >,
+    practice_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<MenuPracticeButton>),
+    >,
     load_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuLoadButton>)>,
     quit_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<MenuQuitButton>)>,
     mut btn_text: Query<&mut TextColor>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut selected_mode: ResMut<SelectedGameMode>,
     mut exit: MessageWriter<bevy::app::AppExit>,
 ) {
-    for (interaction, children) in start_query.iter() {
+    for (interaction, children) in campaign_query.iter() {
         match interaction {
             Interaction::Pressed => {
+                *selected_mode = SelectedGameMode::Campaign;
+                next_state.set(GameState::CampaignSelect);
+            }
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(start_text());
+                    }
+                }
+            }
+        }
+    }
+
+    for (interaction, children) in practice_query.iter() {
+        match interaction {
+            Interaction::Pressed => {
+                *selected_mode = SelectedGameMode::Practice;
                 next_state.set(GameState::ScenarioSelect);
             }
             Interaction::Hovered => {

@@ -164,6 +164,7 @@ pub fn cleanup_load_game_menu(mut commands: Commands, query: Query<Entity, With<
 }
 
 #[allow(clippy::type_complexity)]
+#[allow(clippy::too_many_arguments)]
 pub fn load_game_menu_button_system(
     mut commands: Commands,
     slot1_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<LoadSlot1Button>)>,
@@ -172,6 +173,7 @@ pub fn load_game_menu_button_system(
     back_query: Query<(&Interaction, &Children), (Changed<Interaction>, With<LoadGameBackButton>)>,
     mut btn_text: Query<&mut TextColor>,
     mut next_state: ResMut<NextState<GameState>>,
+    mut selected_mode: ResMut<SelectedGameMode>,
 ) {
     let mut handle_slot = |slot: u8, interaction: &Interaction| -> bool {
         if *interaction != Interaction::Pressed {
@@ -181,6 +183,7 @@ pub fn load_game_menu_button_system(
         match load_slot(slot) {
             Ok(snapshot) => {
                 commands.insert_resource(PendingLoadedSnapshot(Some(snapshot)));
+                *selected_mode = SelectedGameMode::Practice;
                 next_state.set(GameState::Playing);
                 true
             }

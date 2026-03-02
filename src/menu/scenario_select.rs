@@ -57,7 +57,7 @@ fn setup_scenario_select(
                     TextColor(title_color()),
                 ));
                 title.spawn((
-                    Text::new("SCENARIOS & SAVES"),
+                    Text::new("PRACTICE SCENARIOS"),
                     TextFont {
                         font: font.0.clone(),
                         font_size: 42.0,
@@ -85,7 +85,7 @@ fn setup_scenario_select(
             })
             .with_children(|subtitle| {
                 subtitle.spawn((
-                    Text::new("Choose a scenario to play "),
+                    Text::new("Choose a practice scenario "),
                     TextFont {
                         font: font.0.clone(),
                         font_size: 16.0,
@@ -505,6 +505,7 @@ pub fn scenario_select_button_system(
     child_nodes: Query<&Children>,
     mut next_state: ResMut<NextState<GameState>>,
     mut selected: ResMut<SelectedScenario>,
+    mut selected_mode: ResMut<SelectedGameMode>,
 ) {
     fn set_descendant_text_color(
         root_children: &Children,
@@ -526,6 +527,7 @@ pub fn scenario_select_button_system(
     for (interaction, children) in field_query.iter() {
         match interaction {
             Interaction::Pressed => {
+                *selected_mode = SelectedGameMode::Practice;
                 *selected = SelectedScenario::Field;
                 next_state.set(GameState::Playing);
             }
@@ -551,6 +553,7 @@ pub fn scenario_select_button_system(
     for (interaction, children) in orbit_query.iter() {
         match interaction {
             Interaction::Pressed => {
+                *selected_mode = SelectedGameMode::Practice;
                 *selected = SelectedScenario::Orbit;
                 next_state.set(GameState::Playing);
             }
@@ -576,6 +579,7 @@ pub fn scenario_select_button_system(
     for (interaction, children) in comet_query.iter() {
         match interaction {
             Interaction::Pressed => {
+                *selected_mode = SelectedGameMode::Practice;
                 *selected = SelectedScenario::Comets;
                 next_state.set(GameState::Playing);
             }
@@ -601,6 +605,7 @@ pub fn scenario_select_button_system(
     for (interaction, children) in shower_query.iter() {
         match interaction {
             Interaction::Pressed => {
+                *selected_mode = SelectedGameMode::Practice;
                 *selected = SelectedScenario::Shower;
                 next_state.set(GameState::Playing);
             }

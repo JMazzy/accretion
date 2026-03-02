@@ -358,6 +358,20 @@ planetoid_unit_size = 16
 asteroid_size_scale_min = 0.8
 asteroid_size_scale_max = 1.6
 
+# Spawn-shape jitter fraction range used for procedural silhouette variation.
+spawn_shape_jitter_fraction_min = 0.45
+spawn_shape_jitter_fraction_max = 0.8
+
+# Chance that an edge is subdivided once during spawn-shape generation.
+spawn_shape_edge_subdivision_chance = 0.22
+
+# Midpoint jitter fraction for spawn-time subdivision vertices.
+spawn_shape_subdivision_jitter_fraction = 0.22
+
+# Value-noise controls for spawn-time silhouette modulation.
+spawn_shape_noise_frequency = 0.035
+spawn_shape_noise_amplitude = 0.25
+
 # Random initial velocity component range per axis (u/s).
 asteroid_initial_velocity_range = 15.0
 

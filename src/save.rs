@@ -7,8 +7,9 @@ use bevy_rapier2d::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::asteroid::{self, Asteroid, AsteroidSize, Vertices};
+use crate::campaign::CampaignSession;
 use crate::config::PhysicsConfig;
-use crate::menu::{GameState, SelectedScenario};
+use crate::menu::{GameState, SelectedGameMode, SelectedScenario};
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::{
     MissileAmmo, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
@@ -18,6 +19,7 @@ use crate::player::Player;
 
 pub const SAVE_SLOT_COUNT: u8 = 3;
 const SAVE_VERSION: u32 = 1;
+const CAMPAIGN_SAVE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone)]
 pub struct SaveSlotMetadata {
@@ -29,6 +31,17 @@ pub struct SaveSlotMetadata {
     pub status: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct CampaignSlotMetadata {
+    pub slot: u8,
+    pub exists: bool,
+    pub loadable: bool,
+    pub name: Option<String>,
+    pub mission_index: Option<u32>,
+    pub saved_at_unix: Option<u64>,
+    pub status: String,
+}
+
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SaveSlotRequest {
     pub slot: u8,
@@ -36,6 +49,29 @@ pub struct SaveSlotRequest {
 
 #[derive(Resource, Default, Debug, Clone)]
 pub struct PendingLoadedSnapshot(pub Option<SaveSnapshot>);
+
+#[derive(Resource, Default, Debug, Clone)]
+pub struct PendingLoadedCampaign(pub Option<CampaignSaveSnapshot>);
+
+#[derive(Resource, Debug, Clone)]
+pub struct ActiveCampaignSlot {
+    pub slot: u8,
+    pub name: String,
+}
+
+impl Default for ActiveCampaignSlot {
+    fn default() -> Self {
+        Self {
+            slot: 1,
+            name: "Campaign Slot 1".to_string(),
+        }
+    }
+}
+
+#[derive(Resource, Default, Debug, Clone)]
+pub struct CampaignAutosaveState {
+    pub last_saved_mission_index: u32,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum SaveScenario {
@@ -90,6 +126,14 @@ pub struct SaveSnapshot {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CampaignSaveSnapshot {
+    pub version: u32,
+    pub saved_at_unix: u64,
+    pub name: String,
+    pub mission_index: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ResourceSnapshot {
     pub score_hits: u32,
     pub score_destroyed: u32,
@@ -132,10 +176,17 @@ pub struct SavePlugin;
 impl Plugin for SavePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PendingLoadedSnapshot>()
+            .init_resource::<PendingLoadedCampaign>()
+            .init_resource::<ActiveCampaignSlot>()
+            .init_resource::<CampaignAutosaveState>()
             .add_message::<SaveSlotRequest>()
             .add_systems(
                 Update,
                 handle_save_slot_requests_system.run_if(in_state(GameState::Paused)),
+            )
+            .add_systems(
+                Update,
+                autosave_campaign_progress_system.run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -148,11 +199,22 @@ fn slot_path(slot: u8) -> PathBuf {
     save_dir().join(format!("slot_{slot}.toml"))
 }
 
+fn campaign_slot_path(slot: u8) -> PathBuf {
+    save_dir().join(format!("campaign_slot_{slot}.toml"))
+}
+
 pub fn slot_exists(slot: u8) -> bool {
     if !(1..=SAVE_SLOT_COUNT).contains(&slot) {
         return false;
     }
     slot_path(slot).exists()
+}
+
+pub fn campaign_slot_exists(slot: u8) -> bool {
+    if !(1..=SAVE_SLOT_COUNT).contains(&slot) {
+        return false;
+    }
+    campaign_slot_path(slot).exists()
 }
 
 pub fn load_slot(slot: u8) -> Result<SaveSnapshot, String> {
@@ -165,6 +227,18 @@ pub fn load_slot(slot: u8) -> Result<SaveSnapshot, String> {
         .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
 
     parse_snapshot_with_migration(&contents)
+}
+
+pub fn load_campaign_slot(slot: u8) -> Result<CampaignSaveSnapshot, String> {
+    if !(1..=SAVE_SLOT_COUNT).contains(&slot) {
+        return Err(format!("invalid campaign slot {slot}"));
+    }
+
+    let path = campaign_slot_path(slot);
+    let contents = fs::read_to_string(&path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+
+    parse_campaign_snapshot_with_migration(&contents)
 }
 
 pub fn slot_metadata(slot: u8) -> SaveSlotMetadata {
@@ -210,6 +284,53 @@ pub fn slot_metadata(slot: u8) -> SaveSlotMetadata {
     }
 }
 
+pub fn campaign_slot_metadata(slot: u8) -> CampaignSlotMetadata {
+    if !(1..=SAVE_SLOT_COUNT).contains(&slot) {
+        return CampaignSlotMetadata {
+            slot,
+            exists: false,
+            loadable: false,
+            name: None,
+            mission_index: None,
+            saved_at_unix: None,
+            status: "INVALID SLOT".to_string(),
+        };
+    }
+
+    if !campaign_slot_exists(slot) {
+        return CampaignSlotMetadata {
+            slot,
+            exists: false,
+            loadable: false,
+            name: None,
+            mission_index: None,
+            saved_at_unix: None,
+            status: "EMPTY".to_string(),
+        };
+    }
+
+    match load_campaign_slot(slot) {
+        Ok(snapshot) => CampaignSlotMetadata {
+            slot,
+            exists: true,
+            loadable: true,
+            name: Some(snapshot.name),
+            mission_index: Some(snapshot.mission_index),
+            saved_at_unix: Some(snapshot.saved_at_unix),
+            status: "READY".to_string(),
+        },
+        Err(_) => CampaignSlotMetadata {
+            slot,
+            exists: true,
+            loadable: false,
+            name: None,
+            mission_index: None,
+            saved_at_unix: None,
+            status: "CORRUPT".to_string(),
+        },
+    }
+}
+
 pub fn slot_loadable(slot: u8) -> bool {
     slot_metadata(slot).loadable
 }
@@ -230,6 +351,17 @@ fn parse_snapshot_with_migration(contents: &str) -> Result<SaveSnapshot, String>
     value
         .try_into::<SaveSnapshot>()
         .map_err(|err| format!("failed to decode migrated save snapshot: {err}"))
+}
+
+fn parse_campaign_snapshot_with_migration(contents: &str) -> Result<CampaignSaveSnapshot, String> {
+    let mut value: toml::Value = toml::from_str(contents)
+        .map_err(|err| format!("failed to parse campaign save TOML: {err}"))?;
+
+    migrate_campaign_snapshot_value(&mut value)?;
+
+    value
+        .try_into::<CampaignSaveSnapshot>()
+        .map_err(|err| format!("failed to decode migrated campaign snapshot: {err}"))
 }
 
 fn migrate_snapshot_value(value: &mut toml::Value) -> Result<(), String> {
@@ -272,6 +404,45 @@ fn migrate_snapshot_value(value: &mut toml::Value) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate_campaign_snapshot_value(value: &mut toml::Value) -> Result<(), String> {
+    let table = value
+        .as_table_mut()
+        .ok_or_else(|| "campaign save root must be a TOML table".to_string())?;
+
+    if !table.contains_key("version") {
+        table.insert(
+            "version".to_string(),
+            toml::Value::Integer(CAMPAIGN_SAVE_VERSION as i64),
+        );
+    }
+    if !table.contains_key("saved_at_unix") {
+        table.insert("saved_at_unix".to_string(), toml::Value::Integer(0));
+    }
+    if !table.contains_key("name") {
+        table.insert(
+            "name".to_string(),
+            toml::Value::String("Campaign Slot".to_string()),
+        );
+    }
+    if !table.contains_key("mission_index") {
+        table.insert("mission_index".to_string(), toml::Value::Integer(1));
+    }
+
+    let version = table
+        .get("version")
+        .and_then(toml::Value::as_integer)
+        .ok_or_else(|| "campaign save version is missing or invalid".to_string())?;
+
+    if version != CAMPAIGN_SAVE_VERSION as i64 {
+        return Err(format!(
+            "unsupported campaign save version {} (expected {})",
+            version, CAMPAIGN_SAVE_VERSION
+        ));
+    }
+
+    Ok(())
+}
+
 fn write_slot(slot: u8, snapshot: &SaveSnapshot) -> Result<(), String> {
     if !(1..=SAVE_SLOT_COUNT).contains(&slot) {
         return Err(format!("invalid slot {slot}"));
@@ -284,6 +455,45 @@ fn write_slot(slot: u8, snapshot: &SaveSnapshot) -> Result<(), String> {
 
     let path = slot_path(slot);
     fs::write(&path, serialized).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+fn write_campaign_slot(slot: u8, snapshot: &CampaignSaveSnapshot) -> Result<(), String> {
+    if !(1..=SAVE_SLOT_COUNT).contains(&slot) {
+        return Err(format!("invalid campaign slot {slot}"));
+    }
+
+    fs::create_dir_all(save_dir()).map_err(|err| format!("failed to create save dir: {err}"))?;
+
+    let serialized = toml::to_string_pretty(snapshot)
+        .map_err(|err| format!("failed to serialize campaign save TOML: {err}"))?;
+
+    let path = campaign_slot_path(slot);
+    fs::write(&path, serialized).map_err(|err| format!("failed to write {}: {err}", path.display()))
+}
+
+pub fn ensure_campaign_slot(slot: u8) -> Result<CampaignSaveSnapshot, String> {
+    if let Ok(existing) = load_campaign_slot(slot) {
+        return Ok(existing);
+    }
+
+    let snapshot = CampaignSaveSnapshot {
+        version: CAMPAIGN_SAVE_VERSION,
+        saved_at_unix: current_unix_timestamp(),
+        name: format!("Campaign Slot {slot}"),
+        mission_index: 1,
+    };
+    write_campaign_slot(slot, &snapshot)?;
+    Ok(snapshot)
+}
+
+pub fn save_campaign_slot_named(slot: u8, name: String, mission_index: u32) -> Result<(), String> {
+    let snapshot = CampaignSaveSnapshot {
+        version: CAMPAIGN_SAVE_VERSION,
+        saved_at_unix: current_unix_timestamp(),
+        name,
+        mission_index: mission_index.max(1),
+    };
+    write_campaign_slot(slot, &snapshot)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -488,4 +698,107 @@ pub fn apply_pending_loaded_snapshot_system(
     }
 
     info!("Loaded snapshot successfully");
+}
+
+pub fn apply_pending_loaded_campaign_system(
+    mut pending: ResMut<PendingLoadedCampaign>,
+    mut active_slot: ResMut<ActiveCampaignSlot>,
+    mut autosave_state: ResMut<CampaignAutosaveState>,
+    mut campaign_session: ResMut<CampaignSession>,
+) {
+    let Some(snapshot) = pending.0.take() else {
+        return;
+    };
+
+    active_slot.name = snapshot.name;
+    campaign_session.mission_index = snapshot.mission_index.max(1);
+    autosave_state.last_saved_mission_index = campaign_session.mission_index;
+}
+
+pub fn autosave_campaign_progress_system(
+    selected_mode: Res<SelectedGameMode>,
+    session: Res<CampaignSession>,
+    active_slot: Res<ActiveCampaignSlot>,
+    mut autosave_state: ResMut<CampaignAutosaveState>,
+) {
+    if *selected_mode != SelectedGameMode::Campaign || !session.active {
+        autosave_state.last_saved_mission_index = 0;
+        return;
+    }
+
+    if session.mission_index == 0
+        || session.mission_index == autosave_state.last_saved_mission_index
+    {
+        return;
+    }
+
+    match save_campaign_slot_named(
+        active_slot.slot,
+        active_slot.name.clone(),
+        session.mission_index,
+    ) {
+        Ok(()) => {
+            autosave_state.last_saved_mission_index = session.mission_index;
+        }
+        Err(err) => {
+            error!(
+                "Failed autosaving campaign slot {} at mission {}: {}",
+                active_slot.slot, session.mission_index, err
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn backup_campaign_slot(slot: u8) -> Option<String> {
+        let path = campaign_slot_path(slot);
+        fs::read_to_string(path).ok()
+    }
+
+    fn restore_campaign_slot(slot: u8, backup: Option<String>) {
+        let path = campaign_slot_path(slot);
+        match backup {
+            Some(contents) => {
+                let _ = fs::create_dir_all(save_dir());
+                let _ = fs::write(path, contents);
+            }
+            None => {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    #[test]
+    fn ensure_campaign_slot_creates_snapshot_for_empty_slot() {
+        let slot = 2u8;
+        let backup = backup_campaign_slot(slot);
+        let _ = fs::remove_file(campaign_slot_path(slot));
+
+        let created = ensure_campaign_slot(slot).expect("campaign slot should be creatable");
+        let loaded = load_campaign_slot(slot).expect("campaign slot should load after creation");
+
+        assert_eq!(created.mission_index, 1);
+        assert_eq!(loaded.mission_index, 1);
+        assert!(loaded.name.contains("Campaign Slot"));
+
+        restore_campaign_slot(slot, backup);
+    }
+
+    #[test]
+    fn save_campaign_slot_named_persists_name_and_mission() {
+        let slot = 1u8;
+        let backup = backup_campaign_slot(slot);
+
+        save_campaign_slot_named(slot, "Test Run".to_string(), 7)
+            .expect("campaign slot write should succeed");
+        let loaded = load_campaign_slot(slot).expect("campaign slot should load after write");
+
+        assert_eq!(loaded.name, "Test Run");
+        assert_eq!(loaded.mission_index, 7);
+
+        restore_campaign_slot(slot, backup);
+    }
 }

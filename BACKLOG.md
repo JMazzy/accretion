@@ -2,7 +2,7 @@
 
 Planned features, improvements, and known limitations. Completed items are removed; see [FEATURES.md](FEATURES.md) and [CHANGELOG.md](CHANGELOG.md) for implemented history.
 
-Last updated: March 1, 2026.
+Last updated: March 2, 2026.
 
 ## Planning Notes
 
@@ -16,37 +16,44 @@ Goal: deliver a playable campaign foundation (progression + win/fail loop) while
 
 ### Track A — Campaign Foundation (MVP)
 
-- [ ] **A1: Mode/state scaffolding (`Campaign` vs `Practice`)**
+- [x] **A1: Mode/state scaffolding (`Campaign` vs `Practice`)**
 	- Add explicit mode/state model so current scenario loop runs as `Practice` and new flow can run as `Campaign`.
 	- Wire menu entry points and state transitions without changing existing practice behavior.
 	- Likely touchpoints: `src/menu/`, `src/main.rs`, `src/menu/types.rs`, `FEATURES.md`.
 	- Acceptance: both modes launch from menu; practice regression tests/behavior remain intact.
+	- Concrete implementation plan:
+		1. Add `SelectedGameMode` resource (`Practice`/`Campaign`) with sane default.
+		2. Add menu buttons for `Campaign` and `Practice` with explicit routing.
+		3. Set `SelectedGameMode` at all entry points (`main menu`, `scenario select`, `load game`).
+		4. Make world-spawn transition logic mode-aware (`Campaign` path isolated from `Practice` path).
+		5. Add/adjust transition wiring for `MainMenu -> Playing` (campaign bootstrap).
+		6. Validate no regression in existing practice/load workflows.
 
-- [ ] **A2: Mission data model + runtime resource** `depends on A1`
+- [x] **A2: Mission data model + runtime resource** `depends on A1`
 	- Introduce mission descriptor types (mission id, map/scenario source, wave count, reward, next mission id).
 	- Add campaign runtime resource tracking active mission, wave index, and mission state.
 	- Likely touchpoints: `src/test_mode.rs` or new `src/campaign.rs`, `src/main.rs`, `ARCHITECTURE.md`.
 	- Acceptance: campaign boot can load mission-1 definition deterministically from data.
 
-- [ ] **A3: Wave director v1 (spawn/break/escalation loop)** `depends on A2`
+- [x] **A3: Wave director v1 (spawn/break/escalation loop)** `depends on A2`
 	- Implement minimal wave state machine: `Warmup -> ActiveWave -> InterWaveBreak -> Complete`.
 	- Connect to enemy spawning controls so each wave raises pressure (count/tier/cadence).
 	- Likely touchpoints: `src/enemy.rs`, new `src/campaign.rs`, `src/simulation.rs`.
 	- Acceptance: mission runs 3+ waves with clear breaks and increasing difficulty.
 
-- [ ] **A4: Mission win/fail + progression transitions** `depends on A3`
+- [x] **A4: Mission win/fail + progression transitions** `depends on A3`
 	- Win: all waves cleared (boss-gate can be layered later).
 	- Fail: player death/lives exhaustion exits mission with deterministic state reset/continue options.
 	- Likely touchpoints: `src/menu/`, `src/player/state.rs`, `src/campaign.rs`.
 	- Acceptance: end-of-mission transitions advance to next mission or fail screen correctly.
 
-- [ ] **A5: Campaign save slots v1 (name + mission progress)** `depends on A4`
+- [x] **A5: Campaign save slots v1 (name + mission progress)** `depends on A4`
 	- Add campaign slot schema and persistence for slot name, mission index, and campaign progression state.
 	- Keep slot data isolated from practice saves.
 	- Likely touchpoints: `src/save.rs`, `saves/`, `src/menu/load_game.rs`, `src/menu/main_menu.rs`.
 	- Acceptance: create/load/resume campaign slot with persistent mission progression.
 
-- [ ] **A6: Campaign foundation validation + docs update** `depends on A5`
+- [x] **A6: Campaign foundation validation + docs update** `depends on A5`
 	- Add targeted tests for mission state transitions and save/load roundtrip.
 	- Update docs for mode split and campaign loop semantics.
 	- Acceptance: `cargo check`, `cargo clippy -- -D warnings`, `cargo test` pass; `ARCHITECTURE.md`/`FEATURES.md`/`CHANGELOG.md` updated.
@@ -58,6 +65,13 @@ Goal: deliver a playable campaign foundation (progression + win/fail loop) while
 	- Load from `assets/physics.toml` with sensible defaults/fallbacks.
 	- Likely touchpoints: `src/constants.rs`, `src/config.rs`, `assets/physics.toml`, `ARCHITECTURE.md`.
 	- Acceptance: spawn-shape behavior is fully tuneable without recompilation.
+	- Concrete implementation plan:
+		1. Add new constants for spawn-shape knobs in `src/constants.rs`.
+		2. Mirror knobs into `PhysicsConfig` + `Default` mapping in `src/config.rs`.
+		3. Add the knobs to `assets/physics.toml` with comments and initial values.
+		4. Wire at least one existing spawn-shape path to consume new knobs (initial jitter pass).
+		5. Validate config hot-reload/parse path still works with new fields.
+		6. Follow with B2 to apply knobs across full procedural shape pipeline.
 
 - [ ] **B2: Deterministic irregular polygon generation** `depends on B1`
 	- Extend asteroid spawn geometry generation with deterministic per-asteroid noise/jitter (seeded RNG path already used in scenarios).

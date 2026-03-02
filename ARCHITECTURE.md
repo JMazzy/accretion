@@ -24,8 +24,8 @@ src/
 ├── constants.rs          - All tuneable physics and gameplay constants (compile-time defaults)
 ├── config.rs             - PhysicsConfig Bevy resource; loaded from assets/physics.toml at startup and hot-reloaded at runtime
 ├── enemy.rs              - Enemy components, deterministic spawning, seek movement, enemy mesh attachment
-├── menu.rs               - Menu/state orchestration façade: GameState enum (MainMenu / LoadGameMenu / ScenarioSelect / Playing / Paused / OreShop / GameOver), SelectedScenario + ShopReturnState resources, MainMenuPlugin wiring
-├── menu/                 - Focused menu modules (`types`, `common`, `main_menu`, `load_game`, `scenario_select`, `pause`, `ore_shop`, `game_over`, `cleanup`)
+├── menu.rs               - Menu/state orchestration façade: GameState enum (MainMenu / LoadGameMenu / ScenarioSelect / CampaignSelect / Playing / Paused / OreShop / GameOver), mode/scenario/menu resources, MainMenuPlugin wiring
+├── menu/                 - Focused menu modules (`types`, `common`, `main_menu`, `load_game`, `scenario_select`, `campaign_select`, `pause`, `ore_shop`, `game_over`, `cleanup`)
 ├── asteroid.rs           - Unified asteroid components and spawn functions; convex hull computation
 ├── simulation.rs         - Physics systems: N-body gravity, cluster detection, composite formation
 ├── spatial_partition.rs  - KD-tree spatial index for O(K + log N) neighbour lookup (replaces flat grid)
@@ -84,6 +84,14 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 - **Save trigger**: pause-menu `SAVE 1/2/3` buttons emit `SaveSlotRequest`; `handle_save_slot_requests_system` serializes current ECS state while paused.
 - **Load trigger**: main-menu `LOAD GAME` opens `LoadGameMenu`; selecting a slot reads TOML into `PendingLoadedSnapshot` and transitions to `Playing`.
 - **Load apply**: `apply_pending_loaded_snapshot_system` restores resources, respawns asteroids from local-space hull vertices, and respawns the player with saved physics/health state.
+
+### Campaign Slot Persistence
+
+- **Campaign slot format**: separate campaign progression snapshots under `saves/campaign_slot_N.toml` (`N = 1..3`).
+- **Campaign schema** (`src/save.rs`): `CampaignSaveSnapshot` includes slot id, slot name, mission index, and updated-at metadata.
+- **UI flow**: main-menu `CAMPAIGN` transitions to `CampaignSelect`, where slot 1/2/3 can be selected, renamed, and started/resumed.
+- **Campaign load trigger**: `CampaignSelect` start/resume writes/ensures slot metadata, populates `PendingLoadedCampaign`, and transitions to `Playing`.
+- **Campaign apply**: `apply_pending_loaded_campaign_system` initializes active slot and campaign resources before world spawn/bootstrap.
 
 ## Physics Rules
 

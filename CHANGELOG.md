@@ -1,5 +1,26 @@
 # Accretion Changelog
 
+## Campaign Track A: Slot UX + Closeout (A5/A6) — March 2, 2026
+
+### Added campaign slot-select/rename/start UI and finalized Track A docs/tests
+
+**What changed**:
+- Added `GameState::CampaignSelect` and new campaign menu UI module in `src/menu/campaign_select.rs`.
+- Main-menu **CAMPAIGN** now routes to campaign slot selection instead of entering gameplay directly.
+- Added slot workflow UI:
+  - Choose slot 1/2/3
+  - Edit slot name via keyboard input
+  - Persist name with **SAVE NAME**
+  - Start/resume with **START / RESUME**
+- Wired campaign pending-load handoff from `CampaignSelect -> Playing` in `src/main.rs`.
+- Updated docs for architecture/feature behavior and added state-transition test coverage in `tests/menu_tests.rs`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo test --test menu_tests` ✅
+- `cargo check` ✅
+
 ## Concave Deformation: Crater Reimplementation (Option A) — March 1, 2026
 
 ### Replaced vertex-flattening deformation with crater-based geometry; kept stable convex colliders

@@ -5,6 +5,7 @@ use crate::asteroid::{
     spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Planet, Vertices,
 };
 use crate::asteroid_rendering::filled_polygon_mesh;
+use crate::campaign::{CampaignWaveDirector, CampaignWavePhase};
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::mining::spawn_ore_drop;
@@ -167,6 +168,7 @@ fn enemy_spawn_system(
     mut commands: Commands,
     time: Res<Time>,
     mut state: ResMut<EnemySpawnState>,
+    mut wave_director: Option<ResMut<CampaignWaveDirector>>,
     config: Res<PhysicsConfig>,
     score: Res<PlayerScore>,
     q_player: Query<&Transform, With<Player>>,
@@ -180,10 +182,30 @@ fn enemy_spawn_system(
     let score_stage = score.points / config.enemy_stage_score_points.max(1);
     let time_stage =
         (state.session_elapsed_secs / config.enemy_stage_time_secs.max(1.0)).floor() as u32;
-    let stage = time_stage + score_stage;
+    let mut stage = time_stage + score_stage;
     let (_profile_max_count, next_cooldown) =
         enemy_spawn_profile(&config, score.points, state.session_elapsed_secs);
-    let max_count = 1;
+    let mut max_count = 1;
+    let mut spawn_cooldown = next_cooldown;
+
+    if let Some(ref mut wave) = wave_director {
+        match wave.phase {
+            CampaignWavePhase::ActiveWave => {
+                stage = wave.current_wave.saturating_sub(1);
+                max_count = wave.max_concurrent_enemies.max(1);
+                spawn_cooldown = wave
+                    .spawn_cooldown_secs
+                    .max(config.enemy_spawn_cooldown_min);
+            }
+            CampaignWavePhase::Complete
+            | CampaignWavePhase::Inactive
+            | CampaignWavePhase::InterWaveBreak
+            | CampaignWavePhase::Warmup => {
+                state.timer_secs = state.timer_secs.max(0.2);
+                return;
+            }
+        }
+    }
 
     if q_enemies.iter().count() as u32 >= max_count {
         state.timer_secs = state.timer_secs.max(0.25);
@@ -276,7 +298,13 @@ fn enemy_spawn_system(
         },
     ));
 
-    state.timer_secs = next_cooldown;
+    if let Some(ref mut wave) = wave_director {
+        if wave.phase == CampaignWavePhase::ActiveWave {
+            wave.spawned_this_wave = wave.spawned_this_wave.saturating_add(1);
+        }
+    }
+
+    state.timer_secs = spawn_cooldown;
 }
 
 fn enemy_stun_tick_system(time: Res<Time>, mut q_enemy: Query<&mut EnemyStun, With<Enemy>>) {
@@ -1282,7 +1310,8 @@ mod tests {
             .spawn((
                 Asteroid,
                 AsteroidSize(6),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)).with_rotation(original_rotation),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0))
+                    .with_rotation(original_rotation),
                 Velocity::zero(),
                 Vertices(vec![
                     Vec2::new(0.0, 7.0),

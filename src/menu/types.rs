@@ -8,8 +8,10 @@ pub enum GameState {
     MainMenu,
     /// Load game slot picker shown from MainMenu.
     LoadGameMenu,
-    /// Scenario / save picker shown after clicking Start Game.
+    /// Practice scenario picker shown when starting Practice mode.
     ScenarioSelect,
+    /// Campaign slot picker and naming screen shown when starting Campaign mode.
+    CampaignSelect,
     /// Active simulation / gameplay.
     Playing,
     /// Simulation frozen; in-game pause overlay is visible.
@@ -42,13 +44,27 @@ pub enum SelectedScenario {
     Shower,
 }
 
+/// Active top-level gameplay mode selected from the main menu.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectedGameMode {
+    /// Scenario-driven free-play mode with immediate sandbox access.
+    #[default]
+    Practice,
+    /// Mission-progression mode with campaign flow.
+    Campaign,
+}
+
 /// Root node of the main-menu UI; entire tree is despawned on `OnExit(MainMenu)`.
 #[derive(Component)]
 pub struct MainMenuRoot;
 
 /// Tags the "Start Game" button.
 #[derive(Component)]
-pub struct MenuStartButton;
+pub struct MenuPracticeButton;
+
+/// Tags the "Campaign" button.
+#[derive(Component)]
+pub struct MenuCampaignButton;
 
 /// Tags the "Load Game" button.
 #[derive(Component)]
@@ -82,6 +98,10 @@ pub struct LoadGameBackButton;
 #[derive(Component)]
 pub struct ScenarioSelectRoot;
 
+/// Root node of the campaign-select screen; despawned on `OnExit(CampaignSelect)`.
+#[derive(Component)]
+pub struct CampaignSelectRoot;
+
 /// Tags the "Field" scenario button.
 #[derive(Component)]
 pub struct ScenarioFieldButton;
@@ -101,6 +121,54 @@ pub struct ScenarioShowerButton;
 /// Tags the "Back" button on the scenario-select screen.
 #[derive(Component)]
 pub struct ScenarioBackButton;
+
+/// Tags the campaign slot 1 button.
+#[derive(Component)]
+pub struct CampaignSlot1Button;
+
+/// Tags the campaign slot 2 button.
+#[derive(Component)]
+pub struct CampaignSlot2Button;
+
+/// Tags the campaign slot 3 button.
+#[derive(Component)]
+pub struct CampaignSlot3Button;
+
+/// Tags the campaign start/resume button.
+#[derive(Component)]
+pub struct CampaignStartButton;
+
+/// Tags the campaign save-name button.
+#[derive(Component)]
+pub struct CampaignSaveNameButton;
+
+/// Tags the campaign back button.
+#[derive(Component)]
+pub struct CampaignBackButton;
+
+/// Dynamic text showing currently selected campaign slot.
+#[derive(Component)]
+pub struct CampaignSelectedSlotText;
+
+/// Dynamic text showing campaign slot name edit buffer.
+#[derive(Component)]
+pub struct CampaignNameValueText;
+
+/// Name-editor resource for campaign slot naming UX.
+#[derive(Resource, Debug, Clone)]
+pub struct CampaignNameEditor {
+    pub selected_slot: u8,
+    pub buffer: String,
+}
+
+impl Default for CampaignNameEditor {
+    fn default() -> Self {
+        Self {
+            selected_slot: 1,
+            buffer: "Campaign Slot 1".to_string(),
+        }
+    }
+}
 
 /// Root node of the pause-menu overlay; entire tree is despawned on `OnExit(Paused)`.
 #[derive(Component)]

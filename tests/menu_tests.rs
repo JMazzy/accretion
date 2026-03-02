@@ -8,6 +8,7 @@
 //! 2. A `NextState` request transitions from `MainMenu` → `Playing`.
 //! 3. `Playing` state persists across frames with no new transition request.
 //! 4. `insert_state` can force-start directly in `Playing` (test-mode path).
+//! 5. Campaign flow can transition through `CampaignSelect`.
 
 use accretion::menu::GameState;
 use bevy::prelude::*;
@@ -128,5 +129,24 @@ fn redundant_transition_to_playing_is_stable() {
         *state.get(),
         GameState::Playing,
         "redundant Playing → Playing transition must leave state unchanged"
+    );
+}
+
+/// Campaign entry uses an intermediate CampaignSelect state before gameplay.
+#[test]
+fn transition_main_menu_to_campaign_select() {
+    let mut app = app_with_default_state();
+    app.update();
+
+    app.world_mut()
+        .resource_mut::<NextState<GameState>>()
+        .set(GameState::CampaignSelect);
+    app.update();
+
+    let state = app.world().resource::<State<GameState>>();
+    assert_eq!(
+        *state.get(),
+        GameState::CampaignSelect,
+        "state must be CampaignSelect after explicit transition"
     );
 }

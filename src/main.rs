@@ -8,6 +8,7 @@ use std::env;
 mod alloc_profile;
 mod asteroid;
 mod asteroid_rendering;
+mod campaign;
 mod config;
 mod constants;
 mod enemy;
@@ -25,7 +26,7 @@ mod test_mode;
 mod testing;
 
 use config::PhysicsConfig;
-use menu::{GameState, SelectedScenario};
+use menu::{GameState, SelectedGameMode, SelectedScenario};
 use testing::TestConfig;
 
 /// Spawn the initial asteroid world for the chosen scenario.
@@ -37,9 +38,16 @@ use testing::TestConfig;
 fn spawn_initial_world(
     mut commands: Commands,
     config: Res<PhysicsConfig>,
+    mode: Res<SelectedGameMode>,
+    campaign: Res<campaign::CampaignSession>,
     scenario: Res<SelectedScenario>,
 ) {
-    match *scenario {
+    let scenario_to_spawn = match *mode {
+        SelectedGameMode::Practice => *scenario,
+        SelectedGameMode::Campaign => campaign.map_scenario,
+    };
+
+    match scenario_to_spawn {
         SelectedScenario::Field => {
             asteroid::spawn_initial_asteroids(&mut commands, 100, &config);
         }
@@ -63,8 +71,10 @@ fn setup_physics_config(mut config: Query<&mut RapierConfiguration>) {
 }
 
 fn add_playing_transition_hud_systems(app: &mut App) {
+    add_playing_transition_hud_systems_for(app, GameState::MainMenu);
     add_playing_transition_hud_systems_for(app, GameState::ScenarioSelect);
     add_playing_transition_hud_systems_for(app, GameState::LoadGameMenu);
+    add_playing_transition_hud_systems_for(app, GameState::CampaignSelect);
 }
 
 fn add_playing_transition_hud_systems_for(app: &mut App, exited: GameState) {
@@ -130,6 +140,10 @@ fn main() {
     .insert_resource(player::PrimaryWeaponLevel::default())
     .insert_resource(player::SecondaryWeaponLevel::default())
     .insert_resource(player::IonCannonLevel::default())
+    .insert_resource(campaign::CampaignMissionCatalog::default())
+    .insert_resource(campaign::CampaignSession::default())
+    .insert_resource(campaign::CampaignWaveDirector::default())
+    .insert_resource(campaign::CampaignProgressionState::default())
     .add_plugins(save::SavePlugin)
     // Global startup: config + camera + physics settings (needed by both menu and gameplay).
     .add_systems(
@@ -148,6 +162,15 @@ fn main() {
         ),
     )
     .add_systems(Update, config::hot_reload_physics_config)
+    .add_systems(
+        Update,
+        (
+            campaign::campaign_wave_director_system,
+            campaign::campaign_progression_system,
+        )
+            .chain()
+            .run_if(in_state(GameState::Playing)),
+    )
     // Game-world setup: runs only on transitions into Playing so world entities and HUD are
     // spawned exactly once per session.
     ;
@@ -178,14 +201,34 @@ fn main() {
             .add_plugins(mining::MiningPlugin)
             .add_systems(
                 OnTransition {
+                    exited: GameState::MainMenu,
+                    entered: GameState::Playing,
+                },
+                (
+                    save::apply_pending_loaded_campaign_system,
+                    campaign::bootstrap_campaign_session,
+                    campaign::bootstrap_campaign_wave_director,
+                    campaign::bootstrap_campaign_progression_state,
+                    spawn_initial_world,
+                    player::spawn_player,
+                    menu::resume_physics,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnTransition {
                     exited: GameState::ScenarioSelect,
                     entered: GameState::Playing,
                 },
                 (
+                    campaign::bootstrap_campaign_session,
+                    campaign::bootstrap_campaign_wave_director,
+                    campaign::bootstrap_campaign_progression_state,
                     spawn_initial_world,
                     player::spawn_player,
                     menu::resume_physics,
-                ),
+                )
+                    .chain(),
             )
             .add_systems(
                 OnTransition {
@@ -193,9 +236,33 @@ fn main() {
                     entered: GameState::Playing,
                 },
                 (
+                    campaign::bootstrap_campaign_session,
+                    campaign::bootstrap_campaign_wave_director,
+                    campaign::bootstrap_campaign_progression_state,
                     save::apply_pending_loaded_snapshot_system,
                     menu::resume_physics,
-                ),
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnTransition {
+                    exited: GameState::CampaignSelect,
+                    entered: GameState::Playing,
+                },
+                (
+                    save::apply_pending_loaded_campaign_system,
+                    campaign::bootstrap_campaign_session,
+                    campaign::bootstrap_campaign_wave_director,
+                    campaign::bootstrap_campaign_progression_state,
+                    spawn_initial_world,
+                    player::spawn_player,
+                    menu::resume_physics,
+                )
+                    .chain(),
+            )
+            .add_systems(
+                OnEnter(GameState::GameOver),
+                campaign::mark_campaign_failure_on_game_over,
             )
             // GameOver → Playing: re-spawn the player ship with fresh lives.  Lives are reset
             // by game_over_button_system before this transition fires.

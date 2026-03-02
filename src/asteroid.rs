@@ -90,16 +90,80 @@ fn noise_2d(x: f32, y: f32, frequency: f32, offset: Vec2) -> f32 {
 
 /// Apply random jitter to vertices to make them look more natural.
 /// Jitter amount is proportional to the distance from origin to make small and large asteroids both look good.
-fn apply_vertex_jitter(vertices: Vec<Vec2>, scale: f32, rng: &mut impl Rng) -> Vec<Vec2> {
-    // Jitter amount as fraction of scale
-    let jitter_amplitude = scale * 0.8;
+fn apply_vertex_jitter(
+    mut vertices: Vec<Vec2>,
+    scale: f32,
+    rng: &mut impl Rng,
+    config: &PhysicsConfig,
+) -> Vec<Vec2> {
+    if vertices.len() < 3 {
+        return vertices;
+    }
 
-    vertices
+    // Step 1: Optional edge subdivision for richer silhouette detail.
+    let subdivision_chance = config.spawn_shape_edge_subdivision_chance.clamp(0.0, 1.0);
+    if subdivision_chance > 0.0 {
+        let jitter = scale * config.spawn_shape_subdivision_jitter_fraction.max(0.0);
+        let mut subdivided = Vec::with_capacity(vertices.len() * 2);
+        let n = vertices.len();
+        for i in 0..n {
+            let v0 = vertices[i];
+            let v1 = vertices[(i + 1) % n];
+            subdivided.push(v0);
+            if rng.gen::<f32>() < subdivision_chance {
+                let midpoint = v0.lerp(v1, 0.5);
+                let edge = v1 - v0;
+                let edge_dir = edge.normalize_or_zero();
+                let normal = Vec2::new(-edge.y, edge.x).normalize_or_zero();
+                let offset = normal * rng.gen_range(-jitter..jitter)
+                    + edge_dir * rng.gen_range(-(jitter * 0.5)..(jitter * 0.5));
+                subdivided.push(midpoint + offset);
+            }
+        }
+        vertices = subdivided;
+    }
+
+    // Step 2: Per-vertex random jitter.
+    // Jitter amount as fraction of scale; controlled by runtime config.
+    let min_frac = config
+        .spawn_shape_jitter_fraction_min
+        .max(0.0)
+        .min(config.spawn_shape_jitter_fraction_max.max(0.0));
+    let max_frac = config.spawn_shape_jitter_fraction_max.max(min_frac + 1e-4);
+    let jitter_amplitude = scale * rng.gen_range(min_frac..max_frac);
+
+    vertices = vertices
         .into_iter()
         .map(|v| {
             let jitter_x = rng.gen_range(-jitter_amplitude..jitter_amplitude);
             let jitter_y = rng.gen_range(-jitter_amplitude..jitter_amplitude);
             v + Vec2::new(jitter_x, jitter_y)
+        })
+        .collect();
+
+    // Step 3: Value-noise radial modulation for natural clustered roughness.
+    let noise_freq = config.spawn_shape_noise_frequency.max(0.0);
+    let noise_amp = config.spawn_shape_noise_amplitude.max(0.0);
+    if noise_freq <= 1e-6 || noise_amp <= 1e-6 {
+        return vertices;
+    }
+
+    let noise_offset = Vec2::new(
+        rng.gen_range(-50_000.0..50_000.0),
+        rng.gen_range(-50_000.0..50_000.0),
+    );
+
+    vertices
+        .into_iter()
+        .map(|v| {
+            let radius = v.length();
+            if radius <= 1e-6 {
+                return v;
+            }
+
+            let centered = noise_2d(v.x, v.y, noise_freq, noise_offset) * 2.0 - 1.0;
+            let radial_scale = (1.0 + centered * noise_amp).max(0.2);
+            v.normalize_or_zero() * radius * radial_scale
         })
         .collect()
 }
@@ -280,7 +344,7 @@ pub fn spawn_initial_asteroids(commands: &mut Commands, count: usize, config: &P
         };
 
         // Apply vertex jitter for natural-looking shapes.
-        vertices = apply_vertex_jitter(vertices, size_scale, &mut rng);
+        vertices = apply_vertex_jitter(vertices, size_scale, &mut rng, config);
 
         // Derive AsteroidSize from actual polygon area so the density invariant
         // (vertices.area == AsteroidSize / density) holds from the very first frame.
@@ -1261,6 +1325,7 @@ pub fn rescale_vertices_to_area(vertices: &[Vec2], target_area: f32) -> Vec<Vec2
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
 
     // ── polygon_area ──────────────────────────────────────────────────────────
 
@@ -1329,6 +1394,44 @@ mod tests {
         assert!(
             collider.as_compound().is_none(),
             "convex polygons should keep a single convex collider"
+        );
+    }
+
+    #[test]
+    fn spawn_shape_variation_produces_finite_positive_area_polygon() {
+        let base = generate_hexagon(1.0, 8.0);
+        let cfg = PhysicsConfig::default();
+        let mut rng = StdRng::seed_from_u64(42);
+
+        let out = apply_vertex_jitter(base, 1.4, &mut rng, &cfg);
+        assert!(
+            out.len() >= 3,
+            "shape variation must keep at least 3 vertices"
+        );
+        assert!(
+            out.iter().all(|v| v.x.is_finite() && v.y.is_finite()),
+            "shape variation must keep finite coordinates"
+        );
+        assert!(
+            polygon_area(&out) > 1e-3,
+            "shape variation must keep positive polygon area"
+        );
+    }
+
+    #[test]
+    fn spawn_shape_variation_is_deterministic_for_seeded_rng() {
+        let base = generate_pentagon(1.0, 7.0);
+        let cfg = PhysicsConfig::default();
+
+        let mut rng_a = StdRng::seed_from_u64(777);
+        let mut rng_b = StdRng::seed_from_u64(777);
+
+        let out_a = apply_vertex_jitter(base.clone(), 1.2, &mut rng_a, &cfg);
+        let out_b = apply_vertex_jitter(base, 1.2, &mut rng_b, &cfg);
+
+        assert_eq!(
+            out_a, out_b,
+            "spawn-shape variation should be deterministic for identical seed/config"
         );
     }
 

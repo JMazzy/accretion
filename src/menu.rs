@@ -10,6 +10,7 @@
 //! | `MainMenu`         | Initial state; splash screen shown                    |
 //! | `LoadGameMenu`     | Save-slot load screen                                 |
 //! | `ScenarioSelect`   | Scenario picker                                       |
+//! | `CampaignSelect`   | Campaign slot picker and naming                       |
 //! | `Playing`          | Simulation running; all game systems active           |
 //! | `Paused`           | Simulation frozen; in-game pause overlay is visible   |
 //! | `OreShop`          | Shop overlay (simulation paused)                      |
@@ -44,8 +45,9 @@ use crate::player::{
     TractorBeamLevel,
 };
 use crate::save::{
-    load_slot, slot_loadable, slot_metadata, PendingLoadedSnapshot, SaveSlotRequest,
-    SAVE_SLOT_COUNT,
+    campaign_slot_metadata, ensure_campaign_slot, load_slot, save_campaign_slot_named,
+    slot_loadable, slot_metadata, ActiveCampaignSlot, PendingLoadedCampaign, PendingLoadedSnapshot,
+    SaveSlotRequest, SAVE_SLOT_COUNT,
 };
 
 #[path = "menu/types.rs"]
@@ -67,6 +69,12 @@ use menu_load_game::{cleanup_load_game_menu, load_game_menu_button_system, setup
 mod menu_scenario_select;
 use menu_scenario_select::{
     cleanup_scenario_select, scenario_select_button_system, setup_scenario_select_when_fonts_ready,
+};
+#[path = "menu/campaign_select.rs"]
+mod menu_campaign_select;
+use menu_campaign_select::{
+    campaign_name_display_system, campaign_name_input_system, campaign_select_button_system,
+    cleanup_campaign_select_menu, setup_campaign_select_menu,
 };
 #[path = "menu/pause.rs"]
 mod menu_pause;
@@ -95,6 +103,8 @@ impl Plugin for MainMenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<GameState>()
             .init_resource::<SelectedScenario>()
+            .init_resource::<SelectedGameMode>()
+            .init_resource::<CampaignNameEditor>()
             .init_resource::<ShopReturnState>()
             // ── Main menu ─────────────────────────────────────────────────────
             .add_systems(
@@ -122,6 +132,24 @@ impl Plugin for MainMenuPlugin {
             .add_systems(
                 Update,
                 scenario_select_button_system.run_if(in_state(GameState::ScenarioSelect)),
+            )
+            // ── Campaign select ─────────────────────────────────────────────
+            .add_systems(
+                OnEnter(GameState::CampaignSelect),
+                setup_campaign_select_menu,
+            )
+            .add_systems(
+                OnExit(GameState::CampaignSelect),
+                cleanup_campaign_select_menu,
+            )
+            .add_systems(
+                Update,
+                (
+                    campaign_name_input_system,
+                    campaign_name_display_system,
+                    campaign_select_button_system,
+                )
+                    .run_if(in_state(GameState::CampaignSelect)),
             )
             // ── Pause menu ────────────────────────────────────────────────────
             .add_systems(

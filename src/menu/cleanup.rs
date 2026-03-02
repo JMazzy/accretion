@@ -61,6 +61,7 @@ pub fn cleanup_game_world(
     mut overlay: ResMut<crate::rendering::OverlayState>,
     mut sim_stats: ResMut<crate::simulation::SimulationStats>,
     mut ore: ResMut<crate::mining::PlayerOre>,
+    mut campaign_session: ResMut<crate::campaign::CampaignSession>,
     mut rapier_config: Query<&mut RapierConfiguration>,
 ) {
     for e in asteroids
@@ -80,6 +81,9 @@ pub fn cleanup_game_world(
     *overlay = crate::rendering::OverlayState::default();
     *sim_stats = crate::simulation::SimulationStats::default();
     *ore = crate::mining::PlayerOre::default();
+    *campaign_session = crate::campaign::CampaignSession::default();
+    commands.insert_resource(crate::campaign::CampaignWaveDirector::default());
+    commands.insert_resource(crate::campaign::CampaignProgressionState::default());
     // Reset upgrades so a new session starts fresh.
     commands.insert_resource(PrimaryWeaponLevel::default());
     commands.insert_resource(SecondaryWeaponLevel::default());

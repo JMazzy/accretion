@@ -38,8 +38,10 @@
 
 use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
+use crate::campaign::{CampaignSession, CampaignWaveDirector, CampaignWavePhase};
 use crate::config::PhysicsConfig;
 use crate::graphics::{EmojiFont, GameFont, SymbolFont, SymbolFont2, UnicodeFallbackFont};
+use crate::menu::SelectedGameMode;
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::MissileAmmo;
 use crate::player::Player;
@@ -109,6 +111,10 @@ pub struct HudScoreDisplay;
 /// Marker for score HUD text child.
 #[derive(Component)]
 pub struct HudScoreText;
+
+/// Marker for gameplay mode status text under score HUD.
+#[derive(Component)]
+pub struct HudModeText;
 
 /// Marker for the retrained GPU boundary-ring entity.
 #[derive(Component)]
@@ -470,13 +476,58 @@ pub fn sync_boundary_ring_visibility_system(
 // ── Startup: score HUD ────────────────────────────────────────────────────────
 
 /// Spawn the permanent score HUD (always visible).
-pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>, font: Res<GameFont>) {
+pub fn setup_hud_score(
+    mut commands: Commands,
+    config: Res<PhysicsConfig>,
+    font: Res<GameFont>,
+    selected_mode: Option<Res<SelectedGameMode>>,
+    campaign: Option<Res<CampaignSession>>,
+    wave: Option<Res<CampaignWaveDirector>>,
+) {
+    let mode_text = match selected_mode
+        .map(|m| *m)
+        .unwrap_or(SelectedGameMode::Practice)
+    {
+        SelectedGameMode::Campaign => {
+            let mission = campaign
+                .as_ref()
+                .map(|c| c.mission_index.max(1))
+                .unwrap_or(1);
+            let wave_label = wave
+                .as_ref()
+                .map(|w| match w.phase {
+                    CampaignWavePhase::Warmup => {
+                        format!(
+                            "WAVE {}/{} · WARMUP",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
+                    CampaignWavePhase::ActiveWave => {
+                        format!("WAVE {}/{}", w.current_wave.max(1), w.total_waves.max(1))
+                    }
+                    CampaignWavePhase::InterWaveBreak => format!(
+                        "WAVE {}/{} · BREAK",
+                        w.current_wave.max(1),
+                        w.total_waves.max(1)
+                    ),
+                    CampaignWavePhase::Complete => "MISSION COMPLETE".to_string(),
+                    CampaignWavePhase::Inactive => "WAVE 1/1".to_string(),
+                })
+                .unwrap_or_else(|| "WAVE 1/1".to_string());
+            format!("MODE: CAMPAIGN · MISSION {mission} · {wave_label}")
+        }
+        SelectedGameMode::Practice => "MODE: PRACTICE".to_string(),
+    };
+
     commands
         .spawn((
             Node {
                 position_type: PositionType::Absolute,
                 right: Val::Px(14.0),
                 top: Val::Px(10.0),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::End,
                 ..default()
             },
             HudScoreDisplay,
@@ -491,6 +542,16 @@ pub fn setup_hud_score(mut commands: Commands, config: Res<PhysicsConfig>, font:
                 },
                 TextColor(Color::WHITE),
                 HudScoreText,
+            ));
+            parent.spawn((
+                Text::new(mode_text),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: (config.stats_font_size * 0.65).max(12.0),
+                    ..default()
+                },
+                TextColor(Color::srgb(0.80, 0.86, 0.92)),
+                HudModeText,
             ));
         });
 }

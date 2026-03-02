@@ -1149,7 +1149,8 @@ mod tests {
             .spawn((
                 Asteroid,
                 AsteroidSize(6),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)).with_rotation(original_rotation),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0))
+                    .with_rotation(original_rotation),
                 Velocity {
                     linvel: Vec2::new(3.0, -2.0),
                     angvel: 0.35,

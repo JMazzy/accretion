@@ -548,6 +548,35 @@ pub const ASTEROID_SIZE_SCALE_MIN: f32 = 0.5;
 /// Increased to 2.5 to allow noticeably large individual asteroids.
 pub const ASTEROID_SIZE_SCALE_MAX: f32 = 2.5;
 
+/// Minimum radial jitter fraction used by spawn-time shape variation.
+///
+/// Effective per-vertex jitter amplitude scales with asteroid size and is
+/// randomly selected between this minimum and
+/// [`SPAWN_SHAPE_JITTER_FRACTION_MAX`].
+pub const SPAWN_SHAPE_JITTER_FRACTION_MIN: f32 = 0.45;
+
+/// Maximum radial jitter fraction used by spawn-time shape variation.
+///
+/// Higher values produce rougher initial silhouettes but can increase
+/// probability of very thin local features.
+pub const SPAWN_SHAPE_JITTER_FRACTION_MAX: f32 = 0.8;
+
+/// Probability that a spawn-shape edge is subdivided once during procedural
+/// silhouette generation.
+pub const SPAWN_SHAPE_EDGE_SUBDIVISION_CHANCE: f32 = 0.22;
+
+/// Midpoint jitter fraction applied to procedurally inserted subdivision
+/// vertices during spawn-shape generation.
+pub const SPAWN_SHAPE_SUBDIVISION_JITTER_FRACTION: f32 = 0.22;
+
+/// Frequency for spawn-shape value-noise modulation used by initial irregular
+/// silhouette generation.
+pub const SPAWN_SHAPE_NOISE_FREQUENCY: f32 = 0.035;
+
+/// Amplitude for spawn-shape value-noise modulation used by initial irregular
+/// silhouette generation.
+pub const SPAWN_SHAPE_NOISE_AMPLITUDE: f32 = 0.25;
+
 /// Initial velocity range (u/s) assigned to each spawned asteroid axis component.
 pub const ASTEROID_INITIAL_VELOCITY_RANGE: f32 = 15.0;
 
