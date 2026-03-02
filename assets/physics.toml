@@ -369,3 +369,20 @@ asteroid_density = 0.1
 
 # Random initial angular velocity range (rad/s).
 asteroid_initial_angvel_range = 5.0
+
+# ── Crater-Based Deformation ──────────────────────────────────────────────────
+
+# Crater radius as fraction of asteroid's bounding radius.
+crater_radius_ratio = 0.25
+
+# Maximum crater depth in world units.
+crater_max_depth = 5.0
+
+# Depth added per non-lethal projectile hit.
+crater_depth_per_hit = 1.5
+
+# Vertices added per edge when subdividing crater zone.
+crater_edge_subdivisions = 2
+
+# Maximum craters tracked per asteroid (oldest removed when exceeded).
+max_craters_per_asteroid = 8

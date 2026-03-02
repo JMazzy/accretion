@@ -33,8 +33,9 @@ use super::state::{
     PlayerHealth, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel, Projectile,
 };
 use crate::asteroid::{
-    canonical_vertices_for_mass, compute_convex_hull_from_points, rescale_vertices_to_area,
-    spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Planet, Vertices,
+    apply_crater_deformation, canonical_vertices_for_mass, rescale_vertices_to_area,
+    spawn_asteroid_with_vertices, Asteroid, AsteroidSize, BaseVertices, CraterData, Planet,
+    Vertices,
 };
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
@@ -539,7 +540,14 @@ pub fn missile_asteroid_hit_system(
                 for (hull_world, mass) in fragment_hulls.into_iter().zip(masses.into_iter()) {
                     let centroid =
                         hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
-                    let local: Vec<Vec2> = hull_world.iter().map(|v| *v - centroid).collect();
+                    let local: Vec<Vec2> = hull_world
+                        .iter()
+                        .map(|v| {
+                            rot.inverse()
+                                .mul_vec3((*v - centroid).extend(0.0))
+                                .truncate()
+                        })
+                        .collect();
                     let target_area = mass as f32 / config.asteroid_density;
                     let local = rescale_vertices_to_area(&local, target_area);
                     let grey = 0.4 + rand::random::<f32>() * 0.3;
@@ -561,6 +569,12 @@ pub fn missile_asteroid_hit_system(
                         linvel: vel + kick_dir * 25.0,
                         angvel: ang_vel,
                     });
+                    let preserved_transform =
+                        Transform::from_translation(centroid.extend(0.05)).with_rotation(rot);
+                    commands.entity(frag_ent).insert((
+                        preserved_transform,
+                        GlobalTransform::from(preserved_transform),
+                    ));
                 }
             } else {
                 // Geometry fallback: still keep split-only semantics and target piece count.
@@ -747,7 +761,14 @@ pub fn projectile_asteroid_hit_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
     q_asteroids: Query<
-        (&AsteroidSize, &Transform, Option<&Velocity>, &Vertices),
+        (
+            &AsteroidSize,
+            &Transform,
+            Option<&Velocity>,
+            &Vertices,
+            Option<&BaseVertices>,
+            Option<&CraterData>,
+        ),
         (With<Asteroid>, Without<Planet>),
     >,
     mut q_proj: Query<(&Transform, &mut Projectile)>,
@@ -780,7 +801,9 @@ pub fn projectile_asteroid_hit_system(
             continue;
         }
 
-        let Ok((size, transform, velocity, vertices)) = q_asteroids.get(asteroid_entity) else {
+        let Ok((size, transform, velocity, vertices, base_vertices, crater_data)) =
+            q_asteroids.get(asteroid_entity)
+        else {
             continue; // Asteroid may have been despawned already
         };
 
@@ -843,7 +866,7 @@ pub fn projectile_asteroid_hit_system(
             spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
             spawn_debris_particles(&mut commands, pos, vel, n.max(1));
         } else {
-            // ── Chip: cut a flat facet at the impact vertex ───────────────────
+            // ── Chip: spawn fragment + inward local deformation ───────────────
             spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
             let closest_idx = world_verts
                 .iter()
@@ -879,31 +902,46 @@ pub fn projectile_asteroid_hit_system(
                 config.asteroid_density,
                 chip_size,
             );
+            let new_mass = (n - chip_size).max(1);
 
-            let n_verts = world_verts.len();
-            let prev_idx = (closest_idx + n_verts - 1) % n_verts;
-            let next_idx = (closest_idx + 1) % n_verts;
-            let tip = world_verts[closest_idx];
-            let cut_a = tip + (world_verts[prev_idx] - tip) * 0.30;
-            let cut_b = tip + (world_verts[next_idx] - tip) * 0.30;
-            let mut new_world_verts: Vec<Vec2> = Vec::with_capacity(n_verts + 1);
-            for (i, &v) in world_verts.iter().enumerate() {
-                if i == closest_idx {
-                    new_world_verts.push(cut_a);
-                    new_world_verts.push(cut_b);
-                } else {
-                    new_world_verts.push(v);
-                }
+            // Add new crater at impact point
+            let impact_local = rot
+                .inverse()
+                .mul_vec3((proj_pos - pos).extend(0.0))
+                .truncate();
+            let base_vertices_local = base_vertices
+                .map(|base| base.0.clone())
+                .unwrap_or_else(|| vertices.0.clone());
+            let bounding_radius = base_vertices_local
+                .iter()
+                .map(|v| v.length())
+                .fold(0.0f32, f32::max);
+            let crater_radius = bounding_radius * config.crater_radius_ratio;
+
+            let mut new_crater_data = crater_data.cloned().unwrap_or_default();
+            new_crater_data.craters.push((
+                impact_local,
+                config.crater_depth_per_hit,
+                crater_radius,
+            ));
+
+            // Limit crater count
+            if new_crater_data.craters.len() > config.max_craters_per_asteroid {
+                new_crater_data.craters.remove(0);
             }
 
-            let hull_world =
-                compute_convex_hull_from_points(&new_world_verts).unwrap_or(new_world_verts);
-            let hull_centroid: Vec2 =
-                hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
-            let new_mass = (n - chip_size).max(1);
-            let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - hull_centroid).collect();
+            // Apply all craters to base vertices to get deformed shape
+            let deformed_local =
+                apply_crater_deformation(&base_vertices_local, &new_crater_data.craters, &config)
+                    .unwrap_or_else(|| base_vertices_local.clone());
+
+            // Rescale to match new mass after chip removal
             let target_area = new_mass as f32 / config.asteroid_density;
-            let new_local = rescale_vertices_to_area(&new_local, target_area);
+            let new_local = rescale_vertices_to_area(&deformed_local, target_area);
+
+            // Also rescale base vertices to match new mass
+            let new_base = rescale_vertices_to_area(&base_vertices_local, target_area);
+            let hull_centroid = pos;
 
             commands.entity(asteroid_entity).despawn();
 
@@ -915,10 +953,19 @@ pub fn projectile_asteroid_hit_system(
                 Color::srgb(grey, grey, grey),
                 new_mass,
             );
+            let preserved_transform =
+                Transform::from_translation(hull_centroid.extend(0.05)).with_rotation(rot);
             commands.entity(new_ent).insert(Velocity {
                 linvel: vel,
                 angvel: ang_vel,
             });
+            commands.entity(new_ent).insert((
+                preserved_transform,
+                GlobalTransform::from(preserved_transform),
+            ));
+            commands
+                .entity(new_ent)
+                .insert((new_crater_data, BaseVertices(new_base)));
         }
     }
 }
@@ -980,6 +1027,19 @@ mod tests {
         app.add_plugins(MinimalPlugins)
             .insert_resource(crate::config::PhysicsConfig::default())
             .add_systems(Update, despawn_old_missiles_system);
+        app
+    }
+
+    fn setup_missile_hit_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .add_message::<CollisionEvent>()
+            .insert_resource(crate::config::PhysicsConfig::default())
+            .insert_resource(crate::simulation::SimulationStats::default())
+            .insert_resource(PlayerScore::default())
+            .insert_resource(crate::simulation::MissileTelemetry::default())
+            .insert_resource(crate::player::state::SecondaryWeaponLevel::default())
+            .add_systems(PostUpdate, missile_asteroid_hit_system);
         app
     }
 
@@ -1080,6 +1140,71 @@ mod tests {
     }
 
     #[test]
+    fn missile_split_replacement_preserves_rotation() {
+        let mut app = setup_missile_hit_test_app();
+
+        let original_rotation = Quat::from_rotation_z(1.17);
+        let asteroid = app
+            .world_mut()
+            .spawn((
+                Asteroid,
+                AsteroidSize(6),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)).with_rotation(original_rotation),
+                Velocity {
+                    linvel: Vec2::new(3.0, -2.0),
+                    angvel: 0.35,
+                },
+                Vertices(vec![
+                    Vec2::new(0.0, 10.0),
+                    Vec2::new(-8.0, 5.0),
+                    Vec2::new(-9.0, -4.0),
+                    Vec2::new(0.0, -10.0),
+                    Vec2::new(9.0, -4.0),
+                    Vec2::new(8.0, 5.0),
+                ]),
+            ))
+            .id();
+
+        let missile = app
+            .world_mut()
+            .spawn((
+                Missile::default(),
+                Transform::from_translation(Vec3::new(20.0, 0.0, 0.0)),
+            ))
+            .id();
+
+        app.world_mut().write_message(CollisionEvent::Started(
+            missile,
+            asteroid,
+            bevy_rapier2d::rapier::geometry::CollisionEventFlags::empty(),
+        ));
+
+        app.update();
+
+        assert!(app.world().get_entity(missile).is_err());
+        assert!(app.world().get_entity(asteroid).is_err());
+
+        let mut q_fragments = app.world_mut().query::<(&AsteroidSize, &Transform)>();
+        let fragment_rotations: Vec<Quat> = q_fragments
+            .iter(app.world())
+            .map(|(_, transform)| transform.rotation)
+            .collect();
+
+        assert_eq!(
+            fragment_rotations.len(),
+            2,
+            "default missile split should create two replacement fragments"
+        );
+
+        for (i, rotation) in fragment_rotations.iter().enumerate() {
+            assert!(
+                rotation.dot(original_rotation).abs() > 0.9999,
+                "fragment {i} should preserve source asteroid orientation"
+            );
+        }
+    }
+
+    #[test]
     fn impact_radiating_split_basis_anchors_near_impact_edge() {
         let square = vec![
             Vec2::new(-10.0, -10.0),
@@ -1137,8 +1262,10 @@ mod tests {
         ];
 
         let (front_raw, back_raw) = split_convex_polygon_world(&square, Vec2::ZERO, Vec2::X);
-        let front = compute_convex_hull_from_points(&front_raw).expect("front split hull");
-        let back = compute_convex_hull_from_points(&back_raw).expect("back split hull");
+        let front =
+            crate::asteroid::compute_convex_hull_from_points(&front_raw).expect("front split hull");
+        let back =
+            crate::asteroid::compute_convex_hull_from_points(&back_raw).expect("back split hull");
 
         let total = polygon_area(&square);
         let split_total = polygon_area(&front) + polygon_area(&back);

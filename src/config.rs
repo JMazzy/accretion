@@ -222,6 +222,11 @@ pub struct PhysicsConfig {
     pub asteroid_size_scale_max: f32,
     pub asteroid_initial_velocity_range: f32,
     pub asteroid_initial_angvel_range: f32,
+    pub crater_radius_ratio: f32,
+    pub crater_max_depth: f32,
+    pub crater_depth_per_hit: f32,
+    pub crater_edge_subdivisions: usize,
+    pub max_craters_per_asteroid: usize,
 
     // ── Physics: Density ──────────────────────────────────────────────────────
     /// Mass units per world-unit² used to scale polygon visual area to match mass.
@@ -383,6 +388,11 @@ impl Default for PhysicsConfig {
             asteroid_size_scale_max: ASTEROID_SIZE_SCALE_MAX,
             asteroid_initial_velocity_range: ASTEROID_INITIAL_VELOCITY_RANGE,
             asteroid_initial_angvel_range: ASTEROID_INITIAL_ANGVEL_RANGE,
+            crater_radius_ratio: CRATER_RADIUS_RATIO,
+            crater_max_depth: CRATER_MAX_DEPTH,
+            crater_depth_per_hit: CRATER_DEPTH_PER_HIT,
+            crater_edge_subdivisions: CRATER_EDGE_SUBDIVISIONS,
+            max_craters_per_asteroid: MAX_CRATERS_PER_ASTEROID,
             // Density
             asteroid_density: ASTEROID_DENSITY,
         }

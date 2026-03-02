@@ -597,7 +597,14 @@ fn apply_blaster_like_asteroid_hit(
     let hull_world = compute_convex_hull_from_points(&new_world_verts).unwrap_or(new_world_verts);
     let hull_centroid: Vec2 = hull_world.iter().copied().sum::<Vec2>() / hull_world.len() as f32;
     let new_mass = (n - chip_size).max(1);
-    let new_local: Vec<Vec2> = hull_world.iter().map(|v| *v - hull_centroid).collect();
+    let new_local: Vec<Vec2> = hull_world
+        .iter()
+        .map(|v| {
+            rot.inverse()
+                .mul_vec3((*v - hull_centroid).extend(0.0))
+                .truncate()
+        })
+        .collect();
     let target_area = new_mass as f32 / config.asteroid_density;
     let new_local = rescale_vertices_to_area(&new_local, target_area);
 
@@ -615,6 +622,12 @@ fn apply_blaster_like_asteroid_hit(
         linvel: vel,
         angvel: ang_vel,
     });
+    let preserved_transform =
+        Transform::from_translation(hull_centroid.extend(0.05)).with_rotation(rot);
+    commands.entity(new_ent).insert((
+        preserved_transform,
+        GlobalTransform::from(preserved_transform),
+    ));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1209,6 +1222,12 @@ mod tests {
                     Vec2::new(-4.0, -3.0),
                     Vec2::new(4.0, -3.0),
                 ]),
+                crate::asteroid::BaseVertices(vec![
+                    Vec2::new(0.0, 5.0),
+                    Vec2::new(-4.0, -3.0),
+                    Vec2::new(4.0, -3.0),
+                ]),
+                crate::asteroid::CraterData::default(),
             ))
             .id();
 
@@ -1237,5 +1256,80 @@ mod tests {
 
         let stats = app.world().resource::<SimulationStats>();
         assert!(stats.destroyed_total >= 1);
+    }
+
+    #[test]
+    fn enemy_projectile_asteroid_replacement_preserves_rotation() {
+        let mut app = enemy_collision_test_app();
+        app.add_systems(PostUpdate, enemy_projectile_hit_system);
+
+        let _player = app
+            .world_mut()
+            .spawn((
+                Player,
+                PlayerHealth {
+                    hp: 100.0,
+                    max_hp: 100.0,
+                    inv_timer: 0.0,
+                    time_since_damage: 0.0,
+                },
+            ))
+            .id();
+
+        let original_rotation = Quat::from_rotation_z(0.73);
+        let asteroid = app
+            .world_mut()
+            .spawn((
+                Asteroid,
+                AsteroidSize(6),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)).with_rotation(original_rotation),
+                Velocity::zero(),
+                Vertices(vec![
+                    Vec2::new(0.0, 7.0),
+                    Vec2::new(-6.0, -4.0),
+                    Vec2::new(0.0, -7.0),
+                    Vec2::new(6.0, -4.0),
+                ]),
+                crate::asteroid::BaseVertices(vec![
+                    Vec2::new(0.0, 7.0),
+                    Vec2::new(-6.0, -4.0),
+                    Vec2::new(0.0, -7.0),
+                    Vec2::new(6.0, -4.0),
+                ]),
+                crate::asteroid::CraterData::default(),
+            ))
+            .id();
+
+        let enemy_projectile = app
+            .world_mut()
+            .spawn((
+                EnemyProjectile {
+                    age: 0.0,
+                    distance_traveled: 0.0,
+                },
+                Transform::from_translation(Vec3::new(4.0, 2.0, 0.0)),
+            ))
+            .id();
+
+        app.world_mut().write_message(CollisionEvent::Started(
+            enemy_projectile,
+            asteroid,
+            bevy_rapier2d::rapier::geometry::CollisionEventFlags::empty(),
+        ));
+
+        app.update();
+
+        assert!(app.world().get_entity(asteroid).is_err());
+
+        let mut asteroid_query = app.world_mut().query::<(&AsteroidSize, &Transform)>();
+        let replacement_rotation = asteroid_query
+            .iter(app.world())
+            .find_map(|(size, transform)| (size.0 > 1).then_some(transform.rotation))
+            .expect("replacement asteroid should exist after non-lethal hit");
+
+        assert!(
+            replacement_rotation.dot(original_rotation).abs() > 0.9999,
+            "replacement asteroid should preserve original orientation"
+        );
     }
 }

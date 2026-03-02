@@ -2,7 +2,7 @@
 
 Planned features, improvements, and known limitations. Completed items are removed; see [FEATURES.md](FEATURES.md) and [CHANGELOG.md](CHANGELOG.md) for implemented history.
 
-Last updated: February 27, 2026.
+Last updated: March 1, 2026.
 
 ## Planning Notes
 
@@ -14,15 +14,17 @@ Last updated: February 27, 2026.
 
 ### Visual Features
 
-- [ ] **Concave deformation: damage model + rendering**
-	- Per-vertex damage accumulation and inward displacement model.
-	- Visual crack/deformation feedback linked to impact intensity.
-	- Acceptance: repeated non-lethal hits visibly deform asteroid silhouettes.
+- [X] **Concave deformation: damage model + rendering** ✅ Complete (March 1, 2026)
+	- Crater-based deformation with local edge subdivision and inward crater shaping.
+	- Repeated non-lethal hits add crater detail instead of flattening/removing vertices.
+	- Acceptance: repeated non-lethal hits produce stable crater-like dents without collapsing to triangles.
+	- Implementation: asteroid visuals now regenerate from `BaseVertices` + accumulated `CraterData`; impacts add craters (position/depth/radius) with bounded count, then rebuild deformed local vertices.
 
-- [ ] **Concave deformation: collider/physics strategy** `depends on Concave deformation: damage model + rendering`
-	- Decide and implement safe collider approximation strategy (convex decomposition or fallback hull).
-	- Validate performance and contact stability.
-	- Acceptance: deformed asteroids remain physically stable and performant.
+- [X] **Concave deformation: collider/physics strategy** ✅ Complete (March 1, 2026)
+	- Option A strategy implemented: visual concavity with stable convex physics collider.
+	- Collider derives from `BaseVertices` (undeformed convex hull), while render mesh uses crater-deformed `Vertices`.
+	- Acceptance: deformed asteroids remain physically stable/performance-safe with no decomposition overhead.
+	- Implementation: removed decomposition path for deformation handling; convex hull colliders now stay stable while crater visuals update independently.
 
 ## P1 — Next Queue
 

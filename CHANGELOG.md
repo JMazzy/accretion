@@ -1,5 +1,90 @@
 # Accretion Changelog
 
+## Concave Deformation: Crater Reimplementation (Option A) — March 1, 2026
+
+### Replaced vertex-flattening deformation with crater-based geometry; kept stable convex colliders
+
+**What changed**:
+- Replaced per-vertex damage model with crater-based deformation data:
+  - Added `BaseVertices` component to preserve undeformed local hull geometry.
+  - Added `CraterData` component tracking crater tuples `(local_position, depth, radius)`.
+- Reworked deformation pipeline in `src/asteroid.rs`:
+  - Removed `apply_localized_deformation` and vertex-damage accumulation.
+  - Added `apply_crater_deformation` that subdivides local edges near impact zones and displaces crater-zone vertices inward with radial falloff.
+  - Visual `Vertices` are regenerated from `BaseVertices + CraterData` each chip hit.
+- Implemented Option A physics strategy for stability:
+  - Collider creation remains convex hull based and is sourced from `BaseVertices`.
+  - Visual concavity no longer mutates collider geometry, reducing rotational jerk/contact instability.
+- Updated non-lethal chip flow in `src/player/combat.rs`:
+  - Chip hits now append a crater (bounded FIFO by max crater count), regenerate deformed visual vertices, and preserve base hull for physics.
+  - On chip-respawn, both visual vertices and base vertices are mass-rescaled consistently.
+- Replaced deformation constants/config with crater constants in `src/constants.rs`, `src/config.rs`, and `assets/physics.toml`:
+  - `crater_radius_ratio`, `crater_max_depth`, `crater_depth_per_hit`, `crater_edge_subdivisions`, `max_craters_per_asteroid`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+- `cargo build --release` ✅
+
+**Impact**:
+- Repeated impacts now create crater-like dents by adding local geometric detail rather than collapsing silhouettes toward triangles.
+- Collider stability improves by decoupling concave visual deformation from physics hull generation.
+- Merged asteroids still retain sensible outline complexity via existing merged hull generation, while crater state intentionally resets on merge.
+
+## Concave Deformation: Collider Strategy (P0 complete) — March 1, 2026
+
+### Implemented convex decomposition collider approximation for concave shapes with bounded fallback
+
+**What changed**:
+- Added deformation collider strategy tunables to defaults/runtime config:
+  - `DEFORMATION_COLLIDER_USE_DECOMPOSITION` (bool) in `src/constants.rs`
+  - `DEFORMATION_COLLIDER_MAX_PARTS` (usize) to bound decomposition complexity
+  - `DEFORMATION_COLLIDER_MIN_AREA` (f32) to filter degenerate sub-shapes
+  - Mirrored to `PhysicsConfig` and `assets/physics.toml`
+- Enhanced `collider_for_vertices` in `src/asteroid.rs`:
+  - Added `is_concave_polygon` helper using cross-product winding analysis to detect reflex vertices.
+  - When enabled and concave input detected, attempts Rapier `convex_decomposition` with part-count bounds.
+  - Falls back to convex hull if decomposition fails, produces too many parts, or contains degenerate sub-shapes.
+- Added unit tests in `src/asteroid.rs`:
+  - `collider_for_concave_polygon_uses_compound_when_enabled`: validates compound collider construction for T-shaped concave input.
+  - `collider_for_convex_polygon_stays_non_compound`: ensures convex shapes avoid decomposition overhead.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+- `cargo test collider_for_concave_polygon_uses_compound_when_enabled` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+
+**Impact**:
+- Deformed concave asteroids now use multi-part compound colliders for accurate contact physics when decomposition enabled.
+- Complexity bounded by `MAX_PARTS` to prevent performance degradation with pathological shapes.
+- Convex hull fallback ensures stable collision handling in all cases.
+
+## Concave Deformation: Initial Slice (P0 start) — March 1, 2026
+
+### Added per-vertex impact damage and local inward deformation for non-lethal projectile chip hits
+
+**What changed**:
+- Added `VertexDamage` state and localized deformation helpers in `src/asteroid.rs`.
+- Added deformation tunables to defaults/runtime config:
+  - `src/constants.rs`
+  - `src/config.rs`
+  - `assets/physics.toml`
+- Updated projectile chip path in `src/player/combat.rs` to:
+  - accumulate per-vertex damage,
+  - apply inward local deformation near impact,
+  - preserve deformation state across chip-respawn.
+- Added `refresh_asteroid_mesh_on_vertices_change_system` in `src/asteroid_rendering.rs` and wired it in `src/simulation.rs` so retained meshes stay sync-safe for geometry edits.
+- Centralized collider creation in `src/asteroid.rs` and applied convex fallback for deformed silhouettes as interim collider strategy.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+
 ## HUD Symbol Coverage Cleanup — February 28, 2026
 
 ### Replaced unsupported tractor glyph and aligned symbol-to-font assignments

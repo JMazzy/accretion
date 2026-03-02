@@ -554,6 +554,35 @@ pub const ASTEROID_INITIAL_VELOCITY_RANGE: f32 = 15.0;
 /// Initial angular velocity range (rad/s) assigned to each spawned asteroid.
 pub const ASTEROID_INITIAL_ANGVEL_RANGE: f32 = 5.0;
 
+// ── Crater-Based Deformation ──────────────────────────────────────────────────
+
+/// Crater radius as fraction of the asteroid's bounding circle radius.
+///
+/// Higher values create larger impact craters; 0.25 = quarter of asteroid size.
+pub const CRATER_RADIUS_RATIO: f32 = 0.25;
+
+/// Maximum crater depth in world units at full damage.
+///
+/// Each hit adds depth; multiple hits in the same area create deeper craters.
+pub const CRATER_MAX_DEPTH: f32 = 5.0;
+
+/// Depth added per non-lethal projectile hit.
+///
+/// Accumulates with existing crater depth (clamped to CRATER_MAX_DEPTH).
+pub const CRATER_DEPTH_PER_HIT: f32 = 1.5;
+
+/// Number of new vertices added per edge when subdividing the crater zone.
+///
+/// Higher values create smoother crater rims but increase vertex count.
+/// Value of 2 means each edge becomes 3 segments (2 new vertices inserted).
+pub const CRATER_EDGE_SUBDIVISIONS: usize = 2;
+
+/// Maximum total craters tracked per asteroid.
+///
+/// When this limit is exceeded, the oldest crater is removed.
+/// Prevents unbounded vertex growth from repeated impacts.
+pub const MAX_CRATERS_PER_ASTEROID: usize = 8;
+
 // ── Primary Weapon Upgrades ───────────────────────────────────────────────────
 
 /// Maximum level the primary weapon can be upgraded to (1-indexed display; 0 = base).

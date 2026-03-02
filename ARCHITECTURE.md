@@ -288,6 +288,7 @@ Key constant groups (see `src/constants.rs` for current values):
 | Gamepad | `GAMEPAD_BRAKE_DAMPING`, `GAMEPAD_LEFT_DEADZONE`, etc. |
 | Asteroid geometry | `TRIANGLE_BASE_SIDE`, `SQUARE_BASE_HALF`, `POLYGON_BASE_RADIUS`, `HEPTAGON_BASE_RADIUS`, `OCTAGON_BASE_RADIUS`, `PLANETOID_BASE_RADIUS`, `PLANETOID_UNIT_SIZE` |
 | Asteroid density | `ASTEROID_DENSITY` — mass units per world-unit² (default `0.1`); governs visual area of merged/split polygons |
+| Crater deformation | `CRATER_RADIUS_RATIO`, `CRATER_MAX_DEPTH`, `CRATER_DEPTH_PER_HIT`, `CRATER_EDGE_SUBDIVISIONS`, `MAX_CRATERS_PER_ASTEROID` |
 
 ## Scenarios
 
@@ -353,7 +354,7 @@ Built-in scenarios are variants of `SelectedScenario` (in `menu.rs`) and spawned
 - **Max simulation density**: Gizmo-based force-vector annotations auto-disabled at high count (> `force_vector_hide_threshold`); asteroid, ship, and projectile fills use retained `Mesh2d` GPU assets that scale efficiently with entity count
 
 #### Physics Simplifications
-- **Convex-only colliders**: All asteroid shapes are convex polygons; concavities from impacts are approximated by their convex hull, not modelled directly
+- **Convex collider approximation (Option A)**: Asteroid rendering retains crater-like concave dents for non-lethal impact deformation, but physics colliders intentionally remain convex and are built from undeformed `BaseVertices` for stability/performance.
 - **Gravity cutoff**: Gravity is disabled inside `MIN_GRAVITY_DIST` (Rapier handles close contacts) and beyond `MAX_GRAVITY_DIST`; there is no smooth transition
 - ~~**No rotational gravity torque**: Gravity applies only linear force (no torque based on off-centre mass distribution)~~ ✅ Implemented — tidal differential torques now applied per pair
 - **Cluster formation is discrete**: Merging is all-or-nothing per frame; a cluster either fully merges in one PostUpdate step or waits until the next frame
@@ -370,7 +371,7 @@ Physics constants are defined in `src/constants.rs` as compile-time defaults and
 ### Future Enhancement Roadmap
 
 #### Physics Improvements
-- **Concave asteroid deformation**: Track per-vertex damage state; move impact vertex inward and recompute hull to simulate craters and progressive destruction
+- ~~**Concave deformation collider strategy**: Visual/local deformation is now in place for non-lethal projectile hits; next step is improved collider approximation (e.g., bounded decomposition/compound fallback) with performance and contact-stability validation~~ ✅ Completed with Option A — crater-based concave visuals + stable convex colliders from base hull geometry
 - ~~**Gravitational binding energy merge criterion**: Replace velocity-threshold merging with a binding-energy check; clusters only merge if their kinetic energy is below the gravitational potential energy of the cluster, producing more physically realistic aggregation~~ ✅ Completed
 - ~~**Rotational-inertia-aware gravity torque**: Include mass distribution (second moment of area) in gravity force application so oddly-shaped composites develop realistic rotation~~ ✅ Completed
 - ~~**Soft boundary with elastic reflection**: Replace hard cull-at-1000u removal with a potential-well boundary that gently reflects asteroids back toward the simulation centre~~ ✅ Completed

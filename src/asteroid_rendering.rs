@@ -138,6 +138,29 @@ pub fn sync_asteroid_render_mode_system(
     }
 }
 
+/// Rebuild retained asteroid meshes when local-space polygon vertices change.
+///
+/// This keeps visual geometry in sync for in-place deformation paths while
+/// preserving the retained-mesh rendering model.
+#[allow(clippy::type_complexity)]
+pub fn refresh_asteroid_mesh_on_vertices_change_system(
+    mut meshes: ResMut<Assets<Mesh>>,
+    query: Query<(&Vertices, &AsteroidRenderHandles), (With<Asteroid>, Changed<Vertices>)>,
+) {
+    for (vertices, handles) in query.iter() {
+        if vertices.0.len() < 3 {
+            continue;
+        }
+
+        if let Some(fill_mesh) = meshes.get_mut(&handles.fill_mesh) {
+            *fill_mesh = filled_polygon_mesh(&vertices.0);
+        }
+        if let Some(outline_mesh) = meshes.get_mut(&handles.outline_mesh) {
+            *outline_mesh = polygon_outline_mesh(&vertices.0, 0.4);
+        }
+    }
+}
+
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 
 /// Fan-triangulate a convex polygon into a renderable [`Mesh`].

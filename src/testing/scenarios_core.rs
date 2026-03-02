@@ -1,5 +1,5 @@
 use super::TestConfig;
-use crate::asteroid::{spawn_asteroid_with_vertices, Vertices};
+use crate::asteroid::{spawn_asteroid_with_vertices, BaseVertices, CraterData, Vertices};
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::Velocity;
 
@@ -357,6 +357,8 @@ pub fn spawn_test_passing_asteroid(mut commands: Commands, mut test_config: ResM
             Asteroid,
             AsteroidSize(1),
             Vertices(small_verts.clone()),
+            BaseVertices(small_verts.clone()),
+            CraterData::default(),
             NeighborCount(0),
             RigidBody::Dynamic,
             Collider::ball(2.0),

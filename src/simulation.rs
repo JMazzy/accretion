@@ -8,7 +8,10 @@ use crate::asteroid::{
     compute_convex_hull_from_points, rescale_vertices_to_area, Asteroid, AsteroidSize,
     GravityForce, NeighborCount, Planet, Vertices,
 };
-use crate::asteroid_rendering::{attach_asteroid_mesh_system, sync_asteroid_render_mode_system};
+use crate::asteroid_rendering::{
+    attach_asteroid_mesh_system, refresh_asteroid_mesh_on_vertices_change_system,
+    sync_asteroid_render_mode_system,
+};
 use crate::config::PhysicsConfig;
 use crate::enemy::Enemy;
 use crate::menu::GameState;
@@ -204,6 +207,7 @@ impl Plugin for SimulationPlugin {
                             camera_follow_system,                              // Camera tracks player
                             camera_zoom_system,                                // Apply zoom scale
                             attach_asteroid_mesh_system, // Attach Mesh2d to new asteroids
+                            refresh_asteroid_mesh_on_vertices_change_system, // Rebuild asteroid meshes after in-place geometry edits
                             sync_asteroid_render_mode_system, // Swap fill/outline mesh on wireframe_only toggle
                             attach_player_ship_mesh_system,   // Attach Mesh2d to player ship
                             attach_player_ui_system,          // Spawn health bar + aim indicator
