@@ -1,5 +1,27 @@
 # Accretion Changelog
 
+## Spawn Geometry Stability: Jagged/Elongated Outlier Fix — March 1, 2026
+
+### Added spawn-shape sanitization and degenerate-area fallback to prevent pathological asteroids
+
+**What changed**:
+- Hardened spawn-shape generation in `src/asteroid.rs` after jitter/noise variation:
+  - Added a sanitization pass that reorders vertices by polar angle, clamps extreme radial outliers, and applies light neighborhood smoothing.
+  - Added a safety fallback to the original base polygon when varied shape area collapses below a threshold, preventing downstream area-rescale blowups.
+- Added regression tests for:
+  - outlier-radius clamping stability,
+  - reasonable post-jitter area preservation across deterministic random seeds.
+- Updated architecture docs to record the new spawn-shape guardrail stage.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+
+**Impact**:
+- Reduces frequency of unnaturally long/angular/jagged spawned asteroids while preserving irregular silhouette variety.
+- Prevents rare degenerate spawn shapes from being amplified into extreme geometry by area normalization.
+
 ## Backlog Cleanup: Completed Items Removed — March 1, 2026
 
 ### Normalized backlog to show only pending work

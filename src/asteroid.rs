@@ -4,7 +4,7 @@
 //! Any two asteroids can combine if touching and slow, forming a new asteroid with
 //! the convex hull of their combined shapes.
 
-use std::f32::consts::TAU;
+use std::{cmp::Ordering, f32::consts::TAU};
 
 use crate::config::PhysicsConfig;
 use crate::constants::{
@@ -100,6 +100,8 @@ fn apply_vertex_jitter(
         return vertices;
     }
 
+    let original_vertices = vertices.clone();
+
     // Step 1: Optional edge subdivision for richer silhouette detail.
     let subdivision_chance = config.spawn_shape_edge_subdivision_chance.clamp(0.0, 1.0);
     if subdivision_chance > 0.0 {
@@ -148,28 +150,107 @@ fn apply_vertex_jitter(
     // Step 3: Value-noise radial modulation for natural clustered roughness.
     let noise_freq = config.spawn_shape_noise_frequency.max(0.0);
     let noise_amp = config.spawn_shape_noise_amplitude.max(0.0);
-    if noise_freq <= 1e-6 || noise_amp <= 1e-6 {
+    if noise_freq > 1e-6 && noise_amp > 1e-6 {
+        let noise_offset = Vec2::new(
+            rng.gen_range(-50_000.0..50_000.0),
+            rng.gen_range(-50_000.0..50_000.0),
+        );
+
+        vertices = vertices
+            .into_iter()
+            .map(|v| {
+                let radius = v.length();
+                if radius <= 1e-6 {
+                    return v;
+                }
+
+                let centered = noise_2d(v.x, v.y, noise_freq, noise_offset) * 2.0 - 1.0;
+                let radial_scale = (1.0 + centered * noise_amp).max(0.2);
+                v.normalize_or_zero() * radius * radial_scale
+            })
+            .collect();
+    }
+
+    // Step 4: Safety sanitization.
+    // Random Cartesian jitter + subdivision can occasionally create pathological
+    // local outliers that look unnaturally long/jagged. Reorder by polar angle,
+    // clamp extreme radial outliers, and apply a light smoothing pass.
+    let sanitized = sanitize_spawn_vertices(vertices);
+    let original_area = polygon_area(&original_vertices);
+    let sanitized_area = polygon_area(&sanitized);
+
+    // Degenerate fallback guard: if sanitization still produces near-zero area
+    // relative to the base polygon, prefer the original regular shape. This
+    // avoids rare area-normalization blowups in downstream scaling.
+    if original_area > 1e-6 && sanitized_area < original_area * 0.2 {
+        original_vertices
+    } else {
+        sanitized
+    }
+}
+
+fn sanitize_spawn_vertices(mut vertices: Vec<Vec2>) -> Vec<Vec2> {
+    if vertices.len() < 3 {
         return vertices;
     }
 
-    let noise_offset = Vec2::new(
-        rng.gen_range(-50_000.0..50_000.0),
-        rng.gen_range(-50_000.0..50_000.0),
-    );
+    let centroid = vertices.iter().copied().sum::<Vec2>() / vertices.len() as f32;
+
+    vertices.sort_by(|left, right| {
+        let left_angle = (left.y - centroid.y).atan2(left.x - centroid.x);
+        let right_angle = (right.y - centroid.y).atan2(right.x - centroid.x);
+        left_angle
+            .partial_cmp(&right_angle)
+            .unwrap_or(Ordering::Equal)
+    });
+
+    let mut radii: Vec<f32> = vertices
+        .iter()
+        .map(|vertex| (*vertex - centroid).length())
+        .filter(|radius| radius.is_finite())
+        .collect();
+    if radii.is_empty() {
+        return vertices;
+    }
+
+    radii.sort_by(|left, right| left.partial_cmp(right).unwrap_or(Ordering::Equal));
+    let median_radius = radii[radii.len() / 2].max(1e-3);
+    let min_radius = median_radius * 0.6;
+    let max_radius = median_radius * 1.55;
+
+    for vertex in &mut vertices {
+        let offset = *vertex - centroid;
+        let radius = offset.length();
+        if radius <= 1e-6 {
+            continue;
+        }
+        let clamped = radius.clamp(min_radius, max_radius);
+        *vertex = centroid + offset.normalize_or_zero() * clamped;
+    }
+
+    if vertices.len() >= 5 {
+        let smoothing_factor = 0.18;
+        let original = vertices.clone();
+        let count = original.len();
+        for (index, vertex) in vertices.iter_mut().enumerate() {
+            let prev = original[(index + count - 1) % count];
+            let next = original[(index + 1) % count];
+            let neighbor_midpoint = (prev + next) * 0.5;
+            *vertex = original[index].lerp(neighbor_midpoint, smoothing_factor);
+        }
+
+        for vertex in &mut vertices {
+            let offset = *vertex - centroid;
+            let radius = offset.length();
+            if radius <= 1e-6 {
+                continue;
+            }
+            let clamped = radius.clamp(min_radius, max_radius);
+            *vertex = centroid + offset.normalize_or_zero() * clamped;
+        }
+    }
 
     vertices
-        .into_iter()
-        .map(|v| {
-            let radius = v.length();
-            if radius <= 1e-6 {
-                return v;
-            }
-
-            let centered = noise_2d(v.x, v.y, noise_freq, noise_offset) * 2.0 - 1.0;
-            let radial_scale = (1.0 + centered * noise_amp).max(0.2);
-            v.normalize_or_zero() * radius * radial_scale
-        })
-        .collect()
 }
 
 fn build_spawn_shape_with_variation(
@@ -1553,6 +1634,54 @@ mod tests {
             polygon_area(&out_a) > 1e-3,
             "deformed polygon should keep positive area"
         );
+    }
+
+    #[test]
+    fn sanitize_spawn_vertices_clamps_extreme_outlier() {
+        let base = vec![
+            Vec2::new(9.0, 0.0),
+            Vec2::new(6.0, 7.0),
+            Vec2::new(0.0, 10.0),
+            Vec2::new(-7.0, 6.0),
+            Vec2::new(-10.0, 0.0),
+            Vec2::new(-6.0, -7.0),
+            Vec2::new(0.0, -9.0),
+            Vec2::new(7.0, -6.0),
+            Vec2::new(85.0, 2.0),
+        ];
+
+        let base_max_radius = base
+            .iter()
+            .map(|vertex| vertex.length())
+            .fold(0.0_f32, f32::max);
+        let out = sanitize_spawn_vertices(base);
+        let centroid = out.iter().copied().sum::<Vec2>() / out.len() as f32;
+        let max_radius = out
+            .iter()
+            .map(|vertex| (*vertex - centroid).length())
+            .fold(0.0_f32, f32::max);
+
+        assert!(
+            max_radius < base_max_radius * 0.5,
+            "expected sanitization to significantly shrink outlier radius, got base_max={base_max_radius:.2}, out_max={max_radius:.2}"
+        );
+    }
+
+    #[test]
+    fn apply_vertex_jitter_keeps_reasonable_area_distribution() {
+        let config = PhysicsConfig::default();
+        let base = generate_regular_polygon(8, 1.4, POLYGON_BASE_RADIUS);
+        let base_area = polygon_area(&base);
+
+        for seed in 0..128_u64 {
+            let mut rng = StdRng::seed_from_u64(seed);
+            let out = apply_vertex_jitter(base.clone(), 1.4, &mut rng, &config);
+            let out_area = polygon_area(&out);
+            assert!(
+                out_area > base_area * 0.2,
+                "seed {seed}: varied area collapsed too much (base={base_area:.3}, out={out_area:.3})"
+            );
+        }
     }
 
     #[test]

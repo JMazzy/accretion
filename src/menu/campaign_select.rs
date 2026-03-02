@@ -328,8 +328,20 @@ pub fn campaign_name_input_system(
 
 pub fn campaign_name_display_system(
     editor: Res<CampaignNameEditor>,
-    mut slot_text: Query<&mut Text, With<CampaignSelectedSlotText>>,
-    mut name_text: Query<&mut Text, With<CampaignNameValueText>>,
+    mut slot_text: Query<
+        &mut Text,
+        (
+            With<CampaignSelectedSlotText>,
+            Without<CampaignNameValueText>,
+        ),
+    >,
+    mut name_text: Query<
+        &mut Text,
+        (
+            With<CampaignNameValueText>,
+            Without<CampaignSelectedSlotText>,
+        ),
+    >,
 ) {
     if !editor.is_changed() {
         return;
