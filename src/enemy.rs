@@ -26,6 +26,11 @@ use std::collections::HashMap;
 const ENEMY_HARD_CAP: u32 = 1;
 const ENEMY_PROJECTILE_HARD_CAP: usize = 64;
 const ENEMY_TIER_CAP: u32 = 4;
+const ENEMY_FORMATION_MIN_WAVE: u32 = 2;
+const ENEMY_FORMATION_MIN_MEMBERS: usize = 3;
+const ENEMY_FORMATION_BREAK_DISTANCE: f32 = 280.0;
+const ENEMY_FORMATION_LATERAL_SPACING: f32 = 34.0;
+const ENEMY_FORMATION_FOLLOW_DISTANCE: f32 = 52.0;
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Enemy;
@@ -72,6 +77,20 @@ pub enum EnemyArchetype {
 }
 
 #[derive(Component, Debug, Clone, Copy)]
+pub struct EnemyFormationLeader;
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EnemyFormationMember {
+    pub leader: Entity,
+    pub slot_index: u8,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EnemyFormationTarget {
+    pub world_anchor: Vec2,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyStun {
     pub remaining_secs: f32,
 }
@@ -107,6 +126,7 @@ impl Plugin for EnemyPlugin {
                     enemy_session_clock_system,
                     enemy_spawn_system,
                     enemy_stun_tick_system,
+                    enemy_formation_behavior_system,
                     enemy_seek_player_system,
                     enemy_fire_system,
                     despawn_old_enemy_projectiles_system,
@@ -181,6 +201,42 @@ fn enemy_fire_cooldown_for_archetype(base_cooldown: f32, archetype: EnemyArchety
 fn rotate_vec2(v: Vec2, radians: f32) -> Vec2 {
     let (s, c) = radians.sin_cos();
     Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
+fn formation_enabled_for_wave(wave_director: Option<&CampaignWaveDirector>) -> bool {
+    let Some(wave) = wave_director else {
+        return false;
+    };
+
+    wave.phase == CampaignWavePhase::ActiveWave
+        && wave.current_wave >= ENEMY_FORMATION_MIN_WAVE
+        && wave.max_concurrent_enemies >= ENEMY_FORMATION_MIN_MEMBERS as u32
+}
+
+fn enemy_formation_slot_offset(slot_index: u8) -> Vec2 {
+    let row = (slot_index / 2) as f32 + 1.0;
+    let side = if slot_index.is_multiple_of(2) {
+        -1.0
+    } else {
+        1.0
+    };
+    Vec2::new(
+        side * ENEMY_FORMATION_LATERAL_SPACING * row,
+        -ENEMY_FORMATION_FOLLOW_DISTANCE * row,
+    )
+}
+
+fn enemy_formation_anchor(leader_pos: Vec2, player_pos: Vec2, slot_index: u8) -> Vec2 {
+    let toward_player = (player_pos - leader_pos).normalize_or_zero();
+    let forward = if toward_player.length_squared() <= 1e-6 {
+        Vec2::Y
+    } else {
+        toward_player
+    };
+    let right = Vec2::new(-forward.y, forward.x);
+    let slot_offset = enemy_formation_slot_offset(slot_index);
+
+    leader_pos + right * slot_offset.x + forward * slot_offset.y
 }
 
 fn spawn_enemy_projectile(
@@ -407,6 +463,151 @@ fn enemy_stun_tick_system(time: Res<Time>, mut q_enemy: Query<&mut EnemyStun, Wi
 }
 
 #[allow(clippy::type_complexity)]
+fn enemy_formation_behavior_system(
+    mut commands: Commands,
+    wave_director: Option<Res<CampaignWaveDirector>>,
+    q_player: Query<&Transform, With<Player>>,
+    q_enemies: Query<
+        (
+            Entity,
+            &Transform,
+            Option<&EnemyArchetype>,
+            Option<&EnemyFormationLeader>,
+            Option<&EnemyFormationMember>,
+            Option<&EnemyStun>,
+        ),
+        With<Enemy>,
+    >,
+) {
+    let formation_enabled = formation_enabled_for_wave(wave_director.as_deref());
+
+    if !formation_enabled {
+        for (entity, _, _, leader, member, _) in q_enemies.iter() {
+            if leader.is_some() || member.is_some() {
+                commands.entity(entity).remove::<(
+                    EnemyFormationLeader,
+                    EnemyFormationMember,
+                    EnemyFormationTarget,
+                )>();
+            }
+        }
+        return;
+    }
+
+    let Ok(player_transform) = q_player.single() else {
+        return;
+    };
+    let player_pos = player_transform.translation.truncate();
+
+    let mut leader_positions: HashMap<Entity, Vec2> = HashMap::default();
+    let mut active_leaders = Vec::new();
+    for (entity, transform, _, leader, _, stun) in q_enemies.iter() {
+        if leader.is_some() && stun.is_none_or(|s| s.remaining_secs <= 0.0) {
+            let pos = transform.translation.truncate();
+            leader_positions.insert(entity, pos);
+            active_leaders.push((entity, pos));
+        }
+    }
+
+    if active_leaders.is_empty() {
+        let mut available: Vec<(Entity, Vec2, EnemyArchetype)> = q_enemies
+            .iter()
+            .filter_map(|(entity, transform, archetype, _, _, stun)| {
+                if stun.is_some_and(|s| s.remaining_secs > 0.0) {
+                    return None;
+                }
+                Some((
+                    entity,
+                    transform.translation.truncate(),
+                    archetype.copied().unwrap_or(EnemyArchetype::Chaser),
+                ))
+            })
+            .collect();
+
+        if available.len() >= ENEMY_FORMATION_MIN_MEMBERS {
+            available.sort_by(|(ea, pa, aa), (eb, pb, ab)| {
+                let ap = pa.distance_squared(player_pos);
+                let bp = pb.distance_squared(player_pos);
+                ap.partial_cmp(&bp)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| {
+                        if *aa == EnemyArchetype::Skirmisher && *ab != EnemyArchetype::Skirmisher {
+                            std::cmp::Ordering::Less
+                        } else if *ab == EnemyArchetype::Skirmisher
+                            && *aa != EnemyArchetype::Skirmisher
+                        {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            ea.index().cmp(&eb.index())
+                        }
+                    })
+            });
+
+            let (leader_entity, leader_pos, _) = available[0];
+            commands.entity(leader_entity).insert(EnemyFormationLeader);
+            leader_positions.insert(leader_entity, leader_pos);
+
+            let mut followers: Vec<(Entity, Vec2)> = available
+                .into_iter()
+                .skip(1)
+                .map(|(entity, pos, _)| (entity, pos))
+                .collect();
+            followers.sort_by(|(ea, pa), (eb, pb)| {
+                pa.distance_squared(leader_pos)
+                    .partial_cmp(&pb.distance_squared(leader_pos))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| ea.index().cmp(&eb.index()))
+            });
+
+            for (slot_index, (follower, _)) in followers.into_iter().take(2).enumerate() {
+                let slot_index = slot_index as u8;
+                commands.entity(follower).insert(EnemyFormationMember {
+                    leader: leader_entity,
+                    slot_index,
+                });
+                commands.entity(follower).insert(EnemyFormationTarget {
+                    world_anchor: enemy_formation_anchor(leader_pos, player_pos, slot_index),
+                });
+            }
+        }
+    }
+
+    for (entity, transform, _, _leader, member, stun) in q_enemies.iter() {
+        let Some(member) = member else {
+            continue;
+        };
+
+        if stun.is_some_and(|s| s.remaining_secs > 0.0) {
+            commands
+                .entity(entity)
+                .remove::<(EnemyFormationMember, EnemyFormationTarget)>();
+            continue;
+        }
+
+        let Some(&leader_pos) = leader_positions.get(&member.leader) else {
+            commands
+                .entity(entity)
+                .remove::<(EnemyFormationMember, EnemyFormationTarget)>();
+            continue;
+        };
+
+        let member_pos = transform.translation.truncate();
+        if member_pos.distance_squared(leader_pos)
+            > ENEMY_FORMATION_BREAK_DISTANCE * ENEMY_FORMATION_BREAK_DISTANCE
+        {
+            commands
+                .entity(entity)
+                .remove::<(EnemyFormationMember, EnemyFormationTarget)>();
+            continue;
+        }
+
+        commands.entity(entity).insert(EnemyFormationTarget {
+            world_anchor: enemy_formation_anchor(leader_pos, player_pos, member.slot_index),
+        });
+    }
+}
+
+#[allow(clippy::type_complexity)]
 fn enemy_seek_player_system(
     mut commands: Commands,
     time: Res<Time>,
@@ -418,6 +619,7 @@ fn enemy_seek_player_system(
             &mut Velocity,
             &EnemyStun,
             Option<&EnemyArchetype>,
+            Option<&EnemyFormationTarget>,
             &mut EnemyThrustVfxTimer,
         ),
         With<Enemy>,
@@ -432,7 +634,8 @@ fn enemy_seek_player_system(
     let player_pos = player_transform.translation.truncate();
     let dt = time.delta_secs();
 
-    for (transform, mut force, mut velocity, stun, archetype, mut thrust_vfx) in q_enemy.iter_mut()
+    for (transform, mut force, mut velocity, stun, archetype, formation_target, mut thrust_vfx) in
+        q_enemy.iter_mut()
     {
         if stun.remaining_secs > 0.0 {
             force.force = Vec2::ZERO;
@@ -452,7 +655,16 @@ fn enemy_seek_player_system(
         let mut steer_dir = to_player_dir;
         let mut thrust_factor = (dist / config.enemy_arrive_radius.max(1.0)).clamp(0.2, 1.0);
 
-        if matches!(archetype, Some(EnemyArchetype::Skirmisher)) {
+        if let Some(target) = formation_target {
+            let to_anchor = target.world_anchor - pos;
+            let anchor_dist = to_anchor.length();
+            if anchor_dist > 1e-3 {
+                let anchor_dir = to_anchor / anchor_dist;
+                steer_dir = (anchor_dir * 0.85 + to_player_dir * 0.15).normalize_or_zero();
+                let anchor_arrive_radius = (config.enemy_arrive_radius * 0.55).max(1.0);
+                thrust_factor = (anchor_dist / anchor_arrive_radius).clamp(0.25, 1.0);
+            }
+        } else if matches!(archetype, Some(EnemyArchetype::Skirmisher)) {
             let orbit_radius = config.enemy_arrive_radius.max(1.0) * 1.65;
             let tangential = Vec2::new(-to_player_dir.y, to_player_dir.x);
             let radial_weight = if dist > orbit_radius * 1.20 {
@@ -1295,6 +1507,130 @@ mod tests {
         let chaser = enemy_fire_cooldown_for_archetype(base, EnemyArchetype::Chaser);
         let skirmisher = enemy_fire_cooldown_for_archetype(base, EnemyArchetype::Skirmisher);
         assert!(skirmisher > chaser);
+    }
+
+    #[test]
+    fn formation_enabled_for_active_wave_two_or_higher() {
+        let inactive = CampaignWaveDirector {
+            phase: CampaignWavePhase::Warmup,
+            current_wave: 3,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 3,
+            spawn_cooldown_secs: 1.0,
+        };
+        let active_low = CampaignWaveDirector {
+            phase: CampaignWavePhase::ActiveWave,
+            current_wave: 1,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 3,
+            spawn_cooldown_secs: 1.0,
+        };
+        let active_ok = CampaignWaveDirector {
+            phase: CampaignWavePhase::ActiveWave,
+            current_wave: 2,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 3,
+            spawn_cooldown_secs: 1.0,
+        };
+
+        assert!(!formation_enabled_for_wave(Some(&inactive)));
+        assert!(!formation_enabled_for_wave(Some(&active_low)));
+        assert!(formation_enabled_for_wave(Some(&active_ok)));
+        assert!(!formation_enabled_for_wave(None));
+    }
+
+    #[test]
+    fn formation_system_assigns_and_breaks_when_leader_removed() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, StatesPlugin));
+        app.init_state::<GameState>();
+        app.add_systems(Update, enemy_formation_behavior_system);
+        app.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::ActiveWave,
+            current_wave: 2,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 4,
+            spawned_this_wave: 1,
+            max_concurrent_enemies: 4,
+            spawn_cooldown_secs: 1.0,
+        });
+
+        app.world_mut()
+            .spawn((Player, Transform::from_translation(Vec3::ZERO)));
+
+        app.world_mut().spawn((
+            Enemy,
+            EnemyArchetype::Skirmisher,
+            EnemyStun {
+                remaining_secs: 0.0,
+            },
+            Transform::from_translation(Vec3::new(120.0, 0.0, 0.0)),
+        ));
+        app.world_mut().spawn((
+            Enemy,
+            EnemyArchetype::Chaser,
+            EnemyStun {
+                remaining_secs: 0.0,
+            },
+            Transform::from_translation(Vec3::new(128.0, 12.0, 0.0)),
+        ));
+        app.world_mut().spawn((
+            Enemy,
+            EnemyArchetype::Chaser,
+            EnemyStun {
+                remaining_secs: 0.0,
+            },
+            Transform::from_translation(Vec3::new(132.0, -10.0, 0.0)),
+        ));
+
+        app.update();
+
+        let leaders: Vec<Entity> = app
+            .world_mut()
+            .query_filtered::<Entity, (With<Enemy>, With<EnemyFormationLeader>)>()
+            .iter(app.world())
+            .collect();
+        assert_eq!(leaders.len(), 1);
+
+        let members: Vec<Entity> = app
+            .world_mut()
+            .query_filtered::<Entity, (With<Enemy>, With<EnemyFormationMember>)>()
+            .iter(app.world())
+            .collect();
+        assert!(!members.is_empty());
+
+        let targets_before = app
+            .world_mut()
+            .query_filtered::<Entity, (With<Enemy>, With<EnemyFormationTarget>)>()
+            .iter(app.world())
+            .count();
+        assert!(targets_before >= members.len());
+
+        app.world_mut().entity_mut(leaders[0]).despawn();
+        app.update();
+
+        let members_after = app
+            .world_mut()
+            .query_filtered::<Entity, (With<Enemy>, With<EnemyFormationMember>)>()
+            .iter(app.world())
+            .count();
+        let targets_after = app
+            .world_mut()
+            .query_filtered::<Entity, (With<Enemy>, With<EnemyFormationTarget>)>()
+            .iter(app.world())
+            .count();
+        assert_eq!(members_after, 0);
+        assert_eq!(targets_after, 0);
     }
 
     #[test]

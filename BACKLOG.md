@@ -12,20 +12,6 @@ Last updated: March 3, 2026.
 
 ## P0 — Next Implementation Candidates
 
-### Enemy Enhancements
-
-- [ ] **Enemy scaling model pass (campaign-aware levels)**
-	- Tie enemy stat/tier scaling to mission and wave progression curves.
-	- Acceptance: measurable difficulty increase across mission waves without spike regressions.
-
-- [ ] **Enemy variety set: silhouettes + movement + attack patterns** `depends on Enemy scaling model pass (campaign-aware levels)`
-	- Expand enemy roster with additional hull shapes and at least one new movement and attack behavior.
-	- Acceptance: wave composition includes at least two tactically distinct enemy archetypes.
-
-- [ ] **Enemy formation behavior** `depends on Enemy variety set: silhouettes + movement + attack patterns`
-	- Add formation-capable enemy group behavior (spawn + maintain + break conditions).
-	- Acceptance: at least one wave spawns enemies in a stable formation pattern.
-
 ### Upgrade Enhancements
 
 - [ ] **Campaign loadout selection (primary/secondary/tool)**

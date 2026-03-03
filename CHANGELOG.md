@@ -1,5 +1,25 @@
 # Accretion Changelog
 
+## Enemy Formation Behavior (P0) — March 3, 2026
+
+### Added formation-capable enemy group behavior with spawn/maintain/break rules
+
+**What changed**:
+- Added formation components in `src/enemy.rs`:
+  - `EnemyFormationLeader`, `EnemyFormationMember`, `EnemyFormationTarget`.
+- Added `enemy_formation_behavior_system` in `src/enemy.rs` and scheduled it in the enemy Update chain:
+  - **Spawn condition**: active campaign wave, wave index >= 2, and enough concurrent enemy budget.
+  - **Maintain condition**: followers continuously update anchor targets in formation slots around a live leader.
+  - **Break conditions**: leader missing/invalid, member stunned, or member-leader separation beyond break distance.
+- Integrated formation targets into `enemy_seek_player_system`:
+  - formation followers prioritize moving toward assigned anchor targets while retaining slight player-pressure bias.
+- Added tests in `src/enemy.rs`:
+  - `formation_enabled_for_active_wave_two_or_higher`
+  - `formation_system_assigns_and_breaks_when_leader_removed`
+
+**Impact**:
+- At least one campaign wave configuration now supports stable enemy formation patterns with deterministic lifecycle behavior.
+
 ## Enemy Variety Set: Silhouettes + Movement + Attack Patterns (P0) — March 3, 2026
 
 ### Added tactically distinct enemy archetypes for wave composition

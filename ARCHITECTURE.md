@@ -202,6 +202,10 @@ Projectile classes expire by lifetime and max travelled-distance limits; they ar
 - **Archetypes**:
   - `EnemyArchetype::Chaser`: triangular silhouette, direct seek/arrive pathing, single-shot pressure.
   - `EnemyArchetype::Skirmisher`: diamond silhouette, orbit/strafe pathing near the player, 3-shot spread bursts.
+- **Formation behavior**:
+  - active campaign waves at/after wave 2 can assign a formation leader plus followers.
+  - followers receive dynamic anchor targets relative to leader + player heading and maintain slot offsets while conditions are stable.
+  - formation breaks when leader is invalid/removed, members are stunned, or separation exceeds break distance.
 - **Spawn state**: `EnemySpawnState` tracks session elapsed time, spawn timer, and deterministic spawn index.
 - **Deterministic spawn rules**:
   - spawn points use a golden-angle ring sequence around player position
