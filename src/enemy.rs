@@ -480,20 +480,42 @@ fn despawn_old_enemy_projectiles_system(
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn apply_enemy_damage(
     commands: &mut Commands,
     score: &mut PlayerScore,
-    q_enemy: &mut Query<(Entity, &mut EnemyHealth), With<Enemy>>,
+    q_enemy: &mut Query<
+        (
+            Entity,
+            &mut EnemyHealth,
+            &Transform,
+            &Velocity,
+            Option<&EnemyTier>,
+        ),
+        With<Enemy>,
+    >,
     damage_by_enemy: HashMap<Entity, f32>,
+    config: &PhysicsConfig,
+    campaign_wave: Option<u32>,
     kill_score: u32,
     award_score: bool,
 ) {
     for (enemy_entity, damage) in damage_by_enemy {
-        let Ok((entity, mut health)) = q_enemy.get_mut(enemy_entity) else {
+        let Ok((entity, mut health, transform, velocity, tier)) = q_enemy.get_mut(enemy_entity)
+        else {
             continue;
         };
         health.hp -= damage;
         if health.hp <= 0.0 {
+            let wave_index = campaign_wave.unwrap_or(1).max(1);
+            let tier_level = tier.map_or(1, |enemy_tier| enemy_tier.level.max(1));
+            let ore_drop_count = enemy_ore_drop_count(config, tier_level, wave_index);
+            spawn_enemy_ore_drops(
+                commands,
+                transform.translation.truncate(),
+                velocity.linvel,
+                ore_drop_count,
+            );
             commands.entity(entity).despawn();
             if award_score {
                 score.destroyed += 1;
@@ -509,6 +531,36 @@ fn projectile_damage_vs_enemy(config: &PhysicsConfig, level: &PrimaryWeaponLevel
 
 fn missile_damage_vs_enemy(config: &PhysicsConfig, level: &SecondaryWeaponLevel) -> f32 {
     config.enemy_damage_from_player_missile * (1.0 + 0.25 * level.level as f32)
+}
+
+fn enemy_ore_drop_count(config: &PhysicsConfig, tier_level: u32, wave_index: u32) -> u32 {
+    let tier_bonus = tier_level
+        .saturating_sub(1)
+        .saturating_mul(config.enemy_ore_drop_per_tier);
+    let wave_bonus = wave_index
+        .saturating_sub(1)
+        .saturating_mul(config.enemy_ore_drop_per_wave);
+
+    config
+        .enemy_ore_drop_base
+        .saturating_add(tier_bonus)
+        .saturating_add(wave_bonus)
+        .max(1)
+}
+
+fn spawn_enemy_ore_drops(commands: &mut Commands, pos: Vec2, velocity: Vec2, count: u32) {
+    if count == 0 {
+        return;
+    }
+
+    for index in 0..count {
+        let angle = std::f32::consts::TAU * (index as f32 / count as f32);
+        let radial = Vec2::new(angle.cos(), angle.sin());
+        let tangential = Vec2::new(-radial.y, radial.x);
+        let drop_pos = pos + radial * 8.0;
+        let drop_vel = velocity + tangential * 12.0;
+        spawn_ore_drop(commands, drop_pos, drop_vel);
+    }
 }
 
 fn spawn_fragment_of_mass(
@@ -658,16 +710,26 @@ fn apply_blaster_like_asteroid_hit(
     ));
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn enemy_damage_from_player_weapons_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
-    mut q_enemy: Query<(Entity, &mut EnemyHealth), With<Enemy>>,
+    mut q_enemy: Query<
+        (
+            Entity,
+            &mut EnemyHealth,
+            &Transform,
+            &Velocity,
+            Option<&EnemyTier>,
+        ),
+        With<Enemy>,
+    >,
     mut q_projectiles: Query<(&Transform, &mut Projectile)>,
     q_missiles: Query<&Transform, With<Missile>>,
     mut score: ResMut<PlayerScore>,
     weapon_level: Res<PrimaryWeaponLevel>,
     missile_level: Res<SecondaryWeaponLevel>,
+    wave_director: Option<Res<CampaignWaveDirector>>,
     config: Res<PhysicsConfig>,
 ) {
     let mut damage_by_enemy: HashMap<Entity, f32> = HashMap::default();
@@ -692,8 +754,6 @@ fn enemy_damage_from_player_weapons_system(
 
         if let Ok((projectile_transform, mut projectile)) = q_projectiles.get_mut(other) {
             projectile.was_hit = true;
-            let enemy_pos = q_enemy.get(enemy_entity).map(|(_, h)| h.max_hp).ok();
-            let _ = enemy_pos;
             let proj_pos = projectile_transform.translation.truncate();
             spawn_impact_particles(&mut commands, proj_pos, Vec2::ZERO, Vec2::ZERO);
             *damage_by_enemy.entry(enemy_entity).or_default() +=
@@ -715,6 +775,8 @@ fn enemy_damage_from_player_weapons_system(
         &mut score,
         &mut q_enemy,
         damage_by_enemy,
+        &config,
+        wave_director.as_ref().map(|wave| wave.current_wave.max(1)),
         config.enemy_kill_score,
         true,
     );
@@ -1097,6 +1159,83 @@ mod tests {
 
         assert!(projectile_membership.intersects(enemy_filter));
         assert!(enemy_membership.intersects(projectile_filter));
+    }
+
+    #[test]
+    fn enemy_ore_drop_count_scales_with_tier_and_wave() {
+        let config = PhysicsConfig::default();
+        let base = enemy_ore_drop_count(&config, 1, 1);
+        let high_tier = enemy_ore_drop_count(&config, 4, 1);
+        let high_wave = enemy_ore_drop_count(&config, 1, 4);
+        let combined = enemy_ore_drop_count(&config, 4, 4);
+
+        assert!(high_tier > base);
+        assert!(high_wave > base);
+        assert!(combined > high_tier);
+        assert!(combined > high_wave);
+    }
+
+    #[test]
+    fn enemy_kill_spawns_scaled_ore_drops() {
+        use crate::campaign::CampaignWaveDirector;
+        use crate::campaign::CampaignWavePhase;
+        use crate::mining::OrePickup;
+
+        let mut app = enemy_collision_test_app();
+        app.add_systems(PostUpdate, enemy_damage_from_player_weapons_system);
+        app.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::ActiveWave,
+            current_wave: 3,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 1,
+            spawned_this_wave: 1,
+            max_concurrent_enemies: 1,
+            spawn_cooldown_secs: 1.0,
+        });
+
+        let expected_ore = {
+            let cfg = app.world().resource::<PhysicsConfig>();
+            enemy_ore_drop_count(cfg, 3, 3)
+        };
+
+        let enemy = app
+            .world_mut()
+            .spawn((
+                Enemy,
+                EnemyTier { level: 3 },
+                EnemyHealth {
+                    hp: 10.0,
+                    max_hp: 10.0,
+                },
+                Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+                Velocity::zero(),
+            ))
+            .id();
+
+        let projectile = app
+            .world_mut()
+            .spawn((
+                Projectile::default(),
+                Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)),
+            ))
+            .id();
+
+        app.world_mut().write_message(CollisionEvent::Started(
+            enemy,
+            projectile,
+            bevy_rapier2d::rapier::geometry::CollisionEventFlags::empty(),
+        ));
+
+        app.update();
+
+        assert!(app.world().get_entity(enemy).is_err());
+        let ore_count = app
+            .world_mut()
+            .query_filtered::<Entity, With<OrePickup>>()
+            .iter(app.world())
+            .count() as u32;
+        assert_eq!(ore_count, expected_ore);
     }
 
     #[test]

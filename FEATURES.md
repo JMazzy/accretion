@@ -239,6 +239,7 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
   - missile hits apply heavier enemy damage and consume the missile
 - Enemy ships also take collision damage from high-speed asteroid impacts.
 - Enemy death now contributes to score progression (`enemy_kill_score`) and increments the destroyed tally in score HUD.
+- Enemy kills by player weapons now spawn ore pickups scaled by both enemy tier and current campaign wave progression.
 
 ## Visual Feedback
 

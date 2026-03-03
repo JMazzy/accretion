@@ -2,7 +2,7 @@
 
 Planned features, improvements, and known limitations. Completed items are removed; see [FEATURES.md](FEATURES.md) and [CHANGELOG.md](CHANGELOG.md) for implemented history.
 
-Last updated: March 1, 2026.
+Last updated: March 3, 2026.
 
 ## Planning Notes
 
@@ -25,10 +25,6 @@ Last updated: March 1, 2026.
 - [ ] **Enemy formation behavior** `depends on Enemy variety set: silhouettes + movement + attack patterns`
 	- Add formation-capable enemy group behavior (spawn + maintain + break conditions).
 	- Acceptance: at least one wave spawns enemies in a stable formation pattern.
-
-- [ ] **Enemy ore-drop scaling by level** `depends on Enemy scaling model pass (campaign-aware levels)`
-	- Award ore on enemy defeat based on enemy tier/mission context.
-	- Acceptance: higher-tier enemies drop more ore and drops are reflected in campaign economy.
 
 ### Upgrade Enhancements
 

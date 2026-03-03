@@ -338,6 +338,15 @@ pub const ENEMY_ASTEROID_COLLISION_DAMAGE_SCALE: f32 = 0.42;
 /// Score awarded on enemy destruction.
 pub const ENEMY_KILL_SCORE: u32 = 35;
 
+/// Base ore pickups spawned when an enemy is destroyed.
+pub const ENEMY_ORE_DROP_BASE: u32 = 1;
+
+/// Additional ore pickups per enemy tier above tier 1.
+pub const ENEMY_ORE_DROP_PER_TIER: u32 = 1;
+
+/// Additional ore pickups per campaign wave above wave 1.
+pub const ENEMY_ORE_DROP_PER_WAVE: u32 = 1;
+
 // ── Player: Combat ────────────────────────────────────────────────────────────
 
 /// Speed (u/s) of fired projectiles.

@@ -224,6 +224,11 @@ enemy_asteroid_collision_damage_threshold = 32.0
 enemy_asteroid_collision_damage_scale = 0.42
 enemy_kill_score = 35
 
+# Enemy ore rewards (pickup drops) scale with both enemy tier and campaign wave.
+enemy_ore_drop_base = 1
+enemy_ore_drop_per_tier = 1
+enemy_ore_drop_per_wave = 1
+
 # ── Player: Combat ────────────────────────────────────────────────────────────
 
 # Projectile muzzle speed (u/s).

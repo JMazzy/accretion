@@ -223,6 +223,7 @@ Projectile classes expire by lifetime and max travelled-distance limits; they ar
 - **Lifecycle completion**:
   - enemies now execute spawn → seek → fire → take damage → die loop
   - enemy kills contribute score progression via `enemy_kill_score`
+  - enemy kills from player weapons spawn ore pickups scaled by enemy tier and current campaign wave (`enemy_ore_drop_base`, `enemy_ore_drop_per_tier`, `enemy_ore_drop_per_wave`)
 
 ## ECS Systems Execution Order
 
@@ -291,7 +292,7 @@ Key constant groups (see `src/constants.rs` for current values):
 | Player OOB (legacy) | `OOB_RADIUS`, `OOB_DAMPING`, `OOB_RAMP_WIDTH` |
 | Player combat | `PROJECTILE_SPEED`, `FIRE_COOLDOWN`, `PROJECTILE_LIFETIME`, `MISSILE_INITIAL_SPEED`, `MISSILE_ACCELERATION`, `MISSILE_SPEED` |
 | Weapon upgrades | `PRIMARY_WEAPON_MAX_LEVEL`, `WEAPON_UPGRADE_BASE_COST`, `SECONDARY_WEAPON_MAX_LEVEL`, `SECONDARY_WEAPON_UPGRADE_BASE_COST`, `TRACTOR_BEAM_MAX_LEVEL`, `TRACTOR_BEAM_UPGRADE_BASE_COST` |
-| Ore economy & magnet upgrades | `ORE_HEAL_AMOUNT`, `ORE_MAGNET_BASE_RADIUS`, `ORE_MAGNET_BASE_STRENGTH`, `ORE_AFFINITY_MAX_LEVEL`, `ORE_AFFINITY_UPGRADE_BASE_COST` |
+| Ore economy & magnet upgrades | `ORE_HEAL_AMOUNT`, `ORE_MAGNET_BASE_RADIUS`, `ORE_MAGNET_BASE_STRENGTH`, `ORE_AFFINITY_MAX_LEVEL`, `ORE_AFFINITY_UPGRADE_BASE_COST`, `ENEMY_ORE_DROP_BASE`, `ENEMY_ORE_DROP_PER_TIER`, `ENEMY_ORE_DROP_PER_WAVE` |
 | Player health | `PLAYER_MAX_HP`, `DAMAGE_SPEED_THRESHOLD`, `INVINCIBILITY_DURATION` |
 | Gamepad | `GAMEPAD_BRAKE_DAMPING`, `GAMEPAD_LEFT_DEADZONE`, etc. |
 | Asteroid geometry | `TRIANGLE_BASE_SIDE`, `SQUARE_BASE_HALF`, `POLYGON_BASE_RADIUS`, `HEPTAGON_BASE_RADIUS`, `OCTAGON_BASE_RADIUS`, `PLANETOID_BASE_RADIUS`, `PLANETOID_UNIT_SIZE` |

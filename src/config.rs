@@ -155,6 +155,9 @@ pub struct PhysicsConfig {
     pub enemy_asteroid_collision_damage_threshold: f32,
     pub enemy_asteroid_collision_damage_scale: f32,
     pub enemy_kill_score: u32,
+    pub enemy_ore_drop_base: u32,
+    pub enemy_ore_drop_per_tier: u32,
+    pub enemy_ore_drop_per_wave: u32,
 
     // ── Player: Combat ────────────────────────────────────────────────────────
     pub projectile_speed: f32,
@@ -337,6 +340,9 @@ impl Default for PhysicsConfig {
             enemy_asteroid_collision_damage_threshold: ENEMY_ASTEROID_COLLISION_DAMAGE_THRESHOLD,
             enemy_asteroid_collision_damage_scale: ENEMY_ASTEROID_COLLISION_DAMAGE_SCALE,
             enemy_kill_score: ENEMY_KILL_SCORE,
+            enemy_ore_drop_base: ENEMY_ORE_DROP_BASE,
+            enemy_ore_drop_per_tier: ENEMY_ORE_DROP_PER_TIER,
+            enemy_ore_drop_per_wave: ENEMY_ORE_DROP_PER_WAVE,
             // Player: Combat
             projectile_speed: PROJECTILE_SPEED,
             fire_cooldown: FIRE_COOLDOWN,

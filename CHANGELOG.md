@@ -1,5 +1,33 @@
 # Accretion Changelog
 
+## Enemy Ore-Drop Scaling by Level (P0) — March 3, 2026
+
+### Added tier + campaign-wave scaled enemy ore rewards
+
+**What changed**:
+- Implemented enemy-death ore-drop scaling in `src/enemy.rs`:
+  - Added `enemy_ore_drop_count(...)` to compute reward count from enemy tier and campaign wave index.
+  - Added `spawn_enemy_ore_drops(...)` to spawn multiple `OrePickup` entities around destroyed enemies.
+  - Wired scaling into `enemy_damage_from_player_weapons_system` so player-earned enemy kills now drop level-scaled ore pickups.
+- Added runtime-tunable enemy ore reward constants/fields:
+  - `ENEMY_ORE_DROP_BASE`, `ENEMY_ORE_DROP_PER_TIER`, `ENEMY_ORE_DROP_PER_WAVE` in `src/constants.rs`.
+  - Mirrored fields in `PhysicsConfig` (`src/config.rs`) and defaults via compile-time constants.
+  - Added keys to `assets/physics.toml` for live tuning.
+- Added focused tests in `src/enemy.rs`:
+  - `enemy_ore_drop_count_scales_with_tier_and_wave`
+  - `enemy_kill_spawns_scaled_ore_drops`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo test enemy_ore_drop_count_scales_with_tier_and_wave` ✅
+- `cargo test enemy_kill_spawns_scaled_ore_drops` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+
+**Impact**:
+- Higher-tier enemies and later campaign waves now yield more ore pickups per kill.
+- Enemy reward scaling now feeds directly into the same pickup/economy pipeline used by the ore HUD and ore shop progression.
+
 ## Spawn Geometry Stability: Jagged/Elongated Outlier Fix — March 1, 2026
 
 ### Added spawn-shape sanitization and degenerate-area fallback to prevent pathological asteroids
