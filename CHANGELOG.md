@@ -1,5 +1,55 @@
 # Accretion Changelog
 
+## Enemy Variety Set: Silhouettes + Movement + Attack Patterns (P0) — March 3, 2026
+
+### Added tactically distinct enemy archetypes for wave composition
+
+**What changed**:
+- Added `EnemyArchetype` in `src/enemy.rs` with two archetypes:
+  - `Chaser`: baseline triangle silhouette, direct pursuit, single-shot fire pattern.
+  - `Skirmisher`: diamond silhouette, orbit/strafe movement, 3-shot spread burst pattern.
+- Added deterministic archetype assignment helper:
+  - `enemy_archetype_for_spawn(stage, spawn_serial)` mixes archetypes in later progression stages while preserving deterministic behavior.
+- Updated enemy spawn path to insert archetype per spawn and preserve stage-aware HP/fire scaling from the previous P0 pass.
+- Updated enemy movement system:
+  - Skirmishers maintain a standoff orbit band with tangential steering and range-correction behavior.
+- Updated enemy firing system:
+  - Added archetype-aware cooldown adjustment and projectile pattern spawning.
+  - Added global projectile-budget consumption tracking inside the fire loop to respect cap under multi-shot bursts.
+- Added enemy variety tests in `src/enemy.rs`:
+  - `enemy_archetype_varies_with_progression_stage_and_spawn_order`
+  - `skirmisher_fire_cooldown_is_slower_than_chaser_base`
+
+**Impact**:
+- Wave composition can now include at least two tactically distinct enemy archetypes, satisfying the P0 variety acceptance target.
+
+## Enemy Scaling Model Pass: Campaign-Aware Stage Curve (P0) — March 3, 2026
+
+### Linked enemy difficulty to mission + wave progression
+
+**What changed**:
+- Added shared campaign progression helper in `src/campaign.rs`:
+  - `campaign_progression_stage(mission_index, wave_index)` now provides a monotonic difficulty stage across campaign missions/waves.
+- Updated campaign wave configuration to use mission-aware stage scaling:
+  - `target_spawns_this_wave` now scales from campaign stage instead of wave-only index.
+  - `max_concurrent_enemies` scales from campaign stage (bounded by `enemy_max_count_cap`).
+  - `spawn_cooldown_secs` shortens by campaign stage with existing cooldown clamps.
+- Updated enemy spawn tiering in `src/enemy.rs`:
+  - Active campaign waves now derive enemy tier stage from campaign mission + wave progression (fallback remains wave index for non-campaign contexts).
+- Added campaign-stage combat scaling in `src/enemy.rs`:
+  - Enemy HP now scales by progression stage at spawn via `enemy_hp_for_stage(...)` (bounded cap).
+  - Enemy fire cadence now scales by progression stage via `enemy_fire_cooldown_for_stage(...)` and is applied to both initial and recurring fire timers.
+  - Added `EnemyProgressionStage` component so spawned enemies keep deterministic stage-based cadence during runtime.
+- Added campaign scaling tests in `src/campaign.rs`
+  - `campaign_progression_stage_is_monotonic_across_waves_and_missions`
+  - `active_wave_configuration_scales_with_campaign_progression_stage`
+- Added enemy scaling helper tests in `src/enemy.rs`:
+  - `enemy_hp_for_stage_increases_and_caps`
+  - `enemy_fire_cooldown_for_stage_decreases_and_clamps`
+
+**Impact**:
+- Campaign missions now ramp enemy pressure more consistently across both wave progression and mission progression, reducing flat early-mission repeats and avoiding abrupt late-wave spikes.
+
 ## Enemy Ore-Drop Scaling by Level (P0) — March 3, 2026
 
 ### Added tier + campaign-wave scaled enemy ore rewards

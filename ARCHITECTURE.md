@@ -199,14 +199,20 @@ Projectile classes expire by lifetime and max travelled-distance limits; they ar
 ### Enemy Ships (Foundation + Spawning)
 
 - **Components**: `Enemy`, `EnemyHealth`, `EnemyRenderMarker` in `src/enemy.rs`.
+- **Archetypes**:
+  - `EnemyArchetype::Chaser`: triangular silhouette, direct seek/arrive pathing, single-shot pressure.
+  - `EnemyArchetype::Skirmisher`: diamond silhouette, orbit/strafe pathing near the player, 3-shot spread bursts.
 - **Spawn state**: `EnemySpawnState` tracks session elapsed time, spawn timer, and deterministic spawn index.
 - **Deterministic spawn rules**:
   - spawn points use a golden-angle ring sequence around player position
   - candidates must satisfy `enemy_min_player_spawn_distance`
   - candidates must satisfy inter-enemy spacing `enemy_min_enemy_spacing`
 - **Progression coupling**:
-  - progression stage combines elapsed-time and score-based stages
-  - stage increases enemy cap and reduces spawn cooldown (bounded by config clamps)
+  - in practice mode, progression stage combines elapsed-time and score-based stages
+  - in campaign mode, progression stage is mission + wave aware via `campaign_progression_stage(mission_index, wave_index)`
+  - campaign wave director uses this stage to scale per-wave spawn budget, max concurrent enemies, and spawn cooldown with bounded clamps
+  - enemy tier assignment uses the same campaign stage to keep HP/reward pressure aligned with wave difficulty
+  - archetype assignment is deterministic from progression stage + spawn serial, enabling mixed-archetype wave composition in later waves
 - **Movement**: `enemy_seek_player_system` applies seek/arrive steering force toward player with `enemy_max_speed` clamp.
 
 ### Enemy Combat Loop

@@ -5,7 +5,9 @@ use crate::asteroid::{
     spawn_asteroid_with_vertices, Asteroid, AsteroidSize, Planet, Vertices,
 };
 use crate::asteroid_rendering::filled_polygon_mesh;
-use crate::campaign::{CampaignWaveDirector, CampaignWavePhase};
+use crate::campaign::{
+    campaign_progression_stage, CampaignSession, CampaignWaveDirector, CampaignWavePhase,
+};
 use crate::config::PhysicsConfig;
 use crate::menu::GameState;
 use crate::mining::spawn_ore_drop;
@@ -56,6 +58,17 @@ pub struct EnemyProjectile {
 #[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyTier {
     pub level: u32,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EnemyProgressionStage {
+    pub stage: u32,
+}
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnemyArchetype {
+    Chaser,
+    Skirmisher,
 }
 
 #[derive(Component, Debug, Clone, Copy)]
@@ -140,6 +153,67 @@ fn enemy_tier_for_stage(stage: u32) -> u32 {
     (1 + stage / 2).min(ENEMY_TIER_CAP)
 }
 
+fn enemy_hp_for_stage(config: &PhysicsConfig, stage: u32) -> f32 {
+    let hp_multiplier = (1.0 + stage as f32 * 0.20).min(3.0);
+    config.enemy_base_hp * hp_multiplier
+}
+
+fn enemy_fire_cooldown_for_stage(config: &PhysicsConfig, stage: u32) -> f32 {
+    let cooldown_scale = (1.0 - stage as f32 * 0.08).max(0.20);
+    (config.enemy_fire_cooldown_base * cooldown_scale).max(0.45)
+}
+
+fn enemy_archetype_for_spawn(stage: u32, spawn_serial: u64) -> EnemyArchetype {
+    if stage >= 2 && spawn_serial % 2 == 1 {
+        EnemyArchetype::Skirmisher
+    } else {
+        EnemyArchetype::Chaser
+    }
+}
+
+fn enemy_fire_cooldown_for_archetype(base_cooldown: f32, archetype: EnemyArchetype) -> f32 {
+    match archetype {
+        EnemyArchetype::Chaser => base_cooldown,
+        EnemyArchetype::Skirmisher => (base_cooldown * 1.15).max(0.45),
+    }
+}
+
+fn rotate_vec2(v: Vec2, radians: f32) -> Vec2 {
+    let (s, c) = radians.sin_cos();
+    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
+fn spawn_enemy_projectile(
+    commands: &mut Commands,
+    config: &PhysicsConfig,
+    spawn_pos: Vec2,
+    fire_dir: Vec2,
+) {
+    commands.spawn((
+        EnemyProjectile {
+            age: 0.0,
+            distance_traveled: 0.0,
+        },
+        EnemyProjectileRenderMarker,
+        Transform::from_translation(spawn_pos.extend(0.2)),
+        Visibility::default(),
+        RigidBody::KinematicVelocityBased,
+        Velocity {
+            linvel: fire_dir * config.enemy_projectile_speed,
+            angvel: 0.0,
+        },
+        Collider::ball(config.enemy_projectile_collider_radius),
+        Sensor,
+        Ccd { enabled: true },
+        CollisionGroups::new(
+            bevy_rapier2d::geometry::Group::GROUP_6,
+            bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_2,
+        ),
+        ActiveCollisionTypes::DYNAMIC_KINEMATIC,
+        ActiveEvents::COLLISION_EVENTS,
+    ));
+}
+
 fn deterministic_spawn_offset(index: u64, radius: f32) -> Vec2 {
     const GOLDEN_ANGLE: f32 = 2.3999631;
     let a = index as f32 * GOLDEN_ANGLE;
@@ -168,6 +242,7 @@ fn enemy_spawn_system(
     mut commands: Commands,
     time: Res<Time>,
     mut state: ResMut<EnemySpawnState>,
+    campaign_session: Option<Res<CampaignSession>>,
     mut wave_director: Option<ResMut<CampaignWaveDirector>>,
     config: Res<PhysicsConfig>,
     score: Res<PlayerScore>,
@@ -187,15 +262,25 @@ fn enemy_spawn_system(
         enemy_spawn_profile(&config, score.points, state.session_elapsed_secs);
     let mut max_count = 1;
     let mut spawn_cooldown = next_cooldown;
+    let mut wave_spawn_serial = None;
 
     if let Some(ref mut wave) = wave_director {
         match wave.phase {
             CampaignWavePhase::ActiveWave => {
-                stage = wave.current_wave.saturating_sub(1);
+                stage = if let Some(session) = campaign_session.as_ref() {
+                    if session.active {
+                        campaign_progression_stage(session.mission_index, wave.current_wave)
+                    } else {
+                        wave.current_wave.saturating_sub(1)
+                    }
+                } else {
+                    wave.current_wave.saturating_sub(1)
+                };
                 max_count = wave.max_concurrent_enemies.max(1);
                 spawn_cooldown = wave
                     .spawn_cooldown_secs
                     .max(config.enemy_spawn_cooldown_min);
+                wave_spawn_serial = Some(wave.spawned_this_wave as u64);
             }
             CampaignWavePhase::Complete
             | CampaignWavePhase::Inactive
@@ -252,17 +337,18 @@ fn enemy_spawn_system(
 
     let toward_player = (player_pos - pos).normalize_or_zero();
     let spawn_index = state.total_spawned;
+    let archetype = enemy_archetype_for_spawn(stage, wave_spawn_serial.unwrap_or(spawn_index));
+    let hp = enemy_hp_for_stage(&config, stage);
+    let fire_cooldown =
+        enemy_fire_cooldown_for_archetype(enemy_fire_cooldown_for_stage(&config, stage), archetype);
 
     let enemy_entity = commands
         .spawn((
             Enemy,
-            EnemyHealth {
-                hp: config.enemy_base_hp,
-                max_hp: config.enemy_base_hp,
-            },
+            EnemyHealth { hp, max_hp: hp },
             EnemyRenderMarker,
             EnemyFireCooldown {
-                timer: initial_enemy_fire_timer(spawn_index, config.enemy_fire_cooldown_base),
+                timer: initial_enemy_fire_timer(spawn_index, fire_cooldown),
             },
             EnemyThrustVfxTimer { timer: 0.0 },
             Transform::from_translation(pos.extend(0.25)),
@@ -293,6 +379,8 @@ fn enemy_spawn_system(
         EnemyTier {
             level: enemy_tier_for_stage(stage),
         },
+        archetype,
+        EnemyProgressionStage { stage },
         EnemyStun {
             remaining_secs: 0.0,
         },
@@ -318,6 +406,7 @@ fn enemy_stun_tick_system(time: Res<Time>, mut q_enemy: Query<&mut EnemyStun, Wi
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn enemy_seek_player_system(
     mut commands: Commands,
     time: Res<Time>,
@@ -328,6 +417,7 @@ fn enemy_seek_player_system(
             &mut ExternalForce,
             &mut Velocity,
             &EnemyStun,
+            Option<&EnemyArchetype>,
             &mut EnemyThrustVfxTimer,
         ),
         With<Enemy>,
@@ -342,7 +432,8 @@ fn enemy_seek_player_system(
     let player_pos = player_transform.translation.truncate();
     let dt = time.delta_secs();
 
-    for (transform, mut force, mut velocity, stun, mut thrust_vfx) in q_enemy.iter_mut() {
+    for (transform, mut force, mut velocity, stun, archetype, mut thrust_vfx) in q_enemy.iter_mut()
+    {
         if stun.remaining_secs > 0.0 {
             force.force = Vec2::ZERO;
             force.torque = 0.0;
@@ -357,9 +448,30 @@ fn enemy_seek_player_system(
             continue;
         }
 
-        let dir = to_player / dist;
-        let arrive_alpha = (dist / config.enemy_arrive_radius.max(1.0)).clamp(0.2, 1.0);
-        force.force = dir * (config.enemy_seek_force * arrive_alpha);
+        let to_player_dir = to_player / dist;
+        let mut steer_dir = to_player_dir;
+        let mut thrust_factor = (dist / config.enemy_arrive_radius.max(1.0)).clamp(0.2, 1.0);
+
+        if matches!(archetype, Some(EnemyArchetype::Skirmisher)) {
+            let orbit_radius = config.enemy_arrive_radius.max(1.0) * 1.65;
+            let tangential = Vec2::new(-to_player_dir.y, to_player_dir.x);
+            let radial_weight = if dist > orbit_radius * 1.20 {
+                0.70
+            } else if dist < orbit_radius * 0.80 {
+                -0.60
+            } else {
+                0.15
+            };
+
+            steer_dir = (tangential + to_player_dir * radial_weight).normalize_or_zero();
+            thrust_factor = if dist > orbit_radius * 1.45 || dist < orbit_radius * 0.60 {
+                1.0
+            } else {
+                0.75
+            };
+        }
+
+        force.force = steer_dir * (config.enemy_seek_force * thrust_factor.clamp(0.25, 1.0));
         force.torque = 0.0;
 
         let speed = velocity.linvel.length();
@@ -367,7 +479,7 @@ fn enemy_seek_player_system(
             velocity.linvel = velocity.linvel.normalize_or_zero() * config.enemy_max_speed;
         }
 
-        let target_angle = dir.y.atan2(dir.x) - std::f32::consts::FRAC_PI_2;
+        let target_angle = steer_dir.y.atan2(steer_dir.x) - std::f32::consts::FRAC_PI_2;
         let current_angle = transform.rotation.to_euler(EulerRot::ZYX).0;
         let angle_diff = shortest_angle_diff(target_angle, current_angle);
         velocity.angvel = if angle_diff.abs() > config.gamepad_heading_snap_threshold {
@@ -376,8 +488,8 @@ fn enemy_seek_player_system(
             0.0
         };
 
-        let thrust_intensity = arrive_alpha.clamp(0.2, 1.0);
-        let exhaust_dir = -dir;
+        let thrust_intensity = thrust_factor.clamp(0.2, 1.0);
+        let exhaust_dir = -steer_dir;
         let spawn_pos = transform.translation.truncate()
             + exhaust_dir * (config.enemy_collider_radius + 1.3)
             + velocity.linvel.normalize_or_zero() * 0.6;
@@ -396,12 +508,22 @@ fn enemy_seek_player_system(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn enemy_fire_system(
     mut commands: Commands,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
     q_player: Query<&Transform, With<Player>>,
-    mut q_enemy: Query<(&Transform, &mut EnemyFireCooldown, &EnemyStun), With<Enemy>>,
+    mut q_enemy: Query<
+        (
+            &Transform,
+            &mut EnemyFireCooldown,
+            &EnemyStun,
+            Option<&EnemyProgressionStage>,
+            Option<&EnemyArchetype>,
+        ),
+        With<Enemy>,
+    >,
     q_enemy_projectiles: Query<(), With<EnemyProjectile>>,
 ) {
     let Ok(player_transform) = q_player.single() else {
@@ -410,9 +532,14 @@ fn enemy_fire_system(
     let player_pos = player_transform.translation.truncate();
 
     let active_enemy_projectiles = q_enemy_projectiles.iter().count();
-    let projectile_budget_available = active_enemy_projectiles < ENEMY_PROJECTILE_HARD_CAP;
+    let mut remaining_projectile_budget =
+        ENEMY_PROJECTILE_HARD_CAP.saturating_sub(active_enemy_projectiles);
 
-    for (transform, mut cooldown, stun) in q_enemy.iter_mut() {
+    for (transform, mut cooldown, stun, progression_stage, archetype) in q_enemy.iter_mut() {
+        let archetype = archetype.copied().unwrap_or(EnemyArchetype::Chaser);
+        let enemy_stage = progression_stage.map_or(0, |stage| stage.stage);
+        let base_cooldown = enemy_fire_cooldown_for_stage(&config, enemy_stage);
+        let fire_cooldown = enemy_fire_cooldown_for_archetype(base_cooldown, archetype);
         cooldown.timer -= time.delta_secs();
         if stun.remaining_secs > 0.0 {
             continue;
@@ -421,44 +548,40 @@ fn enemy_fire_system(
             continue;
         }
 
-        if !projectile_budget_available {
-            cooldown.timer = (config.enemy_fire_cooldown_base * 0.5).max(0.3);
+        if remaining_projectile_budget == 0 {
+            cooldown.timer = (fire_cooldown * 0.5).max(0.3);
             continue;
         }
 
         let enemy_pos = transform.translation.truncate();
         let fire_dir = (player_pos - enemy_pos).normalize_or_zero();
         if fire_dir.length_squared() <= 1e-5 {
-            cooldown.timer = config.enemy_fire_cooldown_base;
+            cooldown.timer = fire_cooldown;
             continue;
         }
 
-        let spawn_pos = enemy_pos + fire_dir * (config.enemy_collider_radius + 6.0);
-        commands.spawn((
-            EnemyProjectile {
-                age: 0.0,
-                distance_traveled: 0.0,
-            },
-            EnemyProjectileRenderMarker,
-            Transform::from_translation(spawn_pos.extend(0.2)),
-            Visibility::default(),
-            RigidBody::KinematicVelocityBased,
-            Velocity {
-                linvel: fire_dir * config.enemy_projectile_speed,
-                angvel: 0.0,
-            },
-            Collider::ball(config.enemy_projectile_collider_radius),
-            Sensor,
-            Ccd { enabled: true },
-            CollisionGroups::new(
-                bevy_rapier2d::geometry::Group::GROUP_6,
-                bevy_rapier2d::geometry::Group::GROUP_1 | bevy_rapier2d::geometry::Group::GROUP_2,
-            ),
-            ActiveCollisionTypes::DYNAMIC_KINEMATIC,
-            ActiveEvents::COLLISION_EVENTS,
-        ));
+        let (pattern, pattern_len) = match archetype {
+            EnemyArchetype::Chaser => ([0.0_f32, 0.0, 0.0], 1),
+            EnemyArchetype::Skirmisher => {
+                if remaining_projectile_budget >= 3 {
+                    ([-0.18_f32, 0.0, 0.18], 3)
+                } else {
+                    ([0.0_f32, 0.0, 0.0], 1)
+                }
+            }
+        };
 
-        cooldown.timer = config.enemy_fire_cooldown_base;
+        for offset in pattern.into_iter().take(pattern_len) {
+            if remaining_projectile_budget == 0 {
+                break;
+            }
+            let shot_dir = rotate_vec2(fire_dir, offset).normalize_or_zero();
+            let spawn_pos = enemy_pos + shot_dir * (config.enemy_collider_radius + 6.0);
+            spawn_enemy_projectile(&mut commands, &config, spawn_pos, shot_dir);
+            remaining_projectile_budget = remaining_projectile_budget.saturating_sub(1);
+        }
+
+        cooldown.timer = fire_cooldown;
     }
 }
 
@@ -1029,16 +1152,24 @@ fn enemy_projectile_hit_system(
 
 fn attach_enemy_mesh_system(
     mut commands: Commands,
-    query: Query<(Entity, &EnemyHealth), Added<EnemyRenderMarker>>,
+    query: Query<(Entity, &EnemyHealth, Option<&EnemyArchetype>), Added<EnemyRenderMarker>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    for (entity, health) in query.iter() {
-        let vertices = [
-            Vec2::new(0.0, 11.0),
-            Vec2::new(-7.0, -7.0),
-            Vec2::new(7.0, -7.0),
-        ];
+    for (entity, health, archetype) in query.iter() {
+        let vertices: Vec<Vec2> = match archetype.copied().unwrap_or(EnemyArchetype::Chaser) {
+            EnemyArchetype::Chaser => vec![
+                Vec2::new(0.0, 11.0),
+                Vec2::new(-7.0, -7.0),
+                Vec2::new(7.0, -7.0),
+            ],
+            EnemyArchetype::Skirmisher => vec![
+                Vec2::new(0.0, 12.0),
+                Vec2::new(-8.0, 0.0),
+                Vec2::new(0.0, -8.0),
+                Vec2::new(8.0, 0.0),
+            ],
+        };
         let mesh = meshes.add(filled_polygon_mesh(&vertices));
         let hp_ratio = (health.hp / health.max_hp.max(1.0)).clamp(0.0, 1.0);
         let tint = Color::srgb(0.75 + 0.20 * hp_ratio, 0.22 + 0.10 * hp_ratio, 0.22);
@@ -1123,6 +1254,47 @@ mod tests {
         let t2 = initial_enemy_fire_timer(42, 2.0);
         assert!((t1 - t2).abs() < 1e-6);
         assert!(t1 >= 0.8 && t1 <= 2.0);
+    }
+
+    #[test]
+    fn enemy_hp_for_stage_increases_and_caps() {
+        let cfg = PhysicsConfig::default();
+        let hp0 = enemy_hp_for_stage(&cfg, 0);
+        let hp3 = enemy_hp_for_stage(&cfg, 3);
+        let hp20 = enemy_hp_for_stage(&cfg, 20);
+
+        assert!(hp3 > hp0);
+        assert!(hp20 >= hp3);
+        assert!((hp20 - cfg.enemy_base_hp * 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn enemy_fire_cooldown_for_stage_decreases_and_clamps() {
+        let cfg = PhysicsConfig::default();
+        let c0 = enemy_fire_cooldown_for_stage(&cfg, 0);
+        let c4 = enemy_fire_cooldown_for_stage(&cfg, 4);
+        let c40 = enemy_fire_cooldown_for_stage(&cfg, 40);
+
+        assert!(c4 < c0);
+        assert!(c40 <= c4);
+        assert!(c40 >= 0.45);
+    }
+
+    #[test]
+    fn enemy_archetype_varies_with_progression_stage_and_spawn_order() {
+        assert_eq!(enemy_archetype_for_spawn(0, 0), EnemyArchetype::Chaser);
+        assert_eq!(enemy_archetype_for_spawn(1, 1), EnemyArchetype::Chaser);
+        assert_eq!(enemy_archetype_for_spawn(2, 0), EnemyArchetype::Chaser);
+        assert_eq!(enemy_archetype_for_spawn(2, 1), EnemyArchetype::Skirmisher);
+        assert_eq!(enemy_archetype_for_spawn(3, 5), EnemyArchetype::Skirmisher);
+    }
+
+    #[test]
+    fn skirmisher_fire_cooldown_is_slower_than_chaser_base() {
+        let base = 1.2;
+        let chaser = enemy_fire_cooldown_for_archetype(base, EnemyArchetype::Chaser);
+        let skirmisher = enemy_fire_cooldown_for_archetype(base, EnemyArchetype::Skirmisher);
+        assert!(skirmisher > chaser);
     }
 
     #[test]

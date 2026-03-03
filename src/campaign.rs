@@ -115,14 +115,24 @@ pub struct CampaignProgressionState {
     pub mission_failed: bool,
 }
 
-fn configure_active_wave(director: &mut CampaignWaveDirector, config: &PhysicsConfig) {
-    let wave_index = director.current_wave.saturating_sub(1);
+pub fn campaign_progression_stage(mission_index: u32, wave_index: u32) -> u32 {
+    let mission_stage = mission_index.saturating_sub(1).saturating_mul(3);
+    let wave_stage = wave_index.saturating_sub(1);
+    mission_stage.saturating_add(wave_stage)
+}
+
+fn configure_active_wave(
+    director: &mut CampaignWaveDirector,
+    session: &CampaignSession,
+    config: &PhysicsConfig,
+) {
+    let wave_stage = campaign_progression_stage(session.mission_index, director.current_wave);
     director.phase = CampaignWavePhase::ActiveWave;
     director.phase_timer_secs = 0.0;
     director.spawned_this_wave = 0;
-    director.target_spawns_this_wave = (2 + wave_index * 2).min(20);
-    director.max_concurrent_enemies = (1 + wave_index).min(config.enemy_max_count_cap.max(1));
-    let wave_speedup = 1.0 + wave_index as f32 * 0.20;
+    director.target_spawns_this_wave = (2 + wave_stage * 2).min(24);
+    director.max_concurrent_enemies = (1 + wave_stage / 2).min(config.enemy_max_count_cap.max(1));
+    let wave_speedup = 1.0 + wave_stage as f32 * 0.18;
     director.spawn_cooldown_secs = (config.enemy_spawn_base_cooldown / wave_speedup)
         .max(config.enemy_spawn_cooldown_min.max(0.25));
 }
@@ -247,7 +257,7 @@ pub fn campaign_wave_director_system(
     match director.phase {
         CampaignWavePhase::Warmup => {
             if director.phase_timer_secs <= 0.0 {
-                configure_active_wave(&mut director, &config);
+                configure_active_wave(&mut director, &session, &config);
             }
         }
         CampaignWavePhase::ActiveWave => {
@@ -465,5 +475,43 @@ mod tests {
 
         let director = world.resource::<CampaignWaveDirector>();
         assert_eq!(director.phase, CampaignWavePhase::Complete);
+    }
+
+    #[test]
+    fn campaign_progression_stage_is_monotonic_across_waves_and_missions() {
+        assert_eq!(campaign_progression_stage(1, 1), 0);
+        assert!(campaign_progression_stage(1, 3) > campaign_progression_stage(1, 1));
+        assert!(campaign_progression_stage(2, 1) > campaign_progression_stage(1, 3));
+        assert!(campaign_progression_stage(3, 5) > campaign_progression_stage(2, 4));
+    }
+
+    #[test]
+    fn active_wave_configuration_scales_with_campaign_progression_stage() {
+        let config = PhysicsConfig::default();
+        let mut early_director = CampaignWaveDirector {
+            current_wave: 1,
+            ..CampaignWaveDirector::default()
+        };
+        let mut later_director = CampaignWaveDirector {
+            current_wave: 3,
+            ..CampaignWaveDirector::default()
+        };
+        let early_session = CampaignSession {
+            active: true,
+            mission_index: 1,
+            ..CampaignSession::default()
+        };
+        let later_session = CampaignSession {
+            active: true,
+            mission_index: 3,
+            ..CampaignSession::default()
+        };
+
+        configure_active_wave(&mut early_director, &early_session, &config);
+        configure_active_wave(&mut later_director, &later_session, &config);
+
+        assert!(later_director.target_spawns_this_wave > early_director.target_spawns_this_wave);
+        assert!(later_director.max_concurrent_enemies >= early_director.max_concurrent_enemies);
+        assert!(later_director.spawn_cooldown_secs <= early_director.spawn_cooldown_secs);
     }
 }
