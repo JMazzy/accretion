@@ -234,6 +234,10 @@ Projectile classes expire by lifetime and max travelled-distance limits; they ar
 ### Enemy Combat Loop
 
 - **Enemy firing**: `enemy_fire_system` spawns `EnemyProjectile` entities aimed at player on cooldown.
+- **Enemy HUD health bars**:
+  - `attach_enemy_health_bar_system` spawns world-space `Mesh2d` bar track/fill entities per standard enemy (`Enemy`) on spawn.
+  - `sync_enemy_health_bar_system` updates bar position, width, and fill color from `EnemyHealth` each frame.
+  - current scope intentionally excludes boss-specific bar styling (`Boss`) for a follow-up pass.
 - **Projectile ownership / friendly-fire rules**:
   - enemy projectiles are in a dedicated collision group and collide with player + asteroids only
   - enemy projectiles do not collide with enemy ships

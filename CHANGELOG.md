@@ -1,5 +1,27 @@
 # Accretion Changelog
 
+## Enemy HUD Health Bars (P0) — March 4, 2026
+
+### Added compact world-space health bars for standard enemy ships
+
+**What changed**:
+- Implemented standard-enemy health bar rendering in `src/enemy.rs`:
+  - added `EnemyHealthBarBg` and `EnemyHealthBarFill` components,
+  - added `attach_enemy_health_bar_system` to spawn world-space bar track/fill meshes for each newly spawned `Enemy`,
+  - added `sync_enemy_health_bar_system` to update bar placement, fill width, and fill color from live `EnemyHealth`.
+- Scoped this slice to standard enemies only (`Enemy`), leaving boss-specific HUD styling for a future pass.
+- Added coverage in `src/enemy.rs`:
+  - `enemy_health_bars_spawn_for_standard_enemies_only_and_sync_fill` verifies bar spawn scope and runtime HP-fill updates.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+- `cargo test enemy_health_bars_spawn_for_standard_enemies_only_and_sync_fill -- --nocapture` ✅
+
+**Impact**:
+- Enemy remaining HP is now visible in-world during combat, improving damage readability and target-priority decisions.
+
 ## Mission End Boss-Gate Integration (P0) — March 4, 2026
 
 ### Hardened campaign completion gating so boss defeat is mandatory before mission advance

@@ -26,7 +26,7 @@ mod test_mode;
 mod testing;
 
 use config::PhysicsConfig;
-use menu::{GameState, SelectedGameMode, SelectedScenario};
+use menu::{GameState, SelectedGameMode, SelectedScenario, ShopReturnState};
 use testing::TestConfig;
 
 /// Spawn the initial asteroid world for the chosen scenario.
@@ -137,6 +137,9 @@ fn main() {
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_resource(player::PlayerFireCooldown::default())
+    .insert_resource(SelectedGameMode::Practice)
+    .insert_resource(SelectedScenario::Field)
+    .insert_resource(ShopReturnState::default())
     .insert_resource(player::CampaignLoadout::default())
     .insert_resource(player::PrimaryWeaponLevel::default())
     .insert_resource(player::SecondaryWeaponLevel::default())

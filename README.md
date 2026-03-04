@@ -40,6 +40,50 @@ Run tests with output:
 cargo test -- --nocapture
 ```
 
+### Test Selection Guide
+
+Use the smallest relevant test set based on what changed.
+
+Core physics scenario regression (fast, script-based):
+
+```bash
+./test_all.sh
+```
+
+Core scenario integration tests (binary-driven, ignored by default):
+
+```bash
+cargo test --test physics_scenarios_integration -- --ignored --nocapture --test-threads=1
+```
+
+Extended integration scenarios (orbit/enemy scripted/perf sample; ignored by default):
+
+```bash
+cargo test --test physics_extended_integration -- --ignored --nocapture --test-threads=1
+```
+
+Run one specific scenario test:
+
+```bash
+cargo test --test physics_scenarios_integration scenario_two_triangles -- --ignored --nocapture --test-threads=1
+```
+
+Logs from script/integration scenario runs are written under `artifacts/test_logs/`.
+
+#### What to run for common changes
+
+- `src/asteroid.rs`, `src/simulation.rs`, `src/spatial_partition.rs`, `src/constants.rs`, `src/config.rs`
+	- Run: `./test_all.sh`
+	- Add: `physics_extended_integration` when touching orbit/perf-sensitive logic.
+- `src/enemy.rs`, `src/player/combat.rs`, `src/player/control.rs`, `src/player/ion_cannon.rs`
+	- Run: `./test_all.sh`
+	- Add: `cargo test --test physics_extended_integration scenario_enemy_combat_scripted -- --ignored --nocapture --test-threads=1`
+- `src/menu.rs`, `src/menu/`, `src/save.rs`, state wiring in `src/main.rs`
+	- Run: `cargo test --test menu_tests -- --nocapture`
+	- Add scenario integration tests if startup/test-mode wiring changed.
+- Performance tuning only
+	- Run targeted extended tests first (e.g. `scenario_baseline_100`, `scenario_mixed_content_225_enemy8`), then optionally full `physics_extended_integration`.
+
 ## Code Style
 
 Format code:

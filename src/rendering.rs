@@ -962,8 +962,8 @@ pub fn setup_ore_hud(
 
 #[allow(clippy::type_complexity)]
 pub fn sync_loadout_hud_visibility_system(
-    selected_mode: Res<SelectedGameMode>,
-    campaign_loadout: Res<CampaignLoadout>,
+    selected_mode: Option<Res<SelectedGameMode>>,
+    campaign_loadout: Option<Res<CampaignLoadout>>,
     mut rows: Query<(
         &mut Visibility,
         Option<&MissileLoadoutHudRow>,
@@ -971,13 +971,26 @@ pub fn sync_loadout_hud_visibility_system(
         Option<&TractorLoadoutHudRow>,
     )>,
 ) {
-    if !selected_mode.is_changed() && !campaign_loadout.is_changed() {
+    let selected_mode_changed = selected_mode.as_ref().is_some_and(|mode| mode.is_changed());
+    let loadout_changed = campaign_loadout
+        .as_ref()
+        .is_some_and(|loadout| loadout.is_changed());
+    if !selected_mode_changed && !loadout_changed {
         return;
     }
 
-    let (show_missile, show_ion, show_tractor) = match *selected_mode {
+    let mode = selected_mode
+        .as_ref()
+        .map(|mode| **mode)
+        .unwrap_or(SelectedGameMode::Practice);
+    let secondary = campaign_loadout
+        .as_ref()
+        .map(|loadout| loadout.secondary)
+        .unwrap_or(CampaignSecondaryWeapon::Missile);
+
+    let (show_missile, show_ion, show_tractor) = match mode {
         SelectedGameMode::Practice => (true, true, true),
-        SelectedGameMode::Campaign => match campaign_loadout.secondary {
+        SelectedGameMode::Campaign => match secondary {
             CampaignSecondaryWeapon::Missile => (true, false, false),
             CampaignSecondaryWeapon::IonCannon => (false, true, false),
         },
@@ -1331,15 +1344,19 @@ pub fn hud_score_display_system(
 }
 
 pub fn hud_mode_display_system(
-    selected_mode: Res<SelectedGameMode>,
+    selected_mode: Option<Res<SelectedGameMode>>,
     campaign: Option<Res<CampaignSession>>,
     wave: Option<Res<CampaignWaveDirector>>,
     q_boss: Query<&BossAttackState, With<Boss>>,
     mut text_query: Query<&mut Text, With<HudModeText>>,
 ) {
+    let mode = selected_mode
+        .as_ref()
+        .map(|selected_mode| **selected_mode)
+        .unwrap_or(SelectedGameMode::Practice);
     for mut text in text_query.iter_mut() {
         *text = Text::new(campaign_mode_text(
-            *selected_mode,
+            mode,
             campaign.as_deref(),
             wave.as_deref(),
             q_boss.iter().next(),

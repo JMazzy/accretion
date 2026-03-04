@@ -76,6 +76,17 @@ pub struct EnemyHealth {
 pub struct EnemyRenderMarker;
 
 #[derive(Component, Debug, Clone, Copy)]
+pub struct EnemyHealthBarBg {
+    pub owner: Entity,
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct EnemyHealthBarFill {
+    pub owner: Entity,
+    pub material: Handle<ColorMaterial>,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyFireCooldown {
     pub timer: f32,
 }
@@ -166,6 +177,8 @@ impl Plugin for EnemyPlugin {
                     attach_enemy_mesh_system,
                     attach_boss_mesh_system,
                     attach_enemy_projectile_mesh_system,
+                    attach_enemy_health_bar_system,
+                    sync_enemy_health_bar_system,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -236,6 +249,15 @@ fn enemy_fire_cooldown_for_archetype(base_cooldown: f32, archetype: EnemyArchety
 fn rotate_vec2(v: Vec2, radians: f32) -> Vec2 {
     let (s, c) = radians.sin_cos();
     Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
+fn unit_rect_vertices() -> [Vec2; 4] {
+    [
+        Vec2::new(-0.5, -0.5),
+        Vec2::new(0.5, -0.5),
+        Vec2::new(0.5, 0.5),
+        Vec2::new(-0.5, 0.5),
+    ]
 }
 
 fn formation_enabled_for_wave(wave_director: Option<&CampaignWaveDirector>) -> bool {
@@ -1786,6 +1808,103 @@ fn attach_enemy_projectile_mesh_system(
     }
 }
 
+fn attach_enemy_health_bar_system(
+    mut commands: Commands,
+    query: Query<Entity, (Added<EnemyRenderMarker>, With<Enemy>)>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    const BAR_Z_BG: f32 = 0.80;
+    const BAR_Z_FILL: f32 = 0.85;
+
+    for enemy_entity in query.iter() {
+        let bar_mesh = meshes.add(filled_polygon_mesh(&unit_rect_vertices()));
+
+        let bg_material = materials.add(ColorMaterial::from_color(Color::srgba(
+            0.35, 0.0, 0.0, 0.78,
+        )));
+        commands.spawn((
+            Mesh2d(bar_mesh.clone()),
+            MeshMaterial2d(bg_material),
+            Transform::from_translation(Vec3::new(0.0, 0.0, BAR_Z_BG)),
+            EnemyHealthBarBg {
+                owner: enemy_entity,
+            },
+        ));
+
+        let fill_material = materials.add(ColorMaterial::from_color(Color::srgb(0.25, 0.92, 0.25)));
+        commands.spawn((
+            Mesh2d(bar_mesh),
+            MeshMaterial2d(fill_material.clone()),
+            Transform::from_translation(Vec3::new(0.0, 0.0, BAR_Z_FILL)),
+            EnemyHealthBarFill {
+                owner: enemy_entity,
+                material: fill_material,
+            },
+        ));
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn sync_enemy_health_bar_system(
+    mut commands: Commands,
+    q_enemy: Query<
+        (&Transform, &EnemyHealth),
+        (
+            With<Enemy>,
+            Without<EnemyHealthBarBg>,
+            Without<EnemyHealthBarFill>,
+        ),
+    >,
+    mut q_bg: Query<
+        (Entity, &EnemyHealthBarBg, &mut Transform),
+        (With<EnemyHealthBarBg>, Without<EnemyHealthBarFill>),
+    >,
+    mut q_fill: Query<
+        (Entity, &EnemyHealthBarFill, &mut Transform),
+        (With<EnemyHealthBarFill>, Without<EnemyHealthBarBg>),
+    >,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    const BAR_HALF: f32 = 8.0;
+    const BAR_HEIGHT: f32 = 1.6;
+    const BAR_Y: f32 = 13.5;
+
+    for (bar_entity, bar, mut transform) in q_bg.iter_mut() {
+        let Ok((enemy_transform, _health)) = q_enemy.get(bar.owner) else {
+            commands.entity(bar_entity).despawn();
+            continue;
+        };
+
+        let pos = enemy_transform.translation.truncate();
+        transform.translation = Vec3::new(pos.x, pos.y + BAR_Y, transform.translation.z);
+        transform.rotation = Quat::IDENTITY;
+        transform.scale = Vec3::new(BAR_HALF * 2.0, BAR_HEIGHT, 1.0);
+    }
+
+    for (bar_entity, bar, mut transform) in q_fill.iter_mut() {
+        let Ok((enemy_transform, health)) = q_enemy.get(bar.owner) else {
+            commands.entity(bar_entity).despawn();
+            continue;
+        };
+
+        let hp_frac = (health.hp / health.max_hp.max(1.0)).clamp(0.0, 1.0);
+        let fill_w = (BAR_HALF * 2.0 * hp_frac).max(0.01);
+        let pos = enemy_transform.translation.truncate();
+        transform.translation = Vec3::new(
+            pos.x - BAR_HALF + fill_w * 0.5,
+            pos.y + BAR_Y,
+            transform.translation.z,
+        );
+        transform.rotation = Quat::IDENTITY;
+        transform.scale = Vec3::new(fill_w, BAR_HEIGHT, 1.0);
+
+        if let Some(material) = materials.get_mut(&bar.material) {
+            material.color = Color::srgb(1.0 - hp_frac, hp_frac, 0.0);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1852,6 +1971,75 @@ mod tests {
         assert!(hp3 > hp0);
         assert!(hp20 >= hp3);
         assert!((hp20 - cfg.enemy_base_hp * 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn enemy_health_bars_spawn_for_standard_enemies_only_and_sync_fill() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, StatesPlugin));
+        app.init_state::<GameState>();
+        app.insert_resource(Assets::<Mesh>::default());
+        app.insert_resource(Assets::<ColorMaterial>::default());
+        app.add_systems(
+            Update,
+            (attach_enemy_health_bar_system, sync_enemy_health_bar_system).chain(),
+        );
+
+        let enemy = app
+            .world_mut()
+            .spawn((
+                Enemy,
+                EnemyRenderMarker,
+                EnemyHealth {
+                    hp: 100.0,
+                    max_hp: 100.0,
+                },
+                Transform::from_translation(Vec3::new(20.0, -5.0, 0.0)),
+            ))
+            .id();
+
+        app.world_mut().spawn((
+            Boss,
+            EnemyRenderMarker,
+            BossHealth {
+                hp: 500.0,
+                max_hp: 500.0,
+            },
+            Transform::from_translation(Vec3::new(-10.0, 3.0, 0.0)),
+        ));
+
+        app.update();
+
+        let bg_count = app
+            .world_mut()
+            .query_filtered::<Entity, With<EnemyHealthBarBg>>()
+            .iter(app.world())
+            .count();
+        let fill_count = app
+            .world_mut()
+            .query_filtered::<Entity, With<EnemyHealthBarFill>>()
+            .iter(app.world())
+            .count();
+
+        assert_eq!(bg_count, 1);
+        assert_eq!(fill_count, 1);
+
+        {
+            let mut health = app
+                .world_mut()
+                .get_mut::<EnemyHealth>(enemy)
+                .expect("enemy health should exist");
+            health.hp = 50.0;
+        }
+
+        app.update();
+
+        let mut fill_query = app.world_mut().query::<(&EnemyHealthBarFill, &Transform)>();
+        let (_, fill_transform) = fill_query
+            .iter(app.world())
+            .next()
+            .expect("enemy fill bar should exist");
+        assert!((fill_transform.scale.x - 8.0).abs() < 1e-5);
     }
 
     #[test]

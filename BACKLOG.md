@@ -12,10 +12,7 @@ Last updated: March 4, 2026.
 
 ## P0 — Next Implementation Candidates
 
-- [ ] **Enemy HUD health bars**
-    - Add compact world-space health bars for enemies, style-aligned with player readability goals.
-    - Scope slice: include standard enemy ships first; boss bar styling can follow in a separate pass if needed.
-    - Acceptance: enemy remaining HP is visible and updates correctly under damage.
+- No open P0 items currently.
 
 ## P1 — Next Queue
 

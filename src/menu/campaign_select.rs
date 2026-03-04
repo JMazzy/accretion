@@ -398,35 +398,38 @@ pub fn campaign_name_input_system(
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub fn campaign_name_display_system(
     editor: Res<CampaignNameEditor>,
-    mut slot_text: Query<
-        &mut Text,
-        (
-            With<CampaignSelectedSlotText>,
-            Without<CampaignNameValueText>,
-        ),
-    >,
-    mut name_text: Query<
-        &mut Text,
-        (
-            With<CampaignNameValueText>,
-            Without<CampaignSelectedSlotText>,
-        ),
-    >,
-    mut loadout_text: Query<&mut Text, With<CampaignLoadoutValueText>>,
+    mut text_sets: ParamSet<(
+        Query<
+            &mut Text,
+            (
+                With<CampaignSelectedSlotText>,
+                Without<CampaignNameValueText>,
+            ),
+        >,
+        Query<
+            &mut Text,
+            (
+                With<CampaignNameValueText>,
+                Without<CampaignSelectedSlotText>,
+            ),
+        >,
+        Query<&mut Text, With<CampaignLoadoutValueText>>,
+    )>,
 ) {
     if !editor.is_changed() {
         return;
     }
 
-    for mut text in slot_text.iter_mut() {
+    for mut text in text_sets.p0().iter_mut() {
         text.0 = format!("Selected Slot: {}", editor.selected_slot);
     }
-    for mut text in name_text.iter_mut() {
+    for mut text in text_sets.p1().iter_mut() {
         text.0 = format!("Name: {}", editor.buffer);
     }
-    for mut text in loadout_text.iter_mut() {
+    for mut text in text_sets.p2().iter_mut() {
         text.0 = format!(
             "Loadout: Primary {} · Secondary {}",
             editor.primary_weapon.label(),

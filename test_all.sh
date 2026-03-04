@@ -1,13 +1,19 @@
 #!/bin/bash
 
-# Comprehensive test suite for the gravity-sim asteroid simulation
-# Tests various scenarios to verify physics behavior after the gravity fix
+# Comprehensive core physics regression suite.
+# Runs deterministic ACCRETION_TEST scenarios and stores per-test logs under artifacts/.
 
 set -e
+
+DATE_STAMP=$(date +%Y-%m-%d)
+TIME_STAMP=$(date +%H%M%S)
+LOG_DIR="artifacts/test_logs/${DATE_STAMP}/core_${TIME_STAMP}"
+mkdir -p "$LOG_DIR"
 
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║        Accretion Physics Test Suite                     ║"
 echo "╚════════════════════════════════════════════════════════╝"
+echo "Logs: $LOG_DIR"
 echo ""
 
 TESTS=(
@@ -27,24 +33,36 @@ TOTAL=0
 PASSED=0
 FAILED=0
 
+strip_ansi() {
+    sed -E 's/\x1B\[[0-9;]*[mK]//g'
+}
+
 for test in "${TESTS[@]}"; do
     echo "▶ Running test: $test"
     TOTAL=$((TOTAL + 1))
+
+    LOG_PATH="$LOG_DIR/${test}.log"
 
     set +e
     OUTPUT=$(timeout 120 bash -c "ACCRETION_TEST=$test cargo run --release" 2>&1)
     STATUS=$?
     set -e
 
-    RESULT=$(echo "$OUTPUT" | grep -E "(✓ PASS|✗ FAIL)" | tail -1 || true)
+    printf '%s\n' "$OUTPUT" > "$LOG_PATH"
 
-    if [ $STATUS -eq 124 ]; then
+    CLEAN_OUTPUT=$(printf '%s\n' "$OUTPUT" | strip_ansi)
+    RESULT=$(printf '%s\n' "$CLEAN_OUTPUT" | grep -E "(✓ PASS|✗ FAIL)" | tail -1 || true)
+
+    if [ "$STATUS" -eq 124 ]; then
         RESULT="✗ FAIL: Timed out after 120s"
+    elif [ "$STATUS" -ne 0 ] && [ -z "$RESULT" ]; then
+        RESULT="✗ FAIL: Process exited with code $STATUS (no PASS/FAIL marker)"
     elif [ -z "$RESULT" ]; then
         RESULT="✗ FAIL: No PASS/FAIL marker found"
     fi
 
     echo "$RESULT"
+    echo "  log: $LOG_PATH"
 
     if echo "$RESULT" | grep -q "✓ PASS"; then
         PASSED=$((PASSED + 1))
@@ -57,6 +75,7 @@ done
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║              TEST SUMMARY                             ║"
 echo "╚════════════════════════════════════════════════════════╝"
+echo "Logs:   $LOG_DIR"
 echo "Total:  $TOTAL"
 echo "Passed: $PASSED"
 echo "Failed: $FAILED"

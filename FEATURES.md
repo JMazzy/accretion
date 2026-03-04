@@ -247,6 +247,10 @@ Missiles have their own ore-based upgrade progression up to **Level 10**, purcha
 ### Enemy Combat Loop
 
 - Enemies now fire projectiles toward the player on cooldown.
+- Standard enemy ships now display compact world-space health bars above each ship:
+  - dark red background track + green→red fill,
+  - fill width and color update continuously from remaining HP,
+  - bars are currently scoped to standard enemies (`Enemy`) and intentionally exclude boss-specific styling in this pass.
 - Enemy projectiles use explicit ownership/friendly-fire rules:
   - collide with player and asteroids
   - do **not** collide with other enemies
