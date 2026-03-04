@@ -31,16 +31,17 @@ use crate::player::{
     sync_projectile_outline_visibility_system, sync_projectile_rotation_system,
     sync_ship_outline_visibility_and_color_system, tractor_beam_force_system,
     tractor_hold_toggle_system, tractor_throw_cooldown_tick_system, AimDirection, AimIdleTimer,
-    IonCannonCooldown, IonCannonLevel, MissileAmmo, MissileCooldown, Player, PlayerIntent,
-    PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad, TractorBeamLevel,
+    CampaignLoadout, IonCannonCooldown, IonCannonLevel, MissileAmmo, MissileCooldown, Player,
+    PlayerIntent, PlayerLives, PlayerScore, PlayerUiEntities, PreferredGamepad, TractorBeamLevel,
     TractorCaptureState, TractorHoldState, TractorThrowCooldown,
 };
 use crate::rendering::{
     debug_panel_button_system, hud_score_display_system, lives_hud_display_system,
     missile_hud_display_system, ore_hud_display_system, physics_inspector_display_system,
     profiler_display_system, stats_display_system, sync_boundary_ring_visibility_system,
-    sync_debug_line_layers_system, sync_physics_inspector_visibility_system,
-    sync_profiler_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
+    sync_debug_line_layers_system, sync_loadout_hud_visibility_system,
+    sync_physics_inspector_visibility_system, sync_profiler_visibility_system,
+    sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -155,6 +156,7 @@ impl Plugin for SimulationPlugin {
             .insert_resource(PlayerIntent::default())
             .insert_resource(PlayerScore::default())
             .insert_resource(PlayerLives::default())
+            .insert_resource(CampaignLoadout::default())
             .insert_resource(TractorBeamLevel::default())
             .insert_resource(TractorHoldState::default())
             .insert_resource(TractorCaptureState::default())
@@ -253,6 +255,10 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 Update,
                 missile_telemetry_log_system.run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                sync_loadout_hud_visibility_system.run_if(in_state(GameState::Playing)),
             )
             // Rebuild grid, run gravity, and count neighbors in FixedUpdate.
             // neighbor_counting_system was previously in Update (60 Hz) — moving it here

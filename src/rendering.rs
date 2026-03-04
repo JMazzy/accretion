@@ -46,8 +46,9 @@ use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{
-    IonCannonCooldown, IonCannonLevel, PlayerLives, PlayerScore, PrimaryWeaponLevel,
-    SecondaryWeaponLevel, TractorBeamLevel, TractorHoldState, TractorThrowCooldown,
+    CampaignLoadout, CampaignSecondaryWeapon, IonCannonCooldown, IonCannonLevel, PlayerLives,
+    PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel, TractorHoldState,
+    TractorThrowCooldown,
 };
 use crate::simulation::{ProfilerStats, SimulationStats};
 use crate::spatial_partition::SpatialGrid;
@@ -171,6 +172,18 @@ pub struct TractorHudValueText;
 /// Marker for ion cannon level and cooldown readout text.
 #[derive(Component)]
 pub struct IonHudValueText;
+
+/// Marker for the missile loadout row in the ore HUD.
+#[derive(Component)]
+pub struct MissileLoadoutHudRow;
+
+/// Marker for the tractor status row in the ore HUD.
+#[derive(Component)]
+pub struct TractorLoadoutHudRow;
+
+/// Marker for the ion-cannon loadout row in the ore HUD.
+#[derive(Component)]
+pub struct IonLoadoutHudRow;
 
 /// Marker for the physics-inspector text node.
 #[derive(Component)]
@@ -765,12 +778,16 @@ pub fn setup_ore_hud(
                     });
 
                     // Missile [symbol] [level] [count]
-                    col.spawn(Node {
-                        flex_direction: FlexDirection::Row,
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(3.0),
-                        ..default()
-                    })
+                    col.spawn((
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(3.0),
+                            ..default()
+                        },
+                        Visibility::Visible,
+                        MissileLoadoutHudRow,
+                    ))
                     .with_children(|entry| {
                         entry.spawn((
                             Text::new("🚀"),
@@ -836,12 +853,16 @@ pub fn setup_ore_hud(
                     });
 
                     // Tractor
-                    col.spawn(Node {
-                        flex_direction: FlexDirection::Row,
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(3.0),
-                        ..default()
-                    })
+                    col.spawn((
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(3.0),
+                            ..default()
+                        },
+                        Visibility::Visible,
+                        TractorLoadoutHudRow,
+                    ))
                     .with_children(|entry| {
                         entry.spawn((
                             Text::new("✦"),
@@ -865,12 +886,16 @@ pub fn setup_ore_hud(
                     });
 
                     // Ion Cannon
-                    col.spawn(Node {
-                        flex_direction: FlexDirection::Row,
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(3.0),
-                        ..default()
-                    })
+                    col.spawn((
+                        Node {
+                            flex_direction: FlexDirection::Row,
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(3.0),
+                            ..default()
+                        },
+                        Visibility::Visible,
+                        IonLoadoutHudRow,
+                    ))
                     .with_children(|entry| {
                         entry.spawn((
                             Text::new("⚛"),
@@ -894,6 +919,52 @@ pub fn setup_ore_hud(
                     });
                 });
         });
+}
+
+#[allow(clippy::type_complexity)]
+pub fn sync_loadout_hud_visibility_system(
+    selected_mode: Res<SelectedGameMode>,
+    campaign_loadout: Res<CampaignLoadout>,
+    mut rows: Query<(
+        &mut Visibility,
+        Option<&MissileLoadoutHudRow>,
+        Option<&IonLoadoutHudRow>,
+        Option<&TractorLoadoutHudRow>,
+    )>,
+) {
+    if !selected_mode.is_changed() && !campaign_loadout.is_changed() {
+        return;
+    }
+
+    let (show_missile, show_ion, show_tractor) = match *selected_mode {
+        SelectedGameMode::Practice => (true, true, true),
+        SelectedGameMode::Campaign => match campaign_loadout.secondary {
+            CampaignSecondaryWeapon::Missile => (true, false, false),
+            CampaignSecondaryWeapon::IonCannon => (false, true, false),
+        },
+    };
+
+    for (mut visibility, missile_tag, ion_tag, tractor_tag) in rows.iter_mut() {
+        if missile_tag.is_some() {
+            *visibility = if show_missile {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+        } else if ion_tag.is_some() {
+            *visibility = if show_ion {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+        } else if tractor_tag.is_some() {
+            *visibility = if show_tractor {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+        }
+    }
 }
 
 /// Refresh the ore-count HUD each frame.

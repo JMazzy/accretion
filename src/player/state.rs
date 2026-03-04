@@ -15,6 +15,7 @@ use crate::constants::{
     WEAPON_UPGRADE_BASE_COST,
 };
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 // ── Components ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,64 @@ pub struct Missile {
 pub struct MissileAmmo {
     /// Missiles currently available to fire.
     pub count: u32,
+}
+
+/// Supported primary-weapon choices for campaign loadout selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum CampaignPrimaryWeapon {
+    #[default]
+    Blaster,
+}
+
+impl CampaignPrimaryWeapon {
+    #[inline]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Blaster => "BLASTER",
+        }
+    }
+}
+
+/// Supported secondary-weapon choices for campaign loadout selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum CampaignSecondaryWeapon {
+    #[default]
+    Missile,
+    IonCannon,
+}
+
+impl CampaignSecondaryWeapon {
+    #[inline]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Missile => "MISSILE",
+            Self::IonCannon => "ION CANNON",
+        }
+    }
+
+    #[inline]
+    pub fn toggled(self) -> Self {
+        match self {
+            Self::Missile => Self::IonCannon,
+            Self::IonCannon => Self::Missile,
+        }
+    }
+}
+
+/// Active campaign loadout applied at runtime.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CampaignLoadout {
+    pub primary: CampaignPrimaryWeapon,
+    pub secondary: CampaignSecondaryWeapon,
+}
+
+impl Default for CampaignLoadout {
+    fn default() -> Self {
+        Self {
+            primary: CampaignPrimaryWeapon::Blaster,
+            secondary: CampaignSecondaryWeapon::Missile,
+        }
+    }
 }
 
 impl Default for MissileAmmo {

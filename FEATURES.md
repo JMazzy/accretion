@@ -11,11 +11,11 @@
 | **A**                       | Strafe left                                                                    |
 | **D**                       | Strafe right                                                                   |
 | **Space** or **Left-click**  | Fire projectile toward mouse cursor (auto-repeats at cooldown rate while held) |
-| **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press)         |
-| **C**                       | Fire a large ion shot in the current aim direction (fast recharge, stuns enemies on hit) |
-| **Q**                       | Toggle tractor hold mode on/off                                                |
-| **Hold E**                  | While hold mode is on: pull/hold targets (stops before ship collision)         |
-| **R**                       | While hold mode is on: throw held target, then tractor enters cooldown           |
+| **X** or **Right-click**     | Fire missile toward mouse cursor (limited ammo; single shot per press; campaign-only when missile secondary is selected) |
+| **C**                       | Fire a large ion shot in the current aim direction (fast recharge, stuns enemies on hit; campaign-only when ion secondary is selected) |
+| **Q**                       | Toggle tractor hold mode on/off (practice mode only)                           |
+| **Hold E**                  | While hold mode is on: pull/hold targets (practice mode only)                  |
+| **R**                       | While hold mode is on: throw held target, then tractor enters cooldown (practice mode only) |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
 | **Tab**                     | Open / close ore shop (from Playing or Paused)                                |
@@ -98,8 +98,11 @@
 - From the main menu, click **CAMPAIGN** to open the campaign slot screen.
 - Choose **SLOT 1 / SLOT 2 / SLOT 3** to select where campaign progression is stored.
 - Type a slot name using keyboard input (`A-Z`, `0-9`, space, `-`) and click **SAVE NAME**.
+- Campaign loadout is selected before mission start:
+  - Primary is currently fixed to **BLASTER**.
+  - Secondary can be toggled between **MISSILE** and **ION CANNON**.
 - Click **START / RESUME** to begin from that slot’s current mission (or create a new run if empty).
-- Campaign progression is saved independently from practice save snapshots.
+- Campaign progression is saved independently from practice save snapshots, including selected primary/secondary loadout.
 
 ### Save Slots
 
@@ -146,6 +149,7 @@ Ore consumables and upgrades are purchased from the **Ore Shop** overlay (open w
 
 - Ore is **not spent** if the corresponding stat is already full.
 - The ore HUD row uses compact symbol status indicators: tractor icon is `✦`; upgrade levels use circled numbers (`①..⑩`); missiles use slot circles (`●` available / `○` empty); tractor shows `○` (off), `⚡` (ready), `⌛` (cooldown); ion shows `⚡` (ready) or `⌛` (cooldown).
+- In **campaign mode**, HUD rows for secondary weapons are loadout-filtered (shows missile *or* ion), and tractor HUD/controls are hidden/disabled (practice-only).
 - Passive HP regen and passive missile recharge have been **removed**; ore-shop spending is the only way to replenish them.
 
 ### Primary Weapon Upgrades

@@ -137,6 +137,7 @@ fn main() {
     .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(1.0))
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .insert_resource(player::PlayerFireCooldown::default())
+    .insert_resource(player::CampaignLoadout::default())
     .insert_resource(player::PrimaryWeaponLevel::default())
     .insert_resource(player::SecondaryWeaponLevel::default())
     .insert_resource(player::IonCannonLevel::default())

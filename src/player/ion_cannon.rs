@@ -1,6 +1,9 @@
-use super::state::{AimDirection, IonCannonLevel, Player};
+use super::state::{
+    AimDirection, CampaignLoadout, CampaignSecondaryWeapon, IonCannonLevel, Player,
+};
 use crate::asteroid_rendering::filled_polygon_mesh;
 use crate::enemy::{Enemy, EnemyStun, EnemyTier};
+use crate::menu::SelectedGameMode;
 use crate::particles::spawn_ion_particles;
 use bevy::input::gamepad::GamepadButton;
 use bevy::prelude::*;
@@ -58,7 +61,15 @@ pub fn ion_cannon_fire_system(
     aim: Res<AimDirection>,
     mut cooldown: ResMut<IonCannonCooldown>,
     q_player: Query<&Transform, With<Player>>,
+    selected_mode: Res<SelectedGameMode>,
+    campaign_loadout: Res<CampaignLoadout>,
 ) {
+    if *selected_mode == SelectedGameMode::Campaign
+        && campaign_loadout.secondary != CampaignSecondaryWeapon::IonCannon
+    {
+        return;
+    }
+
     cooldown.timer_secs = (cooldown.timer_secs - time.delta_secs()).max(0.0);
 
     let gamepad_fire = preferred

@@ -6,10 +6,19 @@ fn default_campaign_slot_name(slot: u8) -> String {
 
 fn set_editor_from_slot(editor: &mut CampaignNameEditor, slot: u8) {
     editor.selected_slot = slot;
-    let meta = campaign_slot_metadata(slot);
-    editor.buffer = meta
-        .name
-        .unwrap_or_else(|| default_campaign_slot_name(slot));
+    match ensure_campaign_slot(slot) {
+        Ok(snapshot) => {
+            editor.buffer = snapshot.name;
+            editor.primary_weapon = snapshot.primary_weapon;
+            editor.secondary_weapon = snapshot.secondary_weapon;
+        }
+        Err(err) => {
+            error!("Failed to load campaign slot {}: {}", slot, err);
+            editor.buffer = default_campaign_slot_name(slot);
+            editor.primary_weapon = crate::player::CampaignPrimaryWeapon::Blaster;
+            editor.secondary_weapon = crate::player::CampaignSecondaryWeapon::Missile;
+        }
+    }
 }
 
 pub fn setup_campaign_select_menu(
@@ -158,6 +167,21 @@ pub fn setup_campaign_select_menu(
                 CampaignNameValueText,
             ));
 
+            root.spawn((
+                Text::new(format!(
+                    "Loadout: Primary {} · Secondary {}",
+                    editor.primary_weapon.label(),
+                    editor.secondary_weapon.label()
+                )),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 15.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.82, 0.92, 0.86)),
+                CampaignLoadoutValueText,
+            ));
+
             spacer(root, 8.0);
 
             root.spawn((
@@ -170,7 +194,55 @@ pub fn setup_campaign_select_menu(
                 TextColor(hint_color()),
             ));
 
+            root.spawn((
+                Text::new("Primary is fixed to BLASTER for now"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(hint_color()),
+            ));
+
+            root.spawn((
+                Text::new("Secondary can be MISSILE or ION CANNON"),
+                TextFont {
+                    font: font.0.clone(),
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(hint_color()),
+            ));
+
             spacer(root, 14.0);
+
+            root.spawn((
+                Button,
+                Node {
+                    width: Val::Px(300.0),
+                    height: Val::Px(44.0),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(pause_debug_bg()),
+                BorderColor::all(pause_debug_border()),
+                CampaignToggleSecondaryButton,
+            ))
+            .with_children(|btn| {
+                btn.spawn((
+                    Text::new("TOGGLE SECONDARY"),
+                    TextFont {
+                        font: font.0.clone(),
+                        font_size: 15.0,
+                        ..default()
+                    },
+                    TextColor(pause_debug_text()),
+                ));
+            });
+
+            spacer(root, 10.0);
 
             root.spawn((
                 Button,
@@ -342,6 +414,7 @@ pub fn campaign_name_display_system(
             Without<CampaignSelectedSlotText>,
         ),
     >,
+    mut loadout_text: Query<&mut Text, With<CampaignLoadoutValueText>>,
 ) {
     if !editor.is_changed() {
         return;
@@ -352,6 +425,13 @@ pub fn campaign_name_display_system(
     }
     for mut text in name_text.iter_mut() {
         text.0 = format!("Name: {}", editor.buffer);
+    }
+    for mut text in loadout_text.iter_mut() {
+        text.0 = format!(
+            "Loadout: Primary {} · Secondary {}",
+            editor.primary_weapon.label(),
+            editor.secondary_weapon.label()
+        );
     }
 }
 
@@ -374,6 +454,10 @@ pub fn campaign_select_button_system(
     save_name_query: Query<
         (&Interaction, &Children),
         (Changed<Interaction>, With<CampaignSaveNameButton>),
+    >,
+    toggle_secondary_query: Query<
+        (&Interaction, &Children),
+        (Changed<Interaction>, With<CampaignToggleSecondaryButton>),
     >,
     start_query: Query<
         (&Interaction, &Children),
@@ -467,9 +551,13 @@ pub fn campaign_select_button_system(
             };
             let meta = campaign_slot_metadata(editor.selected_slot);
             let mission = meta.mission_index.unwrap_or(1);
-            if let Err(err) =
-                save_campaign_slot_named(editor.selected_slot, chosen_name.clone(), mission)
-            {
+            if let Err(err) = save_campaign_slot_named(
+                editor.selected_slot,
+                chosen_name.clone(),
+                mission,
+                editor.primary_weapon,
+                editor.secondary_weapon,
+            ) {
                 error!(
                     "Failed saving campaign slot {} name '{}': {}",
                     editor.selected_slot, chosen_name, err
@@ -477,6 +565,30 @@ pub fn campaign_select_button_system(
             } else {
                 editor.buffer = chosen_name;
             }
+        }
+
+        match interaction {
+            Interaction::Hovered => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(Color::WHITE);
+                    }
+                }
+            }
+            Interaction::None => {
+                for child in children.iter() {
+                    if let Ok(mut color) = btn_text.get_mut(child) {
+                        *color = TextColor(pause_debug_text());
+                    }
+                }
+            }
+            Interaction::Pressed => {}
+        }
+    }
+
+    for (interaction, children) in toggle_secondary_query.iter() {
+        if *interaction == Interaction::Pressed {
+            editor.secondary_weapon = editor.secondary_weapon.toggled();
         }
 
         match interaction {
@@ -510,7 +622,13 @@ pub fn campaign_select_button_system(
             let meta = campaign_slot_metadata(slot);
             let mission = meta.mission_index.unwrap_or(1);
 
-            if let Err(err) = save_campaign_slot_named(slot, chosen_name.clone(), mission) {
+            if let Err(err) = save_campaign_slot_named(
+                slot,
+                chosen_name.clone(),
+                mission,
+                editor.primary_weapon,
+                editor.secondary_weapon,
+            ) {
                 error!(
                     "Failed pre-start campaign save for slot {} name '{}': {}",
                     slot, chosen_name, err

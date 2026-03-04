@@ -1,5 +1,39 @@
 # Accretion Changelog
 
+## Campaign Loadout Selection (P0) — March 4, 2026
+
+### Added campaign primary/secondary loadout selection with persistence and runtime enforcement
+
+**What changed**:
+- Added typed campaign loadout model in `src/player/state.rs`:
+  - `CampaignPrimaryWeapon` (currently `Blaster`)
+  - `CampaignSecondaryWeapon` (`Missile` / `IonCannon`)
+  - `CampaignLoadout` Bevy resource (runtime-active campaign selection)
+- Extended campaign slot persistence in `src/save.rs`:
+  - `CampaignSaveSnapshot` now stores `primary_weapon` and `secondary_weapon`
+  - migration path backfills defaults for existing slot files missing loadout fields
+  - autosave and start/save flows now persist mission + loadout together
+- Updated campaign slot UI in `src/menu/campaign_select.rs`:
+  - loadout text now shown on the campaign select screen
+  - added **TOGGLE SECONDARY** action (`Missile` ↔ `IonCannon`)
+  - selected loadout is saved and applied when starting/resuming campaign
+- Applied runtime behavior gating:
+  - `missile_fire_system` fires in campaign only when secondary is `Missile`
+  - `ion_cannon_fire_system` fires in campaign only when secondary is `IonCannon`
+  - tractor systems are disabled in campaign mode (practice-only)
+- Updated HUD behavior in `src/rendering.rs` + `src/simulation.rs`:
+  - ore HUD now has row markers with mode/loadout-driven visibility
+  - campaign shows only the selected secondary row and hides tractor row
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+- `cargo test campaign_slot -- --nocapture` ✅
+
+**Impact**:
+- Campaign loadout now persists per slot and is enforced in gameplay/HUD, satisfying the P0 loadout acceptance criteria.
+
 ## Enemy Formation Behavior (P0) — March 3, 2026
 
 ### Added formation-capable enemy group behavior with spawn/maintain/break rules

@@ -20,6 +20,7 @@ use super::state::{
 };
 use crate::asteroid::{Asteroid, AsteroidSize, Planet};
 use crate::config::PhysicsConfig;
+use crate::menu::SelectedGameMode;
 use crate::particles::{
     spawn_ship_thrust_particles, spawn_tractor_beam_particles, TractorBeamVfxMode,
 };
@@ -177,9 +178,15 @@ pub fn tractor_hold_toggle_system(
     keys: Res<ButtonInput<KeyCode>>,
     preferred: Res<PreferredGamepad>,
     gamepads: Query<&Gamepad>,
+    selected_mode: Res<SelectedGameMode>,
     mut state: ResMut<TractorHoldState>,
     cooldown: Res<TractorThrowCooldown>,
 ) {
+    if *selected_mode == SelectedGameMode::Campaign {
+        state.engaged = false;
+        return;
+    }
+
     let kb_toggle = keys.just_pressed(KeyCode::KeyQ);
     let gp_toggle = preferred
         .0
@@ -197,8 +204,14 @@ pub fn tractor_hold_toggle_system(
 
 pub fn tractor_throw_cooldown_tick_system(
     time: Res<Time>,
+    selected_mode: Res<SelectedGameMode>,
     mut cooldown: ResMut<TractorThrowCooldown>,
 ) {
+    if *selected_mode == SelectedGameMode::Campaign {
+        cooldown.timer_secs = 0.0;
+        return;
+    }
+
     cooldown.timer_secs = (cooldown.timer_secs - time.delta_secs()).max(0.0);
 }
 
@@ -372,6 +385,7 @@ pub fn tractor_beam_force_system(
     mut hold_state: ResMut<TractorHoldState>,
     mut capture_state: ResMut<TractorCaptureState>,
     mut throw_cooldown: ResMut<TractorThrowCooldown>,
+    selected_mode: Res<SelectedGameMode>,
     mut particle_emit_cooldown: Local<f32>,
     mut was_engaged: Local<bool>,
     q_player: Query<(&Transform, &Velocity), (With<Player>, Without<Asteroid>)>,
@@ -390,6 +404,16 @@ pub fn tractor_beam_force_system(
     const TRACTOR_RELEASE_RANGE_MULTIPLIER: f32 = 1.8;
     const TRACTOR_FORCE_POSITION_FACTOR: f32 = 0.12;
     const TRACTOR_FORCE_VELOCITY_FACTOR: f32 = 0.30;
+
+    if *selected_mode == SelectedGameMode::Campaign {
+        hold_state.engaged = false;
+        capture_state.target = None;
+        capture_state.hold_distance = 0.0;
+        throw_cooldown.timer_secs = 0.0;
+        *was_engaged = false;
+        *particle_emit_cooldown = 0.0;
+        return;
+    }
 
     let gamepad = preferred.0.and_then(|entity| gamepads.get(entity).ok());
     let pull_mode = keys.pressed(KeyCode::KeyE)

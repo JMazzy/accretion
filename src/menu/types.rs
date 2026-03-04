@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::player::{CampaignPrimaryWeapon, CampaignSecondaryWeapon};
+
 /// Top-level application state machine.
 #[derive(States, Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum GameState {
@@ -154,11 +156,21 @@ pub struct CampaignSelectedSlotText;
 #[derive(Component)]
 pub struct CampaignNameValueText;
 
+/// Dynamic text showing selected campaign loadout.
+#[derive(Component)]
+pub struct CampaignLoadoutValueText;
+
+/// Tags the campaign secondary-weapon toggle button.
+#[derive(Component)]
+pub struct CampaignToggleSecondaryButton;
+
 /// Name-editor resource for campaign slot naming UX.
 #[derive(Resource, Debug, Clone)]
 pub struct CampaignNameEditor {
     pub selected_slot: u8,
     pub buffer: String,
+    pub primary_weapon: CampaignPrimaryWeapon,
+    pub secondary_weapon: CampaignSecondaryWeapon,
 }
 
 impl Default for CampaignNameEditor {
@@ -166,6 +178,8 @@ impl Default for CampaignNameEditor {
         Self {
             selected_slot: 1,
             buffer: "Campaign Slot 1".to_string(),
+            primary_weapon: CampaignPrimaryWeapon::Blaster,
+            secondary_weapon: CampaignSecondaryWeapon::Missile,
         }
     }
 }

@@ -12,8 +12,8 @@ use crate::config::PhysicsConfig;
 use crate::menu::{GameState, SelectedGameMode, SelectedScenario};
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::{
-    MissileAmmo, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
-    TractorBeamLevel,
+    CampaignLoadout, CampaignPrimaryWeapon, CampaignSecondaryWeapon, MissileAmmo, PlayerHealth,
+    PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel,
 };
 use crate::player::Player;
 
@@ -131,6 +131,8 @@ pub struct CampaignSaveSnapshot {
     pub saved_at_unix: u64,
     pub name: String,
     pub mission_index: u32,
+    pub primary_weapon: CampaignPrimaryWeapon,
+    pub secondary_weapon: CampaignSecondaryWeapon,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -427,6 +429,18 @@ fn migrate_campaign_snapshot_value(value: &mut toml::Value) -> Result<(), String
     if !table.contains_key("mission_index") {
         table.insert("mission_index".to_string(), toml::Value::Integer(1));
     }
+    if !table.contains_key("primary_weapon") {
+        table.insert(
+            "primary_weapon".to_string(),
+            toml::Value::String("Blaster".to_string()),
+        );
+    }
+    if !table.contains_key("secondary_weapon") {
+        table.insert(
+            "secondary_weapon".to_string(),
+            toml::Value::String("Missile".to_string()),
+        );
+    }
 
     let version = table
         .get("version")
@@ -481,17 +495,27 @@ pub fn ensure_campaign_slot(slot: u8) -> Result<CampaignSaveSnapshot, String> {
         saved_at_unix: current_unix_timestamp(),
         name: format!("Campaign Slot {slot}"),
         mission_index: 1,
+        primary_weapon: CampaignPrimaryWeapon::Blaster,
+        secondary_weapon: CampaignSecondaryWeapon::Missile,
     };
     write_campaign_slot(slot, &snapshot)?;
     Ok(snapshot)
 }
 
-pub fn save_campaign_slot_named(slot: u8, name: String, mission_index: u32) -> Result<(), String> {
+pub fn save_campaign_slot_named(
+    slot: u8,
+    name: String,
+    mission_index: u32,
+    primary_weapon: CampaignPrimaryWeapon,
+    secondary_weapon: CampaignSecondaryWeapon,
+) -> Result<(), String> {
     let snapshot = CampaignSaveSnapshot {
         version: CAMPAIGN_SAVE_VERSION,
         saved_at_unix: current_unix_timestamp(),
         name,
         mission_index: mission_index.max(1),
+        primary_weapon,
+        secondary_weapon,
     };
     write_campaign_slot(slot, &snapshot)
 }
@@ -705,6 +729,7 @@ pub fn apply_pending_loaded_campaign_system(
     mut active_slot: ResMut<ActiveCampaignSlot>,
     mut autosave_state: ResMut<CampaignAutosaveState>,
     mut campaign_session: ResMut<CampaignSession>,
+    mut campaign_loadout: ResMut<CampaignLoadout>,
 ) {
     let Some(snapshot) = pending.0.take() else {
         return;
@@ -712,6 +737,8 @@ pub fn apply_pending_loaded_campaign_system(
 
     active_slot.name = snapshot.name;
     campaign_session.mission_index = snapshot.mission_index.max(1);
+    campaign_loadout.primary = snapshot.primary_weapon;
+    campaign_loadout.secondary = snapshot.secondary_weapon;
     autosave_state.last_saved_mission_index = campaign_session.mission_index;
 }
 
@@ -719,6 +746,7 @@ pub fn autosave_campaign_progress_system(
     selected_mode: Res<SelectedGameMode>,
     session: Res<CampaignSession>,
     active_slot: Res<ActiveCampaignSlot>,
+    campaign_loadout: Res<CampaignLoadout>,
     mut autosave_state: ResMut<CampaignAutosaveState>,
 ) {
     if *selected_mode != SelectedGameMode::Campaign || !session.active {
@@ -736,6 +764,8 @@ pub fn autosave_campaign_progress_system(
         active_slot.slot,
         active_slot.name.clone(),
         session.mission_index,
+        campaign_loadout.primary,
+        campaign_loadout.secondary,
     ) {
         Ok(()) => {
             autosave_state.last_saved_mission_index = session.mission_index;
@@ -781,7 +811,11 @@ mod tests {
         let loaded = load_campaign_slot(slot).expect("campaign slot should load after creation");
 
         assert_eq!(created.mission_index, 1);
+        assert_eq!(created.primary_weapon, CampaignPrimaryWeapon::Blaster);
+        assert_eq!(created.secondary_weapon, CampaignSecondaryWeapon::Missile);
         assert_eq!(loaded.mission_index, 1);
+        assert_eq!(loaded.primary_weapon, CampaignPrimaryWeapon::Blaster);
+        assert_eq!(loaded.secondary_weapon, CampaignSecondaryWeapon::Missile);
         assert!(loaded.name.contains("Campaign Slot"));
 
         restore_campaign_slot(slot, backup);
@@ -792,12 +826,20 @@ mod tests {
         let slot = 1u8;
         let backup = backup_campaign_slot(slot);
 
-        save_campaign_slot_named(slot, "Test Run".to_string(), 7)
-            .expect("campaign slot write should succeed");
+        save_campaign_slot_named(
+            slot,
+            "Test Run".to_string(),
+            7,
+            CampaignPrimaryWeapon::Blaster,
+            CampaignSecondaryWeapon::IonCannon,
+        )
+        .expect("campaign slot write should succeed");
         let loaded = load_campaign_slot(slot).expect("campaign slot should load after write");
 
         assert_eq!(loaded.name, "Test Run");
         assert_eq!(loaded.mission_index, 7);
+        assert_eq!(loaded.primary_weapon, CampaignPrimaryWeapon::Blaster);
+        assert_eq!(loaded.secondary_weapon, CampaignSecondaryWeapon::IonCannon);
 
         restore_campaign_slot(slot, backup);
     }

@@ -14,13 +14,7 @@ Last updated: March 4, 2026.
 
 ### Upgrade Enhancements
 
-- [ ] **Campaign loadout selection (primary/secondary)**
-    - Add pre-mission loadout selection: one primary, one secondary.
-    - Initial supported set: primary `blaster`; secondary `missile`/`ion cannon`.
-    - `ore magnet` remains always-on; `tractor beam` remains practice-only for now.
-    - Acceptance: selected loadout is visible in HUD/state and applied during mission runtime; non-selected primary/secondary systems are excluded from HUD/state.
-
-- [ ] **Between-mission upgrade/shop flow for campaign** `depends on Campaign loadout selection (primary/secondary)`
+- [ ] **Between-mission upgrade/shop flow for campaign**
     - In campaign mode, add intermission upgrade step where ore is spent before the next mission starts.
     - This replaces any-time ore shop access in campaign mode.
     - Preserve current any-time ore shop behavior in practice mode.

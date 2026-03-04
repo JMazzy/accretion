@@ -70,6 +70,7 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 - **Missile telemetry** (`MissileTelemetry` in `src/simulation.rs`): tracks shots/hits, outcome counts (destroy/split/decompose), and mass-based totals. Periodic frame logs expose outcome distribution and a simple `frames_per_kill` TTK proxy for balancing passes.
 - **Ore magnet upgrades** (`OreAffinityLevel` in `src/mining.rs`): increases ore magnet radius and pull strength per level via `radius_at_level()` and `strength_at_level()`.
 - **Tractor beam scaling** (`TractorBeamLevel` in `src/player/state.rs`): scales beam force/range plus max affected asteroid size/speed envelope.
+- **Campaign loadout selection** (`CampaignLoadout` in `src/player/state.rs`): stores selected campaign primary/secondary weapon (`Blaster` + `Missile`/`IonCannon`) and gates runtime fire systems/HUD rows so non-selected secondary systems are excluded in campaign mode.
 - **Economy coupling**: weapon/missile/magnet/tractor upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
 - **Session scope**: upgrade resources reset when returning to `MainMenu`; persistent progression depends on the planned save/load system.
 
@@ -88,10 +89,10 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 ### Campaign Slot Persistence
 
 - **Campaign slot format**: separate campaign progression snapshots under `saves/campaign_slot_N.toml` (`N = 1..3`).
-- **Campaign schema** (`src/save.rs`): `CampaignSaveSnapshot` includes slot id, slot name, mission index, and updated-at metadata.
+- **Campaign schema** (`src/save.rs`): `CampaignSaveSnapshot` includes slot id, slot name, mission index, selected campaign loadout (`primary_weapon`, `secondary_weapon`), and updated-at metadata.
 - **UI flow**: main-menu `CAMPAIGN` transitions to `CampaignSelect`, where slot 1/2/3 can be selected, renamed, and started/resumed.
-- **Campaign load trigger**: `CampaignSelect` start/resume writes/ensures slot metadata, populates `PendingLoadedCampaign`, and transitions to `Playing`.
-- **Campaign apply**: `apply_pending_loaded_campaign_system` initializes active slot and campaign resources before world spawn/bootstrap.
+- **Campaign load trigger**: `CampaignSelect` start/resume writes/ensures slot metadata (including loadout), populates `PendingLoadedCampaign`, and transitions to `Playing`.
+- **Campaign apply**: `apply_pending_loaded_campaign_system` initializes active slot, mission index, and `CampaignLoadout` before world spawn/bootstrap.
 
 ## Physics Rules
 

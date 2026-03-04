@@ -47,10 +47,11 @@ pub use rendering::{
     PlayerUiEntities,
 };
 pub use state::{
-    AimDirection, AimIdleTimer, IonCannonLevel, MissileAmmo, MissileCooldown, Player,
-    PlayerFireCooldown, PlayerHealth, PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad,
-    PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel, TractorCaptureState,
-    TractorHoldState, TractorThrowCooldown,
+    AimDirection, AimIdleTimer, CampaignLoadout, CampaignPrimaryWeapon, CampaignSecondaryWeapon,
+    IonCannonLevel, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown, PlayerHealth,
+    PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel,
+    SecondaryWeaponLevel, TractorBeamLevel, TractorCaptureState, TractorHoldState,
+    TractorThrowCooldown,
 };
 
 // ── Ship spawn ─────────────────────────────────────────────────────────────────

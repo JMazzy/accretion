@@ -29,8 +29,9 @@
 //! | ≥ 6           | hexagon    | 6            |
 
 use super::state::{
-    AimDirection, AimIdleTimer, Missile, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown,
-    PlayerHealth, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel, Projectile,
+    AimDirection, AimIdleTimer, CampaignLoadout, CampaignSecondaryWeapon, Missile, MissileAmmo,
+    MissileCooldown, Player, PlayerFireCooldown, PlayerHealth, PlayerLives, PlayerScore,
+    PreferredGamepad, PrimaryWeaponLevel, Projectile,
 };
 use crate::asteroid::{
     apply_crater_deformation, canonical_vertices_for_mass, rescale_vertices_to_area,
@@ -38,7 +39,7 @@ use crate::asteroid::{
     Vertices,
 };
 use crate::config::PhysicsConfig;
-use crate::menu::GameState;
+use crate::menu::{GameState, SelectedGameMode};
 use crate::mining::spawn_ore_drop;
 use crate::particles::{
     spawn_debris_particles, spawn_impact_particles, spawn_missile_trail_particles,
@@ -195,9 +196,17 @@ pub fn missile_fire_system(
     mut cooldown: ResMut<MissileCooldown>,
     mut ammo: ResMut<MissileAmmo>,
     mut missile_telemetry: ResMut<crate::simulation::MissileTelemetry>,
+    selected_mode: Res<SelectedGameMode>,
+    campaign_loadout: Res<CampaignLoadout>,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
 ) {
+    if *selected_mode == SelectedGameMode::Campaign
+        && campaign_loadout.secondary != CampaignSecondaryWeapon::Missile
+    {
+        return;
+    }
+
     cooldown.timer = (cooldown.timer - time.delta_secs()).max(0.0);
 
     let Ok(transform) = q_player.single() else {
