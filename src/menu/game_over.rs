@@ -2,8 +2,10 @@ use super::*;
 
 /// Spawn the game-over overlay centred over the frozen world.
 ///
-/// Shows final score and a "PLAY AGAIN" button that re-spawns the player
-/// with a fresh set of lives without resetting the asteroid field.
+/// Shows final score and a "PLAY AGAIN" button.
+///
+/// - Practice mode: re-spawns the player with fresh lives in the existing world.
+/// - Campaign mode: triggers a clean mission retry on `GameOver -> Playing`.
 pub(super) fn setup_game_over(
     mut commands: Commands,
     score: Res<PlayerScore>,

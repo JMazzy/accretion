@@ -513,8 +513,14 @@ pub fn sync_aim_indicator_system(
 pub fn cleanup_player_ui_system(
     mut removed: RemovedComponents<Player>,
     mut ui: ResMut<PlayerUiEntities>,
+    q_player: Query<Entity, With<Player>>,
     mut commands: Commands,
 ) {
+    if !q_player.is_empty() {
+        for _ in removed.read() {}
+        return;
+    }
+
     for _ in removed.read() {
         if let Some(e) = ui.health_bar_bg.take() {
             commands.entity(e).despawn();

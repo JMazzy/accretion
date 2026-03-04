@@ -88,6 +88,7 @@ use menu_ore_shop::{cleanup_ore_shop, ore_shop_button_system, setup_ore_shop};
 #[path = "menu/cleanup.rs"]
 mod menu_cleanup;
 use menu_cleanup::cleanup_game_world;
+pub use menu_cleanup::reset_campaign_retry_world;
 pub use menu_pause::resume_physics;
 
 // ── Plugin ────────────────────────────────────────────────────────────────────

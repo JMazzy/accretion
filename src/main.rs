@@ -70,6 +70,14 @@ fn setup_physics_config(mut config: Query<&mut RapierConfiguration>) {
     }
 }
 
+fn is_campaign_mode(mode: Res<SelectedGameMode>) -> bool {
+    *mode == SelectedGameMode::Campaign
+}
+
+fn is_not_campaign_mode(mode: Res<SelectedGameMode>) -> bool {
+    *mode != SelectedGameMode::Campaign
+}
+
 fn add_playing_transition_hud_systems(app: &mut App) {
     add_playing_transition_hud_systems_for(app, GameState::MainMenu);
     add_playing_transition_hud_systems_for(app, GameState::ScenarioSelect);
@@ -269,14 +277,32 @@ fn main() {
                 OnEnter(GameState::GameOver),
                 campaign::mark_campaign_failure_on_game_over,
             )
-            // GameOver → Playing: re-spawn the player ship with fresh lives.  Lives are reset
-            // by game_over_button_system before this transition fires.
+            // GameOver → Playing (campaign): clear combat entities and per-run counters,
+            // then rebuild mission state for a clean retry.
             .add_systems(
                 OnTransition {
                     exited: GameState::GameOver,
                     entered: GameState::Playing,
                 },
-                player::spawn_player,
+                (
+                    menu::reset_campaign_retry_world,
+                    campaign::bootstrap_campaign_session,
+                    campaign::bootstrap_campaign_wave_director,
+                    campaign::bootstrap_campaign_progression_state,
+                    spawn_initial_world,
+                    player::spawn_player,
+                    menu::resume_physics,
+                )
+                    .chain()
+                    .run_if(is_campaign_mode),
+            )
+            // GameOver → Playing (practice): preserve legacy behavior and only respawn the ship.
+            .add_systems(
+                OnTransition {
+                    exited: GameState::GameOver,
+                    entered: GameState::Playing,
+                },
+                player::spawn_player.run_if(is_not_campaign_mode),
             )
             .insert_resource(TestConfig::default());
     }

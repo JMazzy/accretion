@@ -88,7 +88,9 @@
 ### Game Over
 
 - When the final life is lost the simulation freezes and a **full-screen Game Over overlay** appears, showing the current score.
-- **PLAY AGAIN** (button or **Enter**): resets lives to 3 and returns to the existing world (asteroids remain intact).
+- **PLAY AGAIN** (button or **Enter**):
+  - **Practice mode**: resets lives to 3 and returns to the existing world (asteroids remain intact).
+  - **Campaign mode**: starts a clean retry for the current mission (combat entities and run counters reset).
 - **QUIT** (button): exits the application.
 
 ## Save / Load

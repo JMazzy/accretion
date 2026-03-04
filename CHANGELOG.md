@@ -1,5 +1,38 @@
 # Accretion Changelog
 
+## Campaign Play-Again Retry Reset Fix (P1) — March 4, 2026
+
+### Fixed campaign Game Over retry path to start clean runs
+
+**What changed**:
+- Fixed `GameOver -> Playing` transition behavior in `src/main.rs`:
+  - campaign mode now runs a full retry chain (`reset_campaign_retry_world`, campaign bootstraps, world spawn, player spawn),
+  - practice mode keeps prior behavior (player-only respawn in existing world).
+- Added `reset_campaign_retry_world` in `src/menu/cleanup.rs`:
+  - despawns active gameplay entities (asteroids, enemies/bosses, projectiles, particles, ore pickups),
+  - resets per-attempt runtime resources (`PlayerScore`, `PlayerLives`, `SimulationStats`, `PlayerOre`, `MissileAmmo`, `EnemySpawnState`) without wiping campaign slot/loadout progression resources,
+  - now also clears player UI entities/resource (`HealthBarBg`, `HealthBarFill`, `AimIndicatorMesh`, `PlayerUiEntities`) to prevent stale health bar carryover on retry.
+- Added regression coverage in `src/menu/cleanup.rs`:
+  - `campaign_retry_reset_clears_runtime_state_and_entities` validates entity cleanup + runtime counter reset.
+- Added integration coverage in `tests/menu_tests.rs`:
+  - `campaign_game_over_play_again_resets_runtime_and_progression_state` validates `GameOver -> Playing` campaign retry behavior across cleanup + campaign bootstraps (mission/wave/progression reset expectations).
+  - `campaign_game_over_play_again_final_mission_keeps_no_next_mission_pending` validates final-mission retry keeps progression clear (no pending next mission/shop queue).
+  - `campaign_game_over_play_again_mission_one_clears_stale_pending_advance` validates mission-1 retry clears stale queued progression/intermission state while preserving catalog-derived `next_mission_id`.
+- Hardened `cleanup_player_ui_system` in `src/player/rendering.rs`:
+  - ignores consumed player-removal events when a new `Player` already exists (same-frame replacement), preventing accidental despawn of newly attached UI.
+- Updated `FEATURES.md` Game Over section to describe mode-specific `PLAY AGAIN` behavior.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+- `cargo test campaign_retry_reset_clears_runtime_state_and_entities -- --nocapture` ✅
+- `cargo test --test menu_tests -- --nocapture` ✅
+- `cargo test progression_ -- --nocapture` ✅
+
+**Impact**:
+- Campaign retries no longer carry over prior-attempt combat counters/state after pressing `PLAY AGAIN` on Game Over.
+
 ## Enemy HUD Health Bars (P0) — March 4, 2026
 
 ### Added compact world-space health bars for standard enemy ships
