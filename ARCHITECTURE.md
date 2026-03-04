@@ -228,6 +228,7 @@ Projectile classes expire by lifetime and max travelled-distance limits; they ar
   - `campaign_boss_spawn_system` spawns one boss per mission during `BossActive`.
   - `boss_attack_system` applies boss movement pressure and phase-aware projectile patterns while respecting the global enemy projectile budget.
   - `boss_damage_from_player_weapons_system` applies projectile/missile damage only when weakpoint is exposed.
+  - `campaign_progression_system` advances to intermission/next mission only after wave phase reaches `Complete`, so missions cannot finish while the boss is still alive.
   - boss defeat grants baseline mission ore reward via campaign wave progression state before intermission shop.
 
 ### Enemy Combat Loop

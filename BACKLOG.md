@@ -14,13 +14,6 @@ Last updated: March 4, 2026.
 
 ### Upgrade Enhancements
 
-### Boss Progression
-
-- [ ] **Mission end boss-gate integration** `depends on Campaign-scoped upgrade persistence`
-    - Make boss defeat the final gate for mission completion.
-    - Integrate rewards and mission transition on boss death.
-    - Acceptance: mission cannot complete before boss defeat; post-boss progression advances cleanly.
-
 ## P1 — Next Queue
 
 ### Enemy Enhancements

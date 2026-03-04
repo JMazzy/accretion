@@ -113,6 +113,7 @@
   - final wave clear transitions to **BOSS INCOMING** intro,
   - one campaign boss entity spawns with weakpoint-based damage gating,
   - boss combat now uses readable attack phases (**P1** → **TELEGRAPH** → **P2**) with increased projectile pressure in phase two,
+  - mission completion is boss-gated: campaign progression does not advance until that boss is defeated,
   - boss defeat triggers a short outro and grants baseline mission ore reward before intermission shop/next mission flow.
 
 ### Save Slots

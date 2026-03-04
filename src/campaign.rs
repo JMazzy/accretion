@@ -660,6 +660,45 @@ mod tests {
     }
 
     #[test]
+    fn boss_active_does_not_complete_while_boss_is_alive() {
+        let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
+        world.insert_resource(PhysicsConfig::default());
+        world.insert_resource(PlayerOre::default());
+        world.insert_resource(CampaignSession {
+            active: true,
+            mission_index: 1,
+            map_scenario: SelectedScenario::Field,
+            wave_count: 1,
+            reward_ore: 25,
+            next_mission_id: Some(2),
+            run_counter: 1,
+        });
+        world.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::BossActive,
+            current_wave: 1,
+            total_waves: 1,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 0,
+            spawn_cooldown_secs: 0.0,
+            boss_spawned: true,
+            mission_reward_granted: false,
+        });
+        world.spawn(crate::enemy::Boss);
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(campaign_wave_director_system);
+        schedule.run(&mut world);
+
+        let director = world.resource::<CampaignWaveDirector>();
+        assert_eq!(director.phase, CampaignWavePhase::BossActive);
+        assert!(!director.mission_reward_granted);
+        assert_eq!(world.resource::<PlayerOre>().count, 0);
+    }
+
+    #[test]
     fn campaign_progression_stage_is_monotonic_across_waves_and_missions() {
         assert_eq!(campaign_progression_stage(1, 1), 0);
         assert!(campaign_progression_stage(1, 3) > campaign_progression_stage(1, 1));
@@ -751,6 +790,55 @@ mod tests {
             *world.resource::<ShopReturnState>(),
             ShopReturnState::Playing
         );
+    }
+
+    #[test]
+    fn progression_does_not_advance_before_boss_phase_completes() {
+        let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
+        world.insert_resource(PhysicsConfig::default());
+        world.insert_resource(CampaignMissionCatalog::default());
+        world.insert_resource(CampaignSession {
+            active: true,
+            mission_index: 1,
+            map_scenario: SelectedScenario::Field,
+            wave_count: 3,
+            reward_ore: 20,
+            next_mission_id: Some(2),
+            run_counter: 1,
+        });
+        world.insert_resource(CampaignProgressionState {
+            pending_advance: true,
+            advance_timer_secs: 0.0,
+            mission_failed: false,
+            next_mission_pending_shop: None,
+        });
+        world.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::BossActive,
+            current_wave: 3,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 0,
+            spawn_cooldown_secs: 0.0,
+            boss_spawned: true,
+            mission_reward_granted: false,
+        });
+        world.insert_resource(crate::enemy::EnemySpawnState::default());
+        world.insert_resource(NextState::<GameState>::default());
+        world.insert_resource(ShopReturnState::default());
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(campaign_progression_system);
+        schedule.run(&mut world);
+
+        let progression = world.resource::<CampaignProgressionState>();
+        assert_eq!(progression.next_mission_pending_shop, None);
+        assert!(progression.pending_advance);
+
+        let queued_state = world.resource::<NextState<GameState>>().clone();
+        assert!(matches!(queued_state, NextState::Unchanged));
     }
 
     #[test]

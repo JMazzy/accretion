@@ -1,5 +1,33 @@
 # Accretion Changelog
 
+## Mission End Boss-Gate Integration (P0) — March 4, 2026
+
+### Hardened campaign completion gating so boss defeat is mandatory before mission advance
+
+**What changed**:
+- Added focused campaign regression coverage in `src/campaign.rs`:
+  - `boss_active_does_not_complete_while_boss_is_alive`
+  - `progression_does_not_advance_before_boss_phase_completes`
+- Confirmed and documented mission progression gate behavior:
+  - campaign progression only advances after the boss lifecycle reaches mission `Complete`,
+  - boss defeat remains the source of mission reward transition into intermission shop.
+- Updated docs to reflect delivered gating semantics:
+  - `FEATURES.md` now explicitly states boss-gated mission completion,
+  - `ARCHITECTURE.md` now documents that progression requires `CampaignWavePhase::Complete`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+- `cargo test boss_ -- --nocapture` ✅
+- `cargo test intermission -- --nocapture` ✅
+- `cargo test campaign_slot -- --nocapture` ✅
+- `cargo test progression_does_not_advance_before_boss_phase_completes -- --nocapture` ✅
+- `cargo test boss_active_does_not_complete_while_boss_is_alive -- --nocapture` ✅
+
+**Impact**:
+- Mission completion and campaign progression are now explicitly locked behind boss defeat with regression tests guarding against future bypasses.
+
 ## Boss Ships: Attack Pattern Set (P0) — March 4, 2026
 
 ### Added multi-phase boss combat behavior with telegraph and phase-aware pressure
