@@ -12,8 +12,9 @@ use crate::config::PhysicsConfig;
 use crate::menu::{GameState, SelectedGameMode, SelectedScenario};
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::{
-    CampaignLoadout, CampaignPrimaryWeapon, CampaignSecondaryWeapon, MissileAmmo, PlayerHealth,
-    PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel,
+    CampaignLoadout, CampaignPrimaryWeapon, CampaignSecondaryWeapon, IonCannonLevel, MissileAmmo,
+    PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
+    TractorBeamLevel,
 };
 use crate::player::Player;
 
@@ -133,6 +134,9 @@ pub struct CampaignSaveSnapshot {
     pub mission_index: u32,
     pub primary_weapon: CampaignPrimaryWeapon,
     pub secondary_weapon: CampaignSecondaryWeapon,
+    pub primary_weapon_level: u32,
+    pub secondary_weapon_level: u32,
+    pub ion_cannon_level: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -441,6 +445,18 @@ fn migrate_campaign_snapshot_value(value: &mut toml::Value) -> Result<(), String
             toml::Value::String("Missile".to_string()),
         );
     }
+    if !table.contains_key("primary_weapon_level") {
+        table.insert("primary_weapon_level".to_string(), toml::Value::Integer(0));
+    }
+    if !table.contains_key("secondary_weapon_level") {
+        table.insert(
+            "secondary_weapon_level".to_string(),
+            toml::Value::Integer(0),
+        );
+    }
+    if !table.contains_key("ion_cannon_level") {
+        table.insert("ion_cannon_level".to_string(), toml::Value::Integer(0));
+    }
 
     let version = table
         .get("version")
@@ -497,9 +513,37 @@ pub fn ensure_campaign_slot(slot: u8) -> Result<CampaignSaveSnapshot, String> {
         mission_index: 1,
         primary_weapon: CampaignPrimaryWeapon::Blaster,
         secondary_weapon: CampaignSecondaryWeapon::Missile,
+        primary_weapon_level: 0,
+        secondary_weapon_level: 0,
+        ion_cannon_level: 0,
     };
     write_campaign_slot(slot, &snapshot)?;
     Ok(snapshot)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn save_campaign_slot_progress(
+    slot: u8,
+    name: String,
+    mission_index: u32,
+    primary_weapon: CampaignPrimaryWeapon,
+    secondary_weapon: CampaignSecondaryWeapon,
+    primary_weapon_level: u32,
+    secondary_weapon_level: u32,
+    ion_cannon_level: u32,
+) -> Result<(), String> {
+    let snapshot = CampaignSaveSnapshot {
+        version: CAMPAIGN_SAVE_VERSION,
+        saved_at_unix: current_unix_timestamp(),
+        name,
+        mission_index: mission_index.max(1),
+        primary_weapon,
+        secondary_weapon,
+        primary_weapon_level: primary_weapon_level.min(PrimaryWeaponLevel::MAX),
+        secondary_weapon_level: secondary_weapon_level.min(SecondaryWeaponLevel::MAX),
+        ion_cannon_level: ion_cannon_level.min(IonCannonLevel::MAX),
+    };
+    write_campaign_slot(slot, &snapshot)
 }
 
 pub fn save_campaign_slot_named(
@@ -509,15 +553,17 @@ pub fn save_campaign_slot_named(
     primary_weapon: CampaignPrimaryWeapon,
     secondary_weapon: CampaignSecondaryWeapon,
 ) -> Result<(), String> {
-    let snapshot = CampaignSaveSnapshot {
-        version: CAMPAIGN_SAVE_VERSION,
-        saved_at_unix: current_unix_timestamp(),
+    let existing = ensure_campaign_slot(slot)?;
+    save_campaign_slot_progress(
+        slot,
         name,
-        mission_index: mission_index.max(1),
+        mission_index,
         primary_weapon,
         secondary_weapon,
-    };
-    write_campaign_slot(slot, &snapshot)
+        existing.primary_weapon_level,
+        existing.secondary_weapon_level,
+        existing.ion_cannon_level,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -724,12 +770,16 @@ pub fn apply_pending_loaded_snapshot_system(
     info!("Loaded snapshot successfully");
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn apply_pending_loaded_campaign_system(
     mut pending: ResMut<PendingLoadedCampaign>,
     mut active_slot: ResMut<ActiveCampaignSlot>,
     mut autosave_state: ResMut<CampaignAutosaveState>,
     mut campaign_session: ResMut<CampaignSession>,
     mut campaign_loadout: ResMut<CampaignLoadout>,
+    mut primary_level: ResMut<PrimaryWeaponLevel>,
+    mut secondary_level: ResMut<SecondaryWeaponLevel>,
+    mut ion_level: ResMut<IonCannonLevel>,
 ) {
     let Some(snapshot) = pending.0.take() else {
         return;
@@ -739,14 +789,23 @@ pub fn apply_pending_loaded_campaign_system(
     campaign_session.mission_index = snapshot.mission_index.max(1);
     campaign_loadout.primary = snapshot.primary_weapon;
     campaign_loadout.secondary = snapshot.secondary_weapon;
+    primary_level.level = snapshot.primary_weapon_level.min(PrimaryWeaponLevel::MAX);
+    secondary_level.level = snapshot
+        .secondary_weapon_level
+        .min(SecondaryWeaponLevel::MAX);
+    ion_level.level = snapshot.ion_cannon_level.min(IonCannonLevel::MAX);
     autosave_state.last_saved_mission_index = campaign_session.mission_index;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn autosave_campaign_progress_system(
     selected_mode: Res<SelectedGameMode>,
     session: Res<CampaignSession>,
     active_slot: Res<ActiveCampaignSlot>,
     campaign_loadout: Res<CampaignLoadout>,
+    primary_level: Res<PrimaryWeaponLevel>,
+    secondary_level: Res<SecondaryWeaponLevel>,
+    ion_level: Res<IonCannonLevel>,
     mut autosave_state: ResMut<CampaignAutosaveState>,
 ) {
     if *selected_mode != SelectedGameMode::Campaign || !session.active {
@@ -760,12 +819,15 @@ pub fn autosave_campaign_progress_system(
         return;
     }
 
-    match save_campaign_slot_named(
+    match save_campaign_slot_progress(
         active_slot.slot,
         active_slot.name.clone(),
         session.mission_index,
         campaign_loadout.primary,
         campaign_loadout.secondary,
+        primary_level.level,
+        secondary_level.level,
+        ion_level.level,
     ) {
         Ok(()) => {
             autosave_state.last_saved_mission_index = session.mission_index;
@@ -813,9 +875,15 @@ mod tests {
         assert_eq!(created.mission_index, 1);
         assert_eq!(created.primary_weapon, CampaignPrimaryWeapon::Blaster);
         assert_eq!(created.secondary_weapon, CampaignSecondaryWeapon::Missile);
+        assert_eq!(created.primary_weapon_level, 0);
+        assert_eq!(created.secondary_weapon_level, 0);
+        assert_eq!(created.ion_cannon_level, 0);
         assert_eq!(loaded.mission_index, 1);
         assert_eq!(loaded.primary_weapon, CampaignPrimaryWeapon::Blaster);
         assert_eq!(loaded.secondary_weapon, CampaignSecondaryWeapon::Missile);
+        assert_eq!(loaded.primary_weapon_level, 0);
+        assert_eq!(loaded.secondary_weapon_level, 0);
+        assert_eq!(loaded.ion_cannon_level, 0);
         assert!(loaded.name.contains("Campaign Slot"));
 
         restore_campaign_slot(slot, backup);
@@ -840,7 +908,91 @@ mod tests {
         assert_eq!(loaded.mission_index, 7);
         assert_eq!(loaded.primary_weapon, CampaignPrimaryWeapon::Blaster);
         assert_eq!(loaded.secondary_weapon, CampaignSecondaryWeapon::IonCannon);
+        assert_eq!(loaded.primary_weapon_level, 0);
+        assert_eq!(loaded.secondary_weapon_level, 0);
+        assert_eq!(loaded.ion_cannon_level, 0);
 
         restore_campaign_slot(slot, backup);
+    }
+
+    #[test]
+    fn save_campaign_slot_progress_persists_weapon_levels() {
+        let slot = 3u8;
+        let backup = backup_campaign_slot(slot);
+
+        save_campaign_slot_progress(
+            slot,
+            "Progress Test".to_string(),
+            4,
+            CampaignPrimaryWeapon::Blaster,
+            CampaignSecondaryWeapon::Missile,
+            2,
+            3,
+            4,
+        )
+        .expect("campaign slot progress write should succeed");
+
+        let loaded = load_campaign_slot(slot).expect("campaign slot should load after write");
+
+        assert_eq!(loaded.name, "Progress Test");
+        assert_eq!(loaded.mission_index, 4);
+        assert_eq!(loaded.primary_weapon_level, 2);
+        assert_eq!(loaded.secondary_weapon_level, 3);
+        assert_eq!(loaded.ion_cannon_level, 4);
+
+        restore_campaign_slot(slot, backup);
+    }
+
+    #[test]
+    fn apply_pending_loaded_campaign_overwrites_levels_and_loadout() {
+        let mut world = World::new();
+        world.insert_resource(PendingLoadedCampaign(Some(CampaignSaveSnapshot {
+            version: CAMPAIGN_SAVE_VERSION,
+            saved_at_unix: 0,
+            name: "Slot 2".to_string(),
+            mission_index: 3,
+            primary_weapon: CampaignPrimaryWeapon::Blaster,
+            secondary_weapon: CampaignSecondaryWeapon::Missile,
+            primary_weapon_level: 1,
+            secondary_weapon_level: 2,
+            ion_cannon_level: 3,
+        })));
+        world.insert_resource(ActiveCampaignSlot {
+            slot: 1,
+            name: "Old Slot".to_string(),
+        });
+        world.insert_resource(CampaignAutosaveState::default());
+        world.insert_resource(CampaignSession {
+            active: true,
+            mission_index: 9,
+            ..CampaignSession::default()
+        });
+        world.insert_resource(CampaignLoadout {
+            primary: CampaignPrimaryWeapon::Blaster,
+            secondary: CampaignSecondaryWeapon::IonCannon,
+        });
+        world.insert_resource(PrimaryWeaponLevel { level: 9 });
+        world.insert_resource(SecondaryWeaponLevel { level: 9 });
+        world.insert_resource(IonCannonLevel { level: 9 });
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(apply_pending_loaded_campaign_system);
+        schedule.run(&mut world);
+
+        let active_slot = world.resource::<ActiveCampaignSlot>();
+        assert_eq!(active_slot.name, "Slot 2");
+
+        let campaign_session = world.resource::<CampaignSession>();
+        assert_eq!(campaign_session.mission_index, 3);
+
+        let loadout = world.resource::<CampaignLoadout>();
+        assert_eq!(loadout.secondary, CampaignSecondaryWeapon::Missile);
+
+        let primary_level = world.resource::<PrimaryWeaponLevel>();
+        let secondary_level = world.resource::<SecondaryWeaponLevel>();
+        let ion_level = world.resource::<IonCannonLevel>();
+        assert_eq!(primary_level.level, 1);
+        assert_eq!(secondary_level.level, 2);
+        assert_eq!(ion_level.level, 3);
     }
 }

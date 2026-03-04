@@ -89,10 +89,11 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 ### Campaign Slot Persistence
 
 - **Campaign slot format**: separate campaign progression snapshots under `saves/campaign_slot_N.toml` (`N = 1..3`).
-- **Campaign schema** (`src/save.rs`): `CampaignSaveSnapshot` includes slot id, slot name, mission index, selected campaign loadout (`primary_weapon`, `secondary_weapon`), and updated-at metadata.
+- **Campaign schema** (`src/save.rs`): `CampaignSaveSnapshot` includes slot id, slot name, mission index, selected campaign loadout (`primary_weapon`, `secondary_weapon`), campaign weapon levels (`primary_weapon_level`, `secondary_weapon_level`, `ion_cannon_level`), and updated-at metadata.
 - **UI flow**: main-menu `CAMPAIGN` transitions to `CampaignSelect`, where slot 1/2/3 can be selected, renamed, and started/resumed.
 - **Campaign load trigger**: `CampaignSelect` start/resume writes/ensures slot metadata (including loadout), populates `PendingLoadedCampaign`, and transitions to `Playing`.
 - **Campaign apply**: `apply_pending_loaded_campaign_system` initializes active slot, mission index, and `CampaignLoadout` before world spawn/bootstrap.
+- **Campaign upgrade apply**: `apply_pending_loaded_campaign_system` also reapplies slot-scoped campaign weapon levels so progression does not leak between slots.
 - **Mission transition flow**: campaign mission completion queues `next_mission_pending_shop` in `CampaignProgressionState`, enters `GameState::OreShop` for intermission upgrades, then loads/spawns the next mission on return to `Playing`.
 
 ## Physics Rules

@@ -1,5 +1,31 @@
 # Accretion Changelog
 
+## Campaign-Scoped Upgrade Persistence (P0) — March 4, 2026
+
+### Persisted campaign weapon levels per slot with load/apply isolation
+
+**What changed**:
+- Extended `CampaignSaveSnapshot` in `src/save.rs` with campaign weapon level fields:
+  - `primary_weapon_level`
+  - `secondary_weapon_level`
+  - `ion_cannon_level`
+- Added migration defaults for older campaign save files missing new fields.
+- Added `save_campaign_slot_progress(...)` and updated autosave to persist mission + loadout + campaign weapon levels.
+- Updated `save_campaign_slot_named(...)` to preserve existing slot weapon levels when editing slot name/loadout metadata.
+- Updated `apply_pending_loaded_campaign_system` to apply slot-scoped loadout and weapon levels on campaign start/resume.
+- Added tests for:
+  - default level initialization for new campaign slots,
+  - explicit campaign weapon-level persistence,
+  - load/apply overwrite behavior to prevent cross-slot progression leakage.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo test campaign_slot -- --nocapture` ✅
+- `cargo test apply_pending_loaded_campaign_overwrites_levels_and_loadout -- --nocapture` ✅
+
+**Impact**:
+- Campaign upgrades and loadout now persist cleanly per slot and restore deterministically on resume.
+
 ## Campaign Between-Mission Upgrade Flow (P0) — March 4, 2026
 
 ### Added intermission-gated ore shop cadence for campaign mode

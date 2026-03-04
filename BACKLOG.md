@@ -14,11 +14,6 @@ Last updated: March 4, 2026.
 
 ### Upgrade Enhancements
 
-- [ ] **Campaign-scoped upgrade persistence**
-    - Persist weapon levels and selected loadout per campaign save slot.
-    - Ensure no progression leaks across different campaign slots.
-    - Acceptance: upgrades/loadout carry across missions in the same slot and reset for new slots.
-
 ### Boss Progression
 
 - [ ] **Boss ships: framework**
