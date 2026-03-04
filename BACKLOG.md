@@ -12,17 +12,16 @@ Last updated: March 4, 2026.
 
 ## P0 — Next Implementation Candidates
 
-### Upgrade Enhancements
+- [ ] **Enemy HUD health bars**
+    - Add compact world-space health bars for enemies, style-aligned with player readability goals.
+    - Scope slice: include standard enemy ships first; boss bar styling can follow in a separate pass if needed.
+    - Acceptance: enemy remaining HP is visible and updates correctly under damage.
 
 ## P1 — Next Queue
 
-### Enemy Enhancements
-
-- [ ] **Enemy HUD health bars**
-    - Add compact world-space health bars for enemies, style-aligned with player readability goals.
-    - Acceptance: enemy remaining HP is visible and updates correctly under damage.
-
 ### Upgrade Enhancements
+
+Priority order (high → low):
 
 - [ ] **Split primary upgrade tracks (chip vs destroy threshold)**
     - Decouple primary progression so chip power and destroy threshold can be tuned independently.
@@ -64,6 +63,13 @@ Last updated: March 4, 2026.
     - Ensure DPS scales with upgrades.
     - Acceptance: weapon advantages/disadvantages remain clear without one type dominating all scenarios.
 
+- [ ] **Performance pass v2 (post-v1 hardening + scale test)**
+    - Re-run profiling after v1 optimizations and target the next bottleneck at higher scale (e.g., larger asteroid counts / heavier contact density).
+    - Use [PERFORMANCE_V1_CLOSEOUT.md](PERFORMANCE_V1_CLOSEOUT.md) as the baseline reference for v2 comparisons.
+    - Initial candidate from v1 closeout: reduce mixed-content allocation churn in formation/contact and projectile-heavy update paths.
+    - Extend benchmark comparison table in docs with v1 vs v2 deltas.
+    - Acceptance: second measurable frame-time improvement without stability regressions.
+
 ### Visual Features
 
 - [ ] **Post-processing: collision bloom pass**
@@ -74,18 +80,9 @@ Last updated: March 4, 2026.
     - Add chromatic aberration only during player invincibility windows.
     - Acceptance: effect is temporally bounded and clearly communicates invulnerability state.
 
-### Performance Program 2
-
-- [ ] **Performance pass v2 (post-v1 hardening + scale test)**
-    - Re-run profiling after v1 optimizations and target the next bottleneck at higher scale (e.g., larger asteroid counts / heavier contact density).
-    - Use [PERFORMANCE_V1_CLOSEOUT.md](PERFORMANCE_V1_CLOSEOUT.md) as the baseline reference for v2 comparisons.
-    - Initial candidate from v1 closeout: reduce mixed-content allocation churn in formation/contact and projectile-heavy update paths.
-    - Extend benchmark comparison table in docs with v1 vs v2 deltas.
-    - Acceptance: second measurable frame-time improvement without stability regressions.
-
 ## P2 - Multiplayer
 
-### Multiplayer
+Priority order (high → low):
 
 - [ ] **Local multiplayer: shared-world co-op MVP**
     - Two player entities, independent input mappings, shared asteroid world.
@@ -96,8 +93,6 @@ Last updated: March 4, 2026.
     - Friendly-fire, scoring, and win-condition rule variants.
     - Acceptance: a complete PvP match loop can start, progress, and end cleanly.
 
-### Performance Program 3
-
 - [ ] **Replay/playback: capture format + recorder**
     - Define compact session log schema (input + key state snapshots + metadata).
     - Write record pipeline with bounded memory/disk behavior.
@@ -107,17 +102,15 @@ Last updated: March 4, 2026.
     - Add playback mode that consumes recorded logs and drives simulation.
     - Acceptance: playback reaches expected end-state within tolerance on repeated runs.
 
-- [ ] **Performance pass v3 (post-v2 hardening + scale test)**
-    - Re-run profiling after v2 optimizations and target the next bottleneck at higher scale (e.g., larger asteroid counts / heavier contact density).
-    - Extend benchmark comparison table in docs with v1 vs v2 vs v3 deltas.
-    - Acceptance: measurable frame-time improvement without stability regressions.
-
-### Platform Maintenance
-
 - [ ] **Bevy upgrade path planning (0.18+)**
     - Capture migration risk list (API breaks, Rapier compatibility, schedule changes).
     - Define stepwise branch plan with rollback points.
     - Acceptance: written migration plan with test matrix and owner sequence.
+
+- [ ] **Performance pass v3 (post-v2 hardening + scale test)**
+    - Re-run profiling after v2 optimizations and target the next bottleneck at higher scale (e.g., larger asteroid counts / heavier contact density).
+    - Extend benchmark comparison table in docs with v1 vs v2 vs v3 deltas.
+    - Acceptance: measurable frame-time improvement without stability regressions.
 
 - [ ] **Bevy upgrade execution (0.18+)** `depends on Bevy upgrade path planning (0.18+)`
     - Update dependencies, compile fixes, and behavioral parity validation.
