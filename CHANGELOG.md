@@ -1,5 +1,30 @@
 # Accretion Changelog
 
+## Campaign Between-Mission Upgrade Flow (P0) — March 4, 2026
+
+### Added intermission-gated ore shop cadence for campaign mode
+
+**What changed**:
+- Updated `campaign_progression_system` in `src/campaign.rs`:
+  - mission completion now queues `next_mission_pending_shop`
+  - transitions campaign into `GameState::OreShop` before mission advance
+  - next mission loads/spawns only after returning from shop to `Playing`
+- Updated `toggle_ore_shop_system` in `src/menu/pause.rs`:
+  - practice mode keeps existing any-time `Tab` shop access
+  - campaign mode blocks manual shop opening during active combat
+  - campaign shop opens only during progression intermission
+- Added focused tests:
+  - intermission queue + state transition request verification
+  - mission load-on-return verification
+  - campaign tab-gating verification
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo test intermission -- --nocapture` ✅
+
+**Impact**:
+- Campaign now enforces a between-mission upgrade/shop step while preserving practice-mode immediate shop access.
+
 ## Campaign Loadout Selection (P0) — March 4, 2026
 
 ### Added campaign primary/secondary loadout selection with persistence and runtime enforcement

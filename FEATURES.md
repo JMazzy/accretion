@@ -18,7 +18,7 @@
 | **R**                       | While hold mode is on: throw held target, then tractor enters cooldown (practice mode only) |
 | **Mouse wheel**             | Zoom in / out                                                                  |
 | **ESC**                     | Pause / resume simulation; opens in-game pause menu                            |
-| **Tab**                     | Open / close ore shop (from Playing or Paused)                                |
+| **Tab**                     | Open / close ore shop (practice: any time from Playing/Paused; campaign: intermission-only between missions) |
 | **Pause menu Save buttons** | Save current run to slot 1/2/3                                                 |
 
 - **Cursor-facing ship**: ship heading continuously follows mouse aim direction.
@@ -103,6 +103,11 @@
   - Secondary can be toggled between **MISSILE** and **ION CANNON**.
 - Click **START / RESUME** to begin from that slot’s current mission (or create a new run if empty).
 - Campaign progression is saved independently from practice save snapshots, including selected primary/secondary loadout.
+- Campaign upgrade/shop cadence is intermission-based:
+  - after completing a mission with a next mission available, the ore shop opens before mission transition,
+  - spending ore/upgrades happens in that intermission window,
+  - closing the shop starts the next mission,
+  - manual Tab shop access during active campaign combat is disabled.
 
 ### Save Slots
 

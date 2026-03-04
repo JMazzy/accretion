@@ -1,7 +1,7 @@
 use crate::config::PhysicsConfig;
 use crate::enemy::Enemy;
 use crate::enemy::{EnemyProjectile, EnemySpawnState};
-use crate::menu::{SelectedGameMode, SelectedScenario};
+use crate::menu::{GameState, SelectedGameMode, SelectedScenario, ShopReturnState};
 use crate::mining::OrePickup;
 use crate::particles::Particle;
 use crate::player::state::{Missile, Projectile};
@@ -113,6 +113,7 @@ pub struct CampaignProgressionState {
     pub pending_advance: bool,
     pub advance_timer_secs: f32,
     pub mission_failed: bool,
+    pub next_mission_pending_shop: Option<u32>,
 }
 
 pub fn campaign_progression_stage(mission_index: u32, wave_index: u32) -> u32 {
@@ -206,6 +207,7 @@ pub fn bootstrap_campaign_progression_state(
     progression.pending_advance = false;
     progression.advance_timer_secs = 0.0;
     progression.mission_failed = false;
+    progression.next_mission_pending_shop = None;
 
     if !session.active {
         progression.mission_failed = false;
@@ -284,6 +286,7 @@ pub fn campaign_wave_director_system(
 
 /// Handle campaign mission completion/failure transitions during gameplay.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
 pub fn campaign_progression_system(
     mut commands: Commands,
     time: Res<Time>,
@@ -294,15 +297,69 @@ pub fn campaign_progression_system(
     mut wave: ResMut<CampaignWaveDirector>,
     mut enemy_spawn: ResMut<EnemySpawnState>,
     mut q_player_health: Query<&mut PlayerHealth>,
-    q_asteroids: Query<Entity, With<crate::asteroid::Asteroid>>,
-    q_enemies: Query<Entity, With<Enemy>>,
-    q_enemy_projectiles: Query<Entity, With<EnemyProjectile>>,
-    q_projectiles: Query<Entity, With<Projectile>>,
-    q_missiles: Query<Entity, With<Missile>>,
-    q_particles: Query<Entity, With<Particle>>,
-    q_ore: Query<Entity, With<OrePickup>>,
+    entity_sets: (
+        Query<Entity, With<crate::asteroid::Asteroid>>,
+        Query<Entity, With<Enemy>>,
+        Query<Entity, With<EnemyProjectile>>,
+        Query<Entity, With<Projectile>>,
+        Query<Entity, With<Missile>>,
+        Query<Entity, With<Particle>>,
+        Query<Entity, With<OrePickup>>,
+    ),
+    mut next_state: ResMut<NextState<GameState>>,
+    mut return_state: ResMut<ShopReturnState>,
 ) {
     if !session.active {
+        return;
+    }
+
+    let (
+        q_asteroids,
+        q_enemies,
+        q_enemy_projectiles,
+        q_projectiles,
+        q_missiles,
+        q_particles,
+        q_ore,
+    ) = entity_sets;
+
+    if let Some(next_mission) = progression.next_mission_pending_shop {
+        load_mission_into_session(&mut session, &catalog, next_mission);
+
+        for entity in q_asteroids
+            .iter()
+            .chain(q_enemies.iter())
+            .chain(q_enemy_projectiles.iter())
+            .chain(q_projectiles.iter())
+            .chain(q_missiles.iter())
+            .chain(q_particles.iter())
+            .chain(q_ore.iter())
+        {
+            commands.entity(entity).despawn();
+        }
+
+        spawn_campaign_world_for_scenario(&mut commands, &config, session.map_scenario);
+
+        if let Ok(mut player_health) = q_player_health.single_mut() {
+            player_health.hp = player_health.max_hp;
+            player_health.inv_timer = config.respawn_invincibility_secs;
+            player_health.time_since_damage = 0.0;
+        }
+
+        wave.phase = CampaignWavePhase::Warmup;
+        wave.current_wave = 1;
+        wave.total_waves = session.wave_count.max(1);
+        wave.phase_timer_secs = 1.5;
+        wave.target_spawns_this_wave = 0;
+        wave.spawned_this_wave = 0;
+        wave.max_concurrent_enemies = 1;
+        wave.spawn_cooldown_secs = config.enemy_spawn_base_cooldown;
+
+        enemy_spawn.timer_secs = 0.0;
+        enemy_spawn.session_elapsed_secs = 0.0;
+
+        progression.pending_advance = false;
+        progression.next_mission_pending_shop = None;
         return;
     }
 
@@ -326,41 +383,11 @@ pub fn campaign_progression_system(
         return;
     };
 
-    load_mission_into_session(&mut session, &catalog, next_mission);
-
-    for entity in q_asteroids
-        .iter()
-        .chain(q_enemies.iter())
-        .chain(q_enemy_projectiles.iter())
-        .chain(q_projectiles.iter())
-        .chain(q_missiles.iter())
-        .chain(q_particles.iter())
-        .chain(q_ore.iter())
-    {
-        commands.entity(entity).despawn();
-    }
-
-    spawn_campaign_world_for_scenario(&mut commands, &config, session.map_scenario);
-
-    if let Ok(mut player_health) = q_player_health.single_mut() {
-        player_health.hp = player_health.max_hp;
-        player_health.inv_timer = config.respawn_invincibility_secs;
-        player_health.time_since_damage = 0.0;
-    }
-
-    wave.phase = CampaignWavePhase::Warmup;
-    wave.current_wave = 1;
-    wave.total_waves = session.wave_count.max(1);
-    wave.phase_timer_secs = 1.5;
-    wave.target_spawns_this_wave = 0;
-    wave.spawned_this_wave = 0;
-    wave.max_concurrent_enemies = 1;
-    wave.spawn_cooldown_secs = config.enemy_spawn_base_cooldown;
-
-    enemy_spawn.timer_secs = 0.0;
-    enemy_spawn.session_elapsed_secs = 0.0;
-
+    progression.next_mission_pending_shop = Some(next_mission);
     progression.pending_advance = false;
+    progression.advance_timer_secs = 0.0;
+    *return_state = ShopReturnState::Playing;
+    next_state.set(GameState::OreShop);
 }
 
 /// Mark campaign run as failed when entering GameOver.
@@ -375,6 +402,7 @@ pub fn mark_campaign_failure_on_game_over(
     progression.mission_failed = true;
     progression.pending_advance = false;
     progression.advance_timer_secs = 0.0;
+    progression.next_mission_pending_shop = None;
     wave.phase = CampaignWavePhase::Inactive;
 }
 
@@ -513,5 +541,110 @@ mod tests {
         assert!(later_director.target_spawns_this_wave > early_director.target_spawns_this_wave);
         assert!(later_director.max_concurrent_enemies >= early_director.max_concurrent_enemies);
         assert!(later_director.spawn_cooldown_secs <= early_director.spawn_cooldown_secs);
+    }
+
+    #[test]
+    fn progression_queues_intermission_shop_before_next_mission() {
+        let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
+        world.insert_resource(PhysicsConfig::default());
+        world.insert_resource(CampaignMissionCatalog::default());
+        world.insert_resource(CampaignSession {
+            active: true,
+            mission_index: 1,
+            map_scenario: SelectedScenario::Field,
+            wave_count: 3,
+            reward_ore: 20,
+            next_mission_id: Some(2),
+            run_counter: 1,
+        });
+        world.insert_resource(CampaignProgressionState {
+            pending_advance: true,
+            advance_timer_secs: 0.0,
+            mission_failed: false,
+            next_mission_pending_shop: None,
+        });
+        world.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::Complete,
+            current_wave: 3,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 0,
+            spawn_cooldown_secs: 0.0,
+        });
+        world.insert_resource(crate::enemy::EnemySpawnState::default());
+        world.insert_resource(NextState::<GameState>::default());
+        world.insert_resource(ShopReturnState::default());
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(campaign_progression_system);
+        schedule.run(&mut world);
+
+        let progression = world.resource::<CampaignProgressionState>();
+        assert_eq!(progression.next_mission_pending_shop, Some(2));
+        assert!(!progression.pending_advance);
+
+        let queued_state = world.resource::<NextState<GameState>>().clone();
+        assert!(matches!(
+            queued_state,
+            NextState::Pending(GameState::OreShop)
+        ));
+        assert_eq!(
+            *world.resource::<ShopReturnState>(),
+            ShopReturnState::Playing
+        );
+    }
+
+    #[test]
+    fn progression_applies_pending_intermission_mission_on_return_to_playing() {
+        let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
+        world.insert_resource(PhysicsConfig::default());
+        world.insert_resource(CampaignMissionCatalog::default());
+        world.insert_resource(CampaignSession {
+            active: true,
+            mission_index: 1,
+            map_scenario: SelectedScenario::Field,
+            wave_count: 3,
+            reward_ore: 20,
+            next_mission_id: Some(2),
+            run_counter: 1,
+        });
+        world.insert_resource(CampaignProgressionState {
+            pending_advance: false,
+            advance_timer_secs: 0.0,
+            mission_failed: false,
+            next_mission_pending_shop: Some(2),
+        });
+        world.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::Complete,
+            current_wave: 3,
+            total_waves: 3,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 0,
+            spawn_cooldown_secs: 0.0,
+        });
+        world.insert_resource(crate::enemy::EnemySpawnState::default());
+        world.insert_resource(NextState::<GameState>::default());
+        world.insert_resource(ShopReturnState::default());
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(campaign_progression_system);
+        schedule.run(&mut world);
+
+        let session = world.resource::<CampaignSession>();
+        assert_eq!(session.mission_index, 2);
+        assert_eq!(session.map_scenario, SelectedScenario::Comets);
+
+        let progression = world.resource::<CampaignProgressionState>();
+        assert_eq!(progression.next_mission_pending_shop, None);
+
+        let wave = world.resource::<CampaignWaveDirector>();
+        assert_eq!(wave.phase, CampaignWavePhase::Warmup);
+        assert_eq!(wave.current_wave, 1);
     }
 }

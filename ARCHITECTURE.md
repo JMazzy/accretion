@@ -72,7 +72,7 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 - **Tractor beam scaling** (`TractorBeamLevel` in `src/player/state.rs`): scales beam force/range plus max affected asteroid size/speed envelope.
 - **Campaign loadout selection** (`CampaignLoadout` in `src/player/state.rs`): stores selected campaign primary/secondary weapon (`Blaster` + `Missile`/`IonCannon`) and gates runtime fire systems/HUD rows so non-selected secondary systems are excluded in campaign mode.
 - **Economy coupling**: weapon/missile/magnet/tractor upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
-- **Session scope**: upgrade resources reset when returning to `MainMenu`; persistent progression depends on the planned save/load system.
+- **Campaign upgrade cadence**: practice mode keeps any-time `Tab` access to `OreShop`; campaign mode gates `OreShop` access to post-mission intermission only (opened by `campaign_progression_system`), and closing the shop advances to the queued next mission.
 
 ## Save / Load Architecture
 
@@ -93,6 +93,7 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 - **UI flow**: main-menu `CAMPAIGN` transitions to `CampaignSelect`, where slot 1/2/3 can be selected, renamed, and started/resumed.
 - **Campaign load trigger**: `CampaignSelect` start/resume writes/ensures slot metadata (including loadout), populates `PendingLoadedCampaign`, and transitions to `Playing`.
 - **Campaign apply**: `apply_pending_loaded_campaign_system` initializes active slot, mission index, and `CampaignLoadout` before world spawn/bootstrap.
+- **Mission transition flow**: campaign mission completion queues `next_mission_pending_shop` in `CampaignProgressionState`, enters `GameState::OreShop` for intermission upgrades, then loads/spawns the next mission on return to `Playing`.
 
 ## Physics Rules
 

@@ -14,13 +14,7 @@ Last updated: March 4, 2026.
 
 ### Upgrade Enhancements
 
-- [ ] **Between-mission upgrade/shop flow for campaign**
-    - In campaign mode, add intermission upgrade step where ore is spent before the next mission starts.
-    - This replaces any-time ore shop access in campaign mode.
-    - Preserve current any-time ore shop behavior in practice mode.
-    - Acceptance: campaign enforces between-mission upgrade cadence; practice remains immediate-access.
-
-- [ ] **Campaign-scoped upgrade persistence** `depends on Between-mission upgrade/shop flow for campaign`
+- [ ] **Campaign-scoped upgrade persistence**
     - Persist weapon levels and selected loadout per campaign save slot.
     - Ensure no progression leaks across different campaign slots.
     - Acceptance: upgrades/loadout carry across missions in the same slot and reset for new slots.

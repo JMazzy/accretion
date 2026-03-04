@@ -1,4 +1,5 @@
 use super::*;
+use crate::campaign::CampaignProgressionState;
 
 /// Disable the Rapier physics pipeline so asteroids freeze in place while paused.
 pub fn pause_physics(mut config: Query<&mut RapierConfiguration>) {
@@ -38,9 +39,17 @@ pub fn pause_resume_input_system(
 pub fn toggle_ore_shop_system(
     keys: Res<ButtonInput<KeyCode>>,
     current_state: Res<State<GameState>>,
+    selected_mode: Res<SelectedGameMode>,
+    progression: Res<CampaignProgressionState>,
     mut next_state: ResMut<NextState<GameState>>,
     mut return_state: ResMut<ShopReturnState>,
 ) {
+    if *selected_mode == SelectedGameMode::Campaign
+        && progression.next_mission_pending_shop.is_none()
+    {
+        return;
+    }
+
     if keys.just_pressed(KeyCode::Tab) {
         *return_state = if *current_state == GameState::Paused {
             ShopReturnState::Paused
@@ -474,5 +483,52 @@ pub fn pause_menu_button_system(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::state::app::StatesPlugin;
+
+    #[test]
+    fn campaign_tab_shop_is_gated_to_intermission_only() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, StatesPlugin));
+        app.insert_state(GameState::Playing);
+        app.insert_resource(ButtonInput::<KeyCode>::default());
+        app.insert_resource(SelectedGameMode::Campaign);
+        app.insert_resource(CampaignProgressionState::default());
+        app.insert_resource(ShopReturnState::default());
+        app.add_systems(Update, toggle_ore_shop_system);
+
+        app.world_mut()
+            .resource_mut::<ButtonInput<KeyCode>>()
+            .press(KeyCode::Tab);
+        app.update();
+
+        let next_state = app.world().resource::<NextState<GameState>>().clone();
+        assert!(!matches!(
+            next_state,
+            NextState::Pending(GameState::OreShop)
+        ));
+
+        {
+            let mut progression = app.world_mut().resource_mut::<CampaignProgressionState>();
+            progression.next_mission_pending_shop = Some(2);
+        }
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.release(KeyCode::Tab);
+        }
+        app.update();
+        {
+            let mut keys = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+            keys.press(KeyCode::Tab);
+        }
+        app.update();
+
+        let next_state = app.world().resource::<NextState<GameState>>().clone();
+        assert!(matches!(next_state, NextState::Pending(GameState::OreShop)));
     }
 }
