@@ -36,12 +36,12 @@ use crate::player::{
     TractorCaptureState, TractorHoldState, TractorThrowCooldown,
 };
 use crate::rendering::{
-    debug_panel_button_system, hud_score_display_system, lives_hud_display_system,
-    missile_hud_display_system, ore_hud_display_system, physics_inspector_display_system,
-    profiler_display_system, stats_display_system, sync_boundary_ring_visibility_system,
-    sync_debug_line_layers_system, sync_loadout_hud_visibility_system,
-    sync_physics_inspector_visibility_system, sync_profiler_visibility_system,
-    sync_stats_overlay_visibility_system, OverlayState,
+    debug_panel_button_system, hud_mode_display_system, hud_score_display_system,
+    lives_hud_display_system, missile_hud_display_system, ore_hud_display_system,
+    physics_inspector_display_system, profiler_display_system, stats_display_system,
+    sync_boundary_ring_visibility_system, sync_debug_line_layers_system,
+    sync_loadout_hud_visibility_system, sync_physics_inspector_visibility_system,
+    sync_profiler_visibility_system, sync_stats_overlay_visibility_system, OverlayState,
 };
 use crate::spatial_partition::{rebuild_spatial_grid_system, SpatialGrid};
 use bevy::input::mouse::MouseWheel;
@@ -255,6 +255,10 @@ impl Plugin for SimulationPlugin {
             .add_systems(
                 Update,
                 missile_telemetry_log_system.run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                hud_mode_display_system.run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 Update,

@@ -16,12 +16,7 @@ Last updated: March 4, 2026.
 
 ### Boss Progression
 
-- [ ] **Boss ships: attack pattern set**
-    - Add at least two readable phases with telegraphed behavior changes.
-    - Balance projectile density and survivability.
-    - Acceptance: boss fight shows clear phase transitions and no soft-locks.
-
-- [ ] **Mission end boss-gate integration** `depends on Boss ships: attack pattern set; depends on Campaign-scoped upgrade persistence`
+- [ ] **Mission end boss-gate integration** `depends on Campaign-scoped upgrade persistence`
     - Make boss defeat the final gate for mission completion.
     - Integrate rewards and mission transition on boss death.
     - Acceptance: mission cannot complete before boss defeat; post-boss progression advances cleanly.

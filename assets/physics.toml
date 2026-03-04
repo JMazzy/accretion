@@ -236,6 +236,15 @@ boss_weakpoint_open_secs = 2.2
 boss_weakpoint_closed_secs = 2.6
 boss_damage_from_player_projectile = 16.0
 boss_damage_from_player_missile = 56.0
+boss_phase_two_trigger_ratio = 0.55
+boss_telegraph_secs = 1.4
+boss_engage_radius = 260.0
+boss_seek_force_mult = 1.2
+boss_max_speed_mult = 1.1
+boss_phase_one_fire_cooldown = 1.35
+boss_phase_two_aim_cooldown = 0.85
+boss_phase_two_burst_cooldown = 2.2
+boss_phase_two_burst_shots = 8
 
 # ── Player: Combat ────────────────────────────────────────────────────────────
 

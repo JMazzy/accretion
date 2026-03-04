@@ -40,6 +40,7 @@ use crate::asteroid::{Asteroid, GravityForce, Vertices};
 use crate::asteroid_rendering::ring_mesh;
 use crate::campaign::{CampaignSession, CampaignWaveDirector, CampaignWavePhase};
 use crate::config::PhysicsConfig;
+use crate::enemy::{Boss, BossAttackPhase, BossAttackState};
 use crate::graphics::{EmojiFont, GameFont, SymbolFont, SymbolFont2, UnicodeFallbackFont};
 use crate::menu::SelectedGameMode;
 use crate::mining::{OreAffinityLevel, PlayerOre};
@@ -496,63 +497,16 @@ pub fn setup_hud_score(
     selected_mode: Option<Res<SelectedGameMode>>,
     campaign: Option<Res<CampaignSession>>,
     wave: Option<Res<CampaignWaveDirector>>,
+    q_boss: Query<&BossAttackState, With<Boss>>,
 ) {
-    let mode_text = match selected_mode
-        .map(|m| *m)
-        .unwrap_or(SelectedGameMode::Practice)
-    {
-        SelectedGameMode::Campaign => {
-            let mission = campaign
-                .as_ref()
-                .map(|c| c.mission_index.max(1))
-                .unwrap_or(1);
-            let wave_label = wave
-                .as_ref()
-                .map(|w| match w.phase {
-                    CampaignWavePhase::Warmup => {
-                        format!(
-                            "WAVE {}/{} · WARMUP",
-                            w.current_wave.max(1),
-                            w.total_waves.max(1)
-                        )
-                    }
-                    CampaignWavePhase::ActiveWave => {
-                        format!("WAVE {}/{}", w.current_wave.max(1), w.total_waves.max(1))
-                    }
-                    CampaignWavePhase::InterWaveBreak => format!(
-                        "WAVE {}/{} · BREAK",
-                        w.current_wave.max(1),
-                        w.total_waves.max(1)
-                    ),
-                    CampaignWavePhase::BossIntro => {
-                        format!(
-                            "WAVE {}/{} · BOSS INCOMING",
-                            w.current_wave.max(1),
-                            w.total_waves.max(1)
-                        )
-                    }
-                    CampaignWavePhase::BossActive => {
-                        format!(
-                            "WAVE {}/{} · BOSS",
-                            w.current_wave.max(1),
-                            w.total_waves.max(1)
-                        )
-                    }
-                    CampaignWavePhase::BossOutro => {
-                        format!(
-                            "WAVE {}/{} · BOSS DEFEATED",
-                            w.current_wave.max(1),
-                            w.total_waves.max(1)
-                        )
-                    }
-                    CampaignWavePhase::Complete => "MISSION COMPLETE".to_string(),
-                    CampaignWavePhase::Inactive => "WAVE 1/1".to_string(),
-                })
-                .unwrap_or_else(|| "WAVE 1/1".to_string());
-            format!("MODE: CAMPAIGN · MISSION {mission} · {wave_label}")
-        }
-        SelectedGameMode::Practice => "MODE: PRACTICE".to_string(),
-    };
+    let mode_text = campaign_mode_text(
+        selected_mode
+            .map(|m| *m)
+            .unwrap_or(SelectedGameMode::Practice),
+        campaign.as_deref(),
+        wave.as_deref(),
+        q_boss.iter().next(),
+    );
 
     commands
         .spawn((
@@ -588,6 +542,70 @@ pub fn setup_hud_score(
                 HudModeText,
             ));
         });
+}
+
+fn campaign_mode_text(
+    selected_mode: SelectedGameMode,
+    campaign: Option<&CampaignSession>,
+    wave: Option<&CampaignWaveDirector>,
+    boss_attack: Option<&BossAttackState>,
+) -> String {
+    match selected_mode {
+        SelectedGameMode::Campaign => {
+            let mission = campaign.map(|c| c.mission_index.max(1)).unwrap_or(1);
+            let wave_label = wave
+                .map(|w| match w.phase {
+                    CampaignWavePhase::Warmup => {
+                        format!(
+                            "WAVE {}/{} · WARMUP",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
+                    CampaignWavePhase::ActiveWave => {
+                        format!("WAVE {}/{}", w.current_wave.max(1), w.total_waves.max(1))
+                    }
+                    CampaignWavePhase::InterWaveBreak => format!(
+                        "WAVE {}/{} · BREAK",
+                        w.current_wave.max(1),
+                        w.total_waves.max(1)
+                    ),
+                    CampaignWavePhase::BossIntro => {
+                        format!(
+                            "WAVE {}/{} · BOSS INCOMING",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
+                    CampaignWavePhase::BossActive => {
+                        let pattern = boss_attack
+                            .map(|state| match state.phase {
+                                BossAttackPhase::PhaseOne => "P1",
+                                BossAttackPhase::Telegraph => "TELEGRAPH",
+                                BossAttackPhase::PhaseTwo => "P2",
+                            })
+                            .unwrap_or("P1");
+                        format!(
+                            "WAVE {}/{} · BOSS {pattern}",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
+                    CampaignWavePhase::BossOutro => {
+                        format!(
+                            "WAVE {}/{} · BOSS DEFEATED",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
+                    CampaignWavePhase::Complete => "MISSION COMPLETE".to_string(),
+                    CampaignWavePhase::Inactive => "WAVE 1/1".to_string(),
+                })
+                .unwrap_or_else(|| "WAVE 1/1".to_string());
+            format!("MODE: CAMPAIGN · MISSION {mission} · {wave_label}")
+        }
+        SelectedGameMode::Practice => "MODE: PRACTICE".to_string(),
+    }
 }
 
 // ── Startup: stats overlay text ───────────────────────────────────────────────
@@ -1309,6 +1327,23 @@ pub fn hud_score_display_system(
     }
     for mut text in text_query.iter_mut() {
         *text = Text::new(score.total().to_string());
+    }
+}
+
+pub fn hud_mode_display_system(
+    selected_mode: Res<SelectedGameMode>,
+    campaign: Option<Res<CampaignSession>>,
+    wave: Option<Res<CampaignWaveDirector>>,
+    q_boss: Query<&BossAttackState, With<Boss>>,
+    mut text_query: Query<&mut Text, With<HudModeText>>,
+) {
+    for mut text in text_query.iter_mut() {
+        *text = Text::new(campaign_mode_text(
+            *selected_mode,
+            campaign.as_deref(),
+            wave.as_deref(),
+            q_boss.iter().next(),
+        ));
     }
 }
 

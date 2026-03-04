@@ -1,5 +1,38 @@
 # Accretion Changelog
 
+## Boss Ships: Attack Pattern Set (P0) — March 4, 2026
+
+### Added multi-phase boss combat behavior with telegraph and phase-aware pressure
+
+**What changed**:
+- Added boss attack-phase model in `src/enemy.rs`:
+  - `BossAttackPhase` (`PhaseOne`, `Telegraph`, `PhaseTwo`)
+  - `BossAttackState` component with phase and timer state
+- Implemented `boss_attack_system` in `src/enemy.rs`:
+  - phase-one baseline pressure behavior,
+  - telegraph transition window before phase two,
+  - denser phase-two projectile pattern with dedicated cooldown controls,
+  - movement/engagement behavior integrated with existing boss and projectile-budget constraints.
+- Added boss attack tuning defaults and runtime config plumbing:
+  - new constants in `src/constants.rs`,
+  - mirrored `PhysicsConfig` fields/defaults in `src/config.rs`,
+  - new override keys in `assets/physics.toml`.
+- Updated HUD campaign mode text in `src/rendering.rs` to show live boss phase labels during `BossActive` (`P1`, `TELEGRAPH`, `P2`).
+- Added targeted tests in `src/enemy.rs`:
+  - `boss_attack_transitions_from_phase_one_to_telegraph_then_phase_two`
+  - `boss_phase_two_emits_more_projectiles_than_phase_one`
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo check` ✅
+- `cargo test boss_ -- --nocapture` ✅
+- `cargo test intermission -- --nocapture` ✅
+- `cargo test campaign_slot -- --nocapture` ✅
+
+**Impact**:
+- Campaign boss encounters now present clear, readable combat phase transitions with telegraphed escalation and increased late-fight pressure, completing the planned boss attack-pattern P0 milestone.
+
 ## Boss Ships Framework (P0) — March 4, 2026
 
 ### Added campaign boss entity foundation with weakpoint gating and mission-phase flow

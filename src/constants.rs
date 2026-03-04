@@ -365,6 +365,33 @@ pub const BOSS_DAMAGE_FROM_PLAYER_PROJECTILE: f32 = 16.0;
 /// Damage dealt to boss entities by player missiles while weakpoint is exposed.
 pub const BOSS_DAMAGE_FROM_PLAYER_MISSILE: f32 = 56.0;
 
+/// Boss HP ratio threshold where behavior transitions from phase one to phase two.
+pub const BOSS_PHASE_TWO_TRIGGER_RATIO: f32 = 0.55;
+
+/// Telegraph duration before entering boss phase two (seconds).
+pub const BOSS_TELEGRAPH_SECS: f32 = 1.4;
+
+/// Orbit/arrive radius used by boss steering around player (u).
+pub const BOSS_ENGAGE_RADIUS: f32 = 260.0;
+
+/// Boss seek force multiplier relative to enemy seek force.
+pub const BOSS_SEEK_FORCE_MULT: f32 = 1.20;
+
+/// Boss max speed multiplier relative to enemy max speed.
+pub const BOSS_MAX_SPEED_MULT: f32 = 1.10;
+
+/// Phase-one aimed volley cooldown (seconds).
+pub const BOSS_PHASE_ONE_FIRE_COOLDOWN: f32 = 1.35;
+
+/// Phase-two aimed shot cooldown (seconds).
+pub const BOSS_PHASE_TWO_AIM_COOLDOWN: f32 = 0.85;
+
+/// Phase-two radial burst cooldown (seconds).
+pub const BOSS_PHASE_TWO_BURST_COOLDOWN: f32 = 2.20;
+
+/// Number of projectiles emitted in each phase-two radial burst.
+pub const BOSS_PHASE_TWO_BURST_SHOTS: u32 = 8;
+
 // ── Player: Combat ────────────────────────────────────────────────────────────
 
 /// Speed (u/s) of fired projectiles.

@@ -50,6 +50,22 @@ pub struct BossWeakpoint {
     pub timer_secs: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BossAttackPhase {
+    PhaseOne,
+    Telegraph,
+    PhaseTwo,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct BossAttackState {
+    pub phase: BossAttackPhase,
+    pub phase_timer_secs: f32,
+    pub fire_timer_secs: f32,
+    pub burst_timer_secs: f32,
+    pub telegraph_emit_timer: f32,
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyHealth {
     pub hp: f32,
@@ -144,6 +160,7 @@ impl Plugin for EnemyPlugin {
                     enemy_stun_tick_system,
                     enemy_formation_behavior_system,
                     enemy_seek_player_system,
+                    boss_attack_system,
                     enemy_fire_system,
                     despawn_old_enemy_projectiles_system,
                     attach_enemy_mesh_system,
@@ -308,6 +325,13 @@ pub fn spawn_campaign_boss(
                 exposed: false,
                 timer_secs: config.boss_weakpoint_closed_secs.max(0.1),
             },
+            BossAttackState {
+                phase: BossAttackPhase::PhaseOne,
+                phase_timer_secs: 0.0,
+                fire_timer_secs: config.boss_phase_one_fire_cooldown.max(0.2),
+                burst_timer_secs: config.boss_phase_two_burst_cooldown.max(0.3),
+                telegraph_emit_timer: 0.0,
+            },
             EnemyRenderMarker,
             Transform::from_translation(spawn_pos.extend(0.3)),
             Visibility::default(),
@@ -353,6 +377,173 @@ fn boss_weakpoint_cycle_system(
         } else {
             config.boss_weakpoint_closed_secs.max(0.1)
         };
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::type_complexity)]
+fn boss_attack_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+    q_player: Query<&Transform, With<Player>>,
+    q_enemy_projectiles: Query<(), With<EnemyProjectile>>,
+    mut q_boss: Query<
+        (
+            &Transform,
+            &mut ExternalForce,
+            &mut Velocity,
+            &mut BossHealth,
+            &mut BossWeakpoint,
+            &mut BossAttackState,
+        ),
+        With<Boss>,
+    >,
+) {
+    let Ok(player_transform) = q_player.single() else {
+        return;
+    };
+    let player_pos = player_transform.translation.truncate();
+    let dt = time.delta_secs();
+
+    let active_enemy_projectiles = q_enemy_projectiles.iter().count();
+    let mut remaining_projectile_budget =
+        ENEMY_PROJECTILE_HARD_CAP.saturating_sub(active_enemy_projectiles);
+
+    for (transform, mut force, mut velocity, health, mut weakpoint, mut attack_state) in
+        q_boss.iter_mut()
+    {
+        let pos = transform.translation.truncate();
+        let to_player = player_pos - pos;
+        let dist = to_player.length();
+        let to_player_dir = if dist <= 1e-4 {
+            Vec2::Y
+        } else {
+            to_player / dist
+        };
+
+        if attack_state.phase == BossAttackPhase::PhaseOne
+            && (health.hp / health.max_hp.max(1.0)) <= config.boss_phase_two_trigger_ratio
+        {
+            attack_state.phase = BossAttackPhase::Telegraph;
+            attack_state.phase_timer_secs = config.boss_telegraph_secs.max(0.1);
+            attack_state.telegraph_emit_timer = 0.0;
+            weakpoint.exposed = false;
+            weakpoint.timer_secs = config
+                .boss_weakpoint_closed_secs
+                .max(config.boss_telegraph_secs)
+                .max(0.1);
+        }
+
+        let engage_radius = config.boss_engage_radius.max(64.0);
+        let radial_weight = if dist > engage_radius * 1.25 {
+            0.85
+        } else if dist < engage_radius * 0.75 {
+            -0.50
+        } else {
+            0.10
+        };
+        let tangential_sign = match attack_state.phase {
+            BossAttackPhase::PhaseTwo => 1.0,
+            _ => -1.0,
+        };
+        let tangential = Vec2::new(-to_player_dir.y, to_player_dir.x) * tangential_sign;
+        let steer_dir = (tangential * 0.60 + to_player_dir * radial_weight).normalize_or_zero();
+        let thrust_mult = if attack_state.phase == BossAttackPhase::Telegraph {
+            0.35
+        } else {
+            1.0
+        };
+
+        force.force =
+            steer_dir * (config.enemy_seek_force * config.boss_seek_force_mult * thrust_mult);
+        force.torque = 0.0;
+
+        let max_speed = config.enemy_max_speed * config.boss_max_speed_mult;
+        let speed = velocity.linvel.length();
+        if speed > max_speed {
+            velocity.linvel = velocity.linvel.normalize_or_zero() * max_speed;
+        }
+
+        let target_angle = steer_dir.y.atan2(steer_dir.x) - std::f32::consts::FRAC_PI_2;
+        let current_angle = transform.rotation.to_euler(EulerRot::ZYX).0;
+        let angle_diff = shortest_angle_diff(target_angle, current_angle);
+        velocity.angvel = if angle_diff.abs() > config.gamepad_heading_snap_threshold {
+            config.rotation_speed * 0.85 * angle_diff.signum()
+        } else {
+            0.0
+        };
+
+        attack_state.fire_timer_secs = (attack_state.fire_timer_secs - dt).max(0.0);
+        attack_state.burst_timer_secs = (attack_state.burst_timer_secs - dt).max(0.0);
+
+        match attack_state.phase {
+            BossAttackPhase::PhaseOne => {
+                if attack_state.fire_timer_secs <= 0.0 && remaining_projectile_budget > 0 {
+                    let pattern = [-0.16_f32, 0.0, 0.16];
+                    for offset in pattern {
+                        if remaining_projectile_budget == 0 {
+                            break;
+                        }
+                        let shot_dir = rotate_vec2(to_player_dir, offset).normalize_or_zero();
+                        let spawn_pos = pos + shot_dir * (config.boss_collider_radius + 10.0);
+                        spawn_enemy_projectile(&mut commands, &config, spawn_pos, shot_dir);
+                        remaining_projectile_budget = remaining_projectile_budget.saturating_sub(1);
+                    }
+                    attack_state.fire_timer_secs = config.boss_phase_one_fire_cooldown.max(0.2);
+                }
+            }
+            BossAttackPhase::Telegraph => {
+                attack_state.phase_timer_secs = (attack_state.phase_timer_secs - dt).max(0.0);
+                attack_state.telegraph_emit_timer =
+                    (attack_state.telegraph_emit_timer - dt).max(0.0);
+                if attack_state.telegraph_emit_timer <= 0.0 {
+                    attack_state.telegraph_emit_timer = 0.2;
+                    let signal_dir = if velocity.linvel.length_squared() > 1e-3 {
+                        velocity.linvel.normalize_or_zero()
+                    } else {
+                        to_player_dir
+                    };
+                    spawn_impact_particles(&mut commands, pos, signal_dir, velocity.linvel * 0.25);
+                }
+                if attack_state.phase_timer_secs <= 0.0 {
+                    attack_state.phase = BossAttackPhase::PhaseTwo;
+                    attack_state.fire_timer_secs = config.boss_phase_two_aim_cooldown.max(0.2);
+                    attack_state.burst_timer_secs = config.boss_phase_two_burst_cooldown.max(0.3);
+                }
+            }
+            BossAttackPhase::PhaseTwo => {
+                if attack_state.fire_timer_secs <= 0.0 && remaining_projectile_budget > 0 {
+                    let pattern = [-0.10_f32, 0.0, 0.10];
+                    for offset in pattern {
+                        if remaining_projectile_budget == 0 {
+                            break;
+                        }
+                        let shot_dir = rotate_vec2(to_player_dir, offset).normalize_or_zero();
+                        let spawn_pos = pos + shot_dir * (config.boss_collider_radius + 10.0);
+                        spawn_enemy_projectile(&mut commands, &config, spawn_pos, shot_dir);
+                        remaining_projectile_budget = remaining_projectile_budget.saturating_sub(1);
+                    }
+                    attack_state.fire_timer_secs = config.boss_phase_two_aim_cooldown.max(0.2);
+                }
+
+                if attack_state.burst_timer_secs <= 0.0 && remaining_projectile_budget > 0 {
+                    let burst_shots = config.boss_phase_two_burst_shots.max(4);
+                    for shot_idx in 0..burst_shots {
+                        if remaining_projectile_budget == 0 {
+                            break;
+                        }
+                        let t = shot_idx as f32 / burst_shots as f32;
+                        let angle = t * std::f32::consts::TAU;
+                        let shot_dir = Vec2::new(angle.cos(), angle.sin());
+                        let spawn_pos = pos + shot_dir * (config.boss_collider_radius + 12.0);
+                        spawn_enemy_projectile(&mut commands, &config, spawn_pos, shot_dir);
+                        remaining_projectile_budget = remaining_projectile_budget.saturating_sub(1);
+                    }
+                    attack_state.burst_timer_secs = config.boss_phase_two_burst_cooldown.max(0.3);
+                }
+            }
+        }
     }
 }
 
@@ -1872,6 +2063,107 @@ mod tests {
         assert!(high_wave > base);
         assert!(combined > high_tier);
         assert!(combined > high_wave);
+    }
+
+    #[test]
+    fn boss_attack_transitions_from_phase_one_to_telegraph_then_phase_two() {
+        let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
+        world.insert_resource(PhysicsConfig::default());
+
+        world.spawn((Player, Transform::from_translation(Vec3::ZERO)));
+        world.spawn((
+            Boss,
+            Transform::from_translation(Vec3::new(0.0, 220.0, 0.0)),
+            ExternalForce::default(),
+            Velocity::default(),
+            BossHealth {
+                hp: 40.0,
+                max_hp: 100.0,
+            },
+            BossWeakpoint {
+                exposed: true,
+                timer_secs: 0.0,
+            },
+            BossAttackState {
+                phase: BossAttackPhase::PhaseOne,
+                phase_timer_secs: 0.0,
+                fire_timer_secs: 0.0,
+                burst_timer_secs: 0.0,
+                telegraph_emit_timer: 0.0,
+            },
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(boss_attack_system);
+        schedule.run(&mut world);
+
+        {
+            let mut q = world.query::<(&BossWeakpoint, &BossAttackState)>();
+            let (weakpoint, state) = q.single(&world).expect("boss should exist");
+            assert_eq!(state.phase, BossAttackPhase::Telegraph);
+            assert!(!weakpoint.exposed);
+        }
+
+        {
+            let mut q = world.query::<&mut BossAttackState>();
+            let mut state = q.single_mut(&mut world).expect("boss should exist");
+            state.phase_timer_secs = 0.0;
+        }
+
+        schedule.run(&mut world);
+
+        let mut q = world.query::<&BossAttackState>();
+        let state = q.single(&world).expect("boss should exist");
+        assert_eq!(state.phase, BossAttackPhase::PhaseTwo);
+    }
+
+    #[test]
+    fn boss_phase_two_emits_more_projectiles_than_phase_one() {
+        fn projectile_count_after_tick(phase: BossAttackPhase) -> usize {
+            let mut world = World::new();
+            world.insert_resource(Time::<()>::default());
+            world.insert_resource(PhysicsConfig::default());
+
+            world.spawn((Player, Transform::from_translation(Vec3::ZERO)));
+            world.spawn((
+                Boss,
+                Transform::from_translation(Vec3::new(0.0, 240.0, 0.0)),
+                ExternalForce::default(),
+                Velocity::default(),
+                BossHealth {
+                    hp: 100.0,
+                    max_hp: 100.0,
+                },
+                BossWeakpoint {
+                    exposed: false,
+                    timer_secs: 1.0,
+                },
+                BossAttackState {
+                    phase,
+                    phase_timer_secs: 0.0,
+                    fire_timer_secs: 0.0,
+                    burst_timer_secs: 0.0,
+                    telegraph_emit_timer: 0.0,
+                },
+            ));
+
+            let mut schedule = Schedule::default();
+            schedule.add_systems(boss_attack_system);
+            schedule.run(&mut world);
+
+            world
+                .query_filtered::<Entity, With<EnemyProjectile>>()
+                .iter(&world)
+                .count()
+        }
+
+        let phase_one = projectile_count_after_tick(BossAttackPhase::PhaseOne);
+        let phase_two = projectile_count_after_tick(BossAttackPhase::PhaseTwo);
+
+        assert!(phase_one >= 1);
+        assert!(phase_two > phase_one);
+        assert!(phase_two <= ENEMY_PROJECTILE_HARD_CAP);
     }
 
     #[test]

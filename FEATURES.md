@@ -112,6 +112,7 @@
 - Campaign missions now include a boss-framework phase at mission end:
   - final wave clear transitions to **BOSS INCOMING** intro,
   - one campaign boss entity spawns with weakpoint-based damage gating,
+  - boss combat now uses readable attack phases (**P1** → **TELEGRAPH** → **P2**) with increased projectile pressure in phase two,
   - boss defeat triggers a short outro and grants baseline mission ore reward before intermission shop/next mission flow.
 
 ### Save Slots
