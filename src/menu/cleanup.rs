@@ -17,7 +17,11 @@ pub fn cleanup_game_world(
     asteroids: Query<Entity, With<crate::asteroid::Asteroid>>,
     players_and_enemies: Query<
         Entity,
-        Or<(With<crate::player::Player>, With<crate::enemy::Enemy>)>,
+        Or<(
+            With<crate::player::Player>,
+            With<crate::enemy::Enemy>,
+            With<crate::enemy::Boss>,
+        )>,
     >,
     projectiles: Query<
         Entity,

@@ -158,6 +158,12 @@ pub struct PhysicsConfig {
     pub enemy_ore_drop_base: u32,
     pub enemy_ore_drop_per_tier: u32,
     pub enemy_ore_drop_per_wave: u32,
+    pub boss_base_hp: f32,
+    pub boss_collider_radius: f32,
+    pub boss_weakpoint_open_secs: f32,
+    pub boss_weakpoint_closed_secs: f32,
+    pub boss_damage_from_player_projectile: f32,
+    pub boss_damage_from_player_missile: f32,
 
     // ── Player: Combat ────────────────────────────────────────────────────────
     pub projectile_speed: f32,
@@ -343,6 +349,12 @@ impl Default for PhysicsConfig {
             enemy_ore_drop_base: ENEMY_ORE_DROP_BASE,
             enemy_ore_drop_per_tier: ENEMY_ORE_DROP_PER_TIER,
             enemy_ore_drop_per_wave: ENEMY_ORE_DROP_PER_WAVE,
+            boss_base_hp: BOSS_BASE_HP,
+            boss_collider_radius: BOSS_COLLIDER_RADIUS,
+            boss_weakpoint_open_secs: BOSS_WEAKPOINT_OPEN_SECS,
+            boss_weakpoint_closed_secs: BOSS_WEAKPOINT_CLOSED_SECS,
+            boss_damage_from_player_projectile: BOSS_DAMAGE_FROM_PLAYER_PROJECTILE,
+            boss_damage_from_player_missile: BOSS_DAMAGE_FROM_PLAYER_MISSILE,
             // Player: Combat
             projectile_speed: PROJECTILE_SPEED,
             fire_cooldown: FIRE_COOLDOWN,

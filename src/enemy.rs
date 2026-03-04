@@ -36,6 +36,21 @@ const ENEMY_FORMATION_FOLLOW_DISTANCE: f32 = 52.0;
 pub struct Enemy;
 
 #[derive(Component, Debug, Clone, Copy)]
+pub struct Boss;
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct BossHealth {
+    pub hp: f32,
+    pub max_hp: f32,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct BossWeakpoint {
+    pub exposed: bool,
+    pub timer_secs: f32,
+}
+
+#[derive(Component, Debug, Clone, Copy)]
 pub struct EnemyHealth {
     pub hp: f32,
     pub max_hp: f32,
@@ -125,12 +140,14 @@ impl Plugin for EnemyPlugin {
                 (
                     enemy_session_clock_system,
                     enemy_spawn_system,
+                    boss_weakpoint_cycle_system,
                     enemy_stun_tick_system,
                     enemy_formation_behavior_system,
                     enemy_seek_player_system,
                     enemy_fire_system,
                     despawn_old_enemy_projectiles_system,
                     attach_enemy_mesh_system,
+                    attach_boss_mesh_system,
                     attach_enemy_projectile_mesh_system,
                 )
                     .chain()
@@ -139,6 +156,7 @@ impl Plugin for EnemyPlugin {
             .add_systems(
                 PostUpdate,
                 (
+                    boss_damage_from_player_weapons_system,
                     enemy_damage_from_player_weapons_system,
                     enemy_collision_damage_system,
                     enemy_player_collision_damage_system,
@@ -270,6 +288,74 @@ fn spawn_enemy_projectile(
     ));
 }
 
+pub fn spawn_campaign_boss(
+    commands: &mut Commands,
+    config: &PhysicsConfig,
+    around_pos: Vec2,
+    mission_index: u32,
+    wave_index: u32,
+) -> Entity {
+    let stage = campaign_progression_stage(mission_index.max(1), wave_index.max(1));
+    let hp_scale = (1.0 + stage as f32 * 0.20).min(3.0);
+    let hp = config.boss_base_hp * hp_scale;
+    let spawn_pos = around_pos + Vec2::new(0.0, (config.enemy_spawn_radius * 0.45).max(260.0));
+
+    commands
+        .spawn((
+            Boss,
+            BossHealth { hp, max_hp: hp },
+            BossWeakpoint {
+                exposed: false,
+                timer_secs: config.boss_weakpoint_closed_secs.max(0.1),
+            },
+            EnemyRenderMarker,
+            Transform::from_translation(spawn_pos.extend(0.3)),
+            Visibility::default(),
+            RigidBody::Dynamic,
+            Collider::ball(config.boss_collider_radius),
+            Velocity::default(),
+            ExternalForce::default(),
+            Damping {
+                linear_damping: config.enemy_linear_damping,
+                angular_damping: config.enemy_angular_damping,
+            },
+            Restitution::coefficient(0.2),
+            CollisionGroups::new(
+                bevy_rapier2d::geometry::Group::GROUP_5,
+                bevy_rapier2d::geometry::Group::GROUP_1
+                    | bevy_rapier2d::geometry::Group::GROUP_2
+                    | bevy_rapier2d::geometry::Group::GROUP_3,
+            ),
+            ActiveEvents::COLLISION_EVENTS,
+        ))
+        .id()
+}
+
+fn boss_weakpoint_cycle_system(
+    time: Res<Time>,
+    config: Res<PhysicsConfig>,
+    mut q_boss: Query<&mut BossWeakpoint, With<Boss>>,
+) {
+    let dt = time.delta_secs();
+    if dt <= 0.0 {
+        return;
+    }
+
+    for mut weakpoint in q_boss.iter_mut() {
+        weakpoint.timer_secs = (weakpoint.timer_secs - dt).max(0.0);
+        if weakpoint.timer_secs > 0.0 {
+            continue;
+        }
+
+        weakpoint.exposed = !weakpoint.exposed;
+        weakpoint.timer_secs = if weakpoint.exposed {
+            config.boss_weakpoint_open_secs.max(0.1)
+        } else {
+            config.boss_weakpoint_closed_secs.max(0.1)
+        };
+    }
+}
+
 fn deterministic_spawn_offset(index: u64, radius: f32) -> Vec2 {
     const GOLDEN_ANGLE: f32 = 2.3999631;
     let a = index as f32 * GOLDEN_ANGLE;
@@ -341,7 +427,10 @@ fn enemy_spawn_system(
             CampaignWavePhase::Complete
             | CampaignWavePhase::Inactive
             | CampaignWavePhase::InterWaveBreak
-            | CampaignWavePhase::Warmup => {
+            | CampaignWavePhase::Warmup
+            | CampaignWavePhase::BossIntro
+            | CampaignWavePhase::BossActive
+            | CampaignWavePhase::BossOutro => {
                 state.timer_secs = state.timer_secs.max(0.2);
                 return;
             }
@@ -1046,6 +1135,71 @@ fn apply_blaster_like_asteroid_hit(
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn boss_damage_from_player_weapons_system(
+    mut commands: Commands,
+    mut collision_events: MessageReader<CollisionEvent>,
+    mut q_boss: Query<(Entity, &mut BossHealth, &BossWeakpoint), With<Boss>>,
+    mut q_projectiles: Query<(&Transform, &mut Projectile)>,
+    q_missiles: Query<&Transform, With<Missile>>,
+    config: Res<PhysicsConfig>,
+) {
+    let mut damage_by_boss: HashMap<Entity, f32> = HashMap::default();
+
+    for event in collision_events.read() {
+        let (e1, e2) = match event {
+            CollisionEvent::Started(e1, e2, _) => (*e1, *e2),
+            CollisionEvent::Stopped(..) => continue,
+        };
+
+        let Some(boss_entity) = (if q_boss.contains(e1) {
+            Some(e1)
+        } else if q_boss.contains(e2) {
+            Some(e2)
+        } else {
+            None
+        }) else {
+            continue;
+        };
+
+        let other = if boss_entity == e1 { e2 } else { e1 };
+        let Ok((_, _, weakpoint)) = q_boss.get(boss_entity) else {
+            continue;
+        };
+
+        if let Ok((projectile_transform, mut projectile)) = q_projectiles.get_mut(other) {
+            projectile.was_hit = true;
+            let proj_pos = projectile_transform.translation.truncate();
+            spawn_impact_particles(&mut commands, proj_pos, Vec2::ZERO, Vec2::ZERO);
+            if weakpoint.exposed {
+                *damage_by_boss.entry(boss_entity).or_default() +=
+                    config.boss_damage_from_player_projectile;
+            }
+            continue;
+        }
+
+        if let Ok(missile_transform) = q_missiles.get(other) {
+            let missile_pos = missile_transform.translation.truncate();
+            spawn_impact_particles(&mut commands, missile_pos, Vec2::ZERO, Vec2::ZERO);
+            commands.entity(other).despawn();
+            if weakpoint.exposed {
+                *damage_by_boss.entry(boss_entity).or_default() +=
+                    config.boss_damage_from_player_missile;
+            }
+        }
+    }
+
+    for (boss_entity, damage) in damage_by_boss {
+        let Ok((entity, mut health, _)) = q_boss.get_mut(boss_entity) else {
+            continue;
+        };
+        health.hp -= damage;
+        if health.hp <= 0.0 {
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn enemy_damage_from_player_weapons_system(
     mut commands: Commands,
     mut collision_events: MessageReader<CollisionEvent>,
@@ -1392,6 +1546,35 @@ fn attach_enemy_mesh_system(
     }
 }
 
+fn attach_boss_mesh_system(
+    mut commands: Commands,
+    query: Query<(Entity, &BossHealth), Added<Boss>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    for (entity, health) in query.iter() {
+        let vertices = [
+            Vec2::new(0.0, 28.0),
+            Vec2::new(-21.0, 13.0),
+            Vec2::new(-24.0, -6.0),
+            Vec2::new(-9.0, -24.0),
+            Vec2::new(9.0, -24.0),
+            Vec2::new(24.0, -6.0),
+            Vec2::new(21.0, 13.0),
+        ];
+        let mesh = meshes.add(filled_polygon_mesh(&vertices));
+        let hp_ratio = (health.hp / health.max_hp.max(1.0)).clamp(0.0, 1.0);
+        let mat = materials.add(ColorMaterial::from_color(Color::srgb(
+            0.70 + 0.18 * hp_ratio,
+            0.18 + 0.08 * hp_ratio,
+            0.14,
+        )));
+        commands
+            .entity(entity)
+            .insert((Mesh2d(mesh), MeshMaterial2d(mat)));
+    }
+}
+
 fn attach_enemy_projectile_mesh_system(
     mut commands: Commands,
     query: Query<Entity, Added<EnemyProjectileRenderMarker>>,
@@ -1520,6 +1703,8 @@ mod tests {
             spawned_this_wave: 0,
             max_concurrent_enemies: 3,
             spawn_cooldown_secs: 1.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         };
         let active_low = CampaignWaveDirector {
             phase: CampaignWavePhase::ActiveWave,
@@ -1530,6 +1715,8 @@ mod tests {
             spawned_this_wave: 0,
             max_concurrent_enemies: 3,
             spawn_cooldown_secs: 1.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         };
         let active_ok = CampaignWaveDirector {
             phase: CampaignWavePhase::ActiveWave,
@@ -1540,6 +1727,8 @@ mod tests {
             spawned_this_wave: 0,
             max_concurrent_enemies: 3,
             spawn_cooldown_secs: 1.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         };
 
         assert!(!formation_enabled_for_wave(Some(&inactive)));
@@ -1563,6 +1752,8 @@ mod tests {
             spawned_this_wave: 1,
             max_concurrent_enemies: 4,
             spawn_cooldown_secs: 1.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         });
 
         app.world_mut()
@@ -1700,6 +1891,8 @@ mod tests {
             spawned_this_wave: 1,
             max_concurrent_enemies: 1,
             spawn_cooldown_secs: 1.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         });
 
         let expected_ore = {

@@ -167,6 +167,7 @@ fn main() {
         Update,
         (
             campaign::campaign_wave_director_system,
+            campaign::campaign_boss_spawn_system,
             campaign::campaign_progression_system,
         )
             .chain()

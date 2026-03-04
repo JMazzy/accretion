@@ -221,6 +221,12 @@ Projectile classes expire by lifetime and max travelled-distance limits; they ar
   - enemy tier assignment uses the same campaign stage to keep HP/reward pressure aligned with wave difficulty
   - archetype assignment is deterministic from progression stage + spawn serial, enabling mixed-archetype wave composition in later waves
 - **Movement**: `enemy_seek_player_system` applies seek/arrive steering force toward player with `enemy_max_speed` clamp.
+- **Boss framework**:
+  - `Boss`, `BossHealth`, and `BossWeakpoint` components define a distinct campaign boss entity type with weakpoint-gated damage windows.
+  - `campaign_wave_director_system` transitions final-wave missions through `BossIntro` → `BossActive` → `BossOutro` before `Complete`.
+  - `campaign_boss_spawn_system` spawns one boss per mission during `BossActive`.
+  - `boss_damage_from_player_weapons_system` applies projectile/missile damage only when weakpoint is exposed.
+  - boss defeat grants baseline mission ore reward via campaign wave progression state before intermission shop.
 
 ### Enemy Combat Loop
 

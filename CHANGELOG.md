@@ -1,5 +1,36 @@
 # Accretion Changelog
 
+## Boss Ships Framework (P0) — March 4, 2026
+
+### Added campaign boss entity foundation with weakpoint gating and mission-phase flow
+
+**What changed**:
+- Added boss entity model in `src/enemy.rs`:
+  - `Boss`, `BossHealth`, `BossWeakpoint` components
+  - `spawn_campaign_boss(...)` spawn helper
+  - weakpoint cycle system and weakpoint-gated player-weapon damage system
+  - dedicated boss mesh attachment path
+- Extended campaign wave state machine in `src/campaign.rs`:
+  - new phases: `BossIntro`, `BossActive`, `BossOutro`
+  - final-wave missions now transition through boss phases before `Complete`
+  - added `campaign_boss_spawn_system` for one-boss mission spawn
+  - added baseline mission reward ore payout on boss defeat
+- Added boss tuning fields to runtime config:
+  - new constants in `src/constants.rs`
+  - mirrored fields in `src/config.rs` + `assets/physics.toml`
+- Updated integration points:
+  - scheduled boss spawn between wave progression and mission progression in `src/main.rs`
+  - included boss entities in world cleanup (`src/menu/cleanup.rs`)
+  - updated campaign HUD wave labels for boss phases (`src/rendering.rs`)
+
+**Validation**:
+- `cargo check` ✅
+- `cargo test boss_ -- --nocapture` ✅
+- `cargo test wave_director_transitions_to_boss_intro_on_last_wave_clear -- --nocapture` ✅
+
+**Impact**:
+- Campaign missions can now spawn and defeat one boss end-to-end with intro/outro lifecycle and reward integration, establishing the base for upcoming boss attack-pattern work.
+
 ## Campaign-Scoped Upgrade Persistence (P0) — March 4, 2026
 
 ### Persisted campaign weapon levels per slot with load/apply isolation

@@ -347,6 +347,24 @@ pub const ENEMY_ORE_DROP_PER_TIER: u32 = 1;
 /// Additional ore pickups per campaign wave above wave 1.
 pub const ENEMY_ORE_DROP_PER_WAVE: u32 = 1;
 
+/// Baseline HP for campaign boss entities before mission-stage scaling.
+pub const BOSS_BASE_HP: f32 = 320.0;
+
+/// Boss collider radius (u).
+pub const BOSS_COLLIDER_RADIUS: f32 = 24.0;
+
+/// Time window (seconds) where the boss weakpoint is exposed.
+pub const BOSS_WEAKPOINT_OPEN_SECS: f32 = 2.2;
+
+/// Time window (seconds) where the boss weakpoint is closed (damage gated).
+pub const BOSS_WEAKPOINT_CLOSED_SECS: f32 = 2.6;
+
+/// Damage dealt to boss entities by player primary projectiles while weakpoint is exposed.
+pub const BOSS_DAMAGE_FROM_PLAYER_PROJECTILE: f32 = 16.0;
+
+/// Damage dealt to boss entities by player missiles while weakpoint is exposed.
+pub const BOSS_DAMAGE_FROM_PLAYER_MISSILE: f32 = 56.0;
+
 // ── Player: Combat ────────────────────────────────────────────────────────────
 
 /// Speed (u/s) of fired projectiles.

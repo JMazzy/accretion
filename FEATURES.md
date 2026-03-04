@@ -109,6 +109,10 @@
   - closing the shop starts the next mission,
   - manual Tab shop access during active campaign combat is disabled.
 - Campaign slot saves now persist campaign weapon upgrade levels (`blaster`, `missile`, `ion`) alongside loadout, and those levels are reapplied when that slot is resumed.
+- Campaign missions now include a boss-framework phase at mission end:
+  - final wave clear transitions to **BOSS INCOMING** intro,
+  - one campaign boss entity spawns with weakpoint-based damage gating,
+  - boss defeat triggers a short outro and grants baseline mission ore reward before intermission shop/next mission flow.
 
 ### Save Slots
 

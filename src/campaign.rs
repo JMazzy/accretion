@@ -2,9 +2,10 @@ use crate::config::PhysicsConfig;
 use crate::enemy::Enemy;
 use crate::enemy::{EnemyProjectile, EnemySpawnState};
 use crate::menu::{GameState, SelectedGameMode, SelectedScenario, ShopReturnState};
-use crate::mining::OrePickup;
+use crate::mining::{OrePickup, PlayerOre};
 use crate::particles::Particle;
 use crate::player::state::{Missile, Projectile};
+use crate::player::Player;
 use crate::player::PlayerHealth;
 use bevy::prelude::*;
 
@@ -91,6 +92,9 @@ pub enum CampaignWavePhase {
     Warmup,
     ActiveWave,
     InterWaveBreak,
+    BossIntro,
+    BossActive,
+    BossOutro,
     Complete,
 }
 
@@ -105,6 +109,8 @@ pub struct CampaignWaveDirector {
     pub spawned_this_wave: u32,
     pub max_concurrent_enemies: u32,
     pub spawn_cooldown_secs: f32,
+    pub boss_spawned: bool,
+    pub mission_reward_granted: bool,
 }
 
 /// Runtime progression state for moving between campaign missions.
@@ -233,6 +239,8 @@ pub fn bootstrap_campaign_wave_director(
     director.spawned_this_wave = 0;
     director.max_concurrent_enemies = 1;
     director.spawn_cooldown_secs = config.enemy_spawn_base_cooldown;
+    director.boss_spawned = false;
+    director.mission_reward_granted = false;
 }
 
 /// Update campaign wave loop state machine while playing campaign mode.
@@ -241,6 +249,8 @@ pub fn campaign_wave_director_system(
     session: Res<CampaignSession>,
     config: Res<PhysicsConfig>,
     q_enemies: Query<Entity, With<Enemy>>,
+    q_bosses: Query<Entity, With<crate::enemy::Boss>>,
+    mut ore: ResMut<PlayerOre>,
     mut director: ResMut<CampaignWaveDirector>,
 ) {
     if !session.active {
@@ -265,8 +275,9 @@ pub fn campaign_wave_director_system(
         CampaignWavePhase::ActiveWave => {
             if director.spawned_this_wave >= director.target_spawns_this_wave && live_enemies == 0 {
                 if director.current_wave >= director.total_waves {
-                    director.phase = CampaignWavePhase::Complete;
-                    director.phase_timer_secs = 0.0;
+                    director.phase = CampaignWavePhase::BossIntro;
+                    director.phase_timer_secs = 1.5;
+                    director.boss_spawned = false;
                 } else {
                     director.phase = CampaignWavePhase::InterWaveBreak;
                     director.phase_timer_secs = 4.0;
@@ -280,8 +291,61 @@ pub fn campaign_wave_director_system(
                 director.phase_timer_secs = 1.5;
             }
         }
+        CampaignWavePhase::BossIntro => {
+            if director.phase_timer_secs <= 0.0 {
+                director.phase = CampaignWavePhase::BossActive;
+                director.phase_timer_secs = 0.0;
+            }
+        }
+        CampaignWavePhase::BossActive => {
+            let live_bosses = q_bosses.iter().count();
+            if director.boss_spawned && live_bosses == 0 {
+                director.phase = CampaignWavePhase::BossOutro;
+                director.phase_timer_secs = 1.0;
+                if !director.mission_reward_granted {
+                    ore.count = ore.count.saturating_add(session.reward_ore);
+                    director.mission_reward_granted = true;
+                }
+            }
+        }
+        CampaignWavePhase::BossOutro => {
+            if director.phase_timer_secs <= 0.0 {
+                director.phase = CampaignWavePhase::Complete;
+                director.phase_timer_secs = 0.0;
+            }
+        }
         CampaignWavePhase::Complete | CampaignWavePhase::Inactive => {}
     }
+}
+
+pub fn campaign_boss_spawn_system(
+    mut commands: Commands,
+    session: Res<CampaignSession>,
+    config: Res<PhysicsConfig>,
+    q_player: Query<&Transform, With<Player>>,
+    q_bosses: Query<Entity, With<crate::enemy::Boss>>,
+    mut director: ResMut<CampaignWaveDirector>,
+) {
+    if !session.active || director.phase != CampaignWavePhase::BossActive {
+        return;
+    }
+    if director.boss_spawned || !q_bosses.is_empty() {
+        return;
+    }
+
+    let around_pos = q_player
+        .single()
+        .map(|t| t.translation.truncate())
+        .unwrap_or(Vec2::ZERO);
+
+    crate::enemy::spawn_campaign_boss(
+        &mut commands,
+        &config,
+        around_pos,
+        session.mission_index,
+        director.current_wave.max(1),
+    );
+    director.boss_spawned = true;
 }
 
 /// Handle campaign mission completion/failure transitions during gameplay.
@@ -300,6 +364,7 @@ pub fn campaign_progression_system(
     entity_sets: (
         Query<Entity, With<crate::asteroid::Asteroid>>,
         Query<Entity, With<Enemy>>,
+        Query<Entity, With<crate::enemy::Boss>>,
         Query<Entity, With<EnemyProjectile>>,
         Query<Entity, With<Projectile>>,
         Query<Entity, With<Missile>>,
@@ -316,6 +381,7 @@ pub fn campaign_progression_system(
     let (
         q_asteroids,
         q_enemies,
+        q_bosses,
         q_enemy_projectiles,
         q_projectiles,
         q_missiles,
@@ -329,6 +395,7 @@ pub fn campaign_progression_system(
         for entity in q_asteroids
             .iter()
             .chain(q_enemies.iter())
+            .chain(q_bosses.iter())
             .chain(q_enemy_projectiles.iter())
             .chain(q_projectiles.iter())
             .chain(q_missiles.iter())
@@ -354,6 +421,8 @@ pub fn campaign_progression_system(
         wave.spawned_this_wave = 0;
         wave.max_concurrent_enemies = 1;
         wave.spawn_cooldown_secs = config.enemy_spawn_base_cooldown;
+        wave.boss_spawned = false;
+        wave.mission_reward_granted = false;
 
         enemy_spawn.timer_secs = 0.0;
         enemy_spawn.session_elapsed_secs = 0.0;
@@ -404,6 +473,8 @@ pub fn mark_campaign_failure_on_game_over(
     progression.advance_timer_secs = 0.0;
     progression.next_mission_pending_shop = None;
     wave.phase = CampaignWavePhase::Inactive;
+    wave.boss_spawned = false;
+    wave.mission_reward_granted = false;
 }
 
 #[cfg(test)]
@@ -473,10 +544,11 @@ mod tests {
     }
 
     #[test]
-    fn wave_director_transitions_to_complete_on_last_wave_clear() {
+    fn wave_director_transitions_to_boss_intro_on_last_wave_clear() {
         let mut world = World::new();
         world.insert_resource(Time::<()>::default());
         world.insert_resource(PhysicsConfig::default());
+        world.insert_resource(PlayerOre::default());
         world.insert_resource(CampaignSession {
             active: true,
             mission_index: 1,
@@ -495,6 +567,8 @@ mod tests {
             spawned_this_wave: 2,
             max_concurrent_enemies: 1,
             spawn_cooldown_secs: 1.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         });
 
         let mut schedule = Schedule::default();
@@ -502,7 +576,87 @@ mod tests {
         schedule.run(&mut world);
 
         let director = world.resource::<CampaignWaveDirector>();
-        assert_eq!(director.phase, CampaignWavePhase::Complete);
+        assert_eq!(director.phase, CampaignWavePhase::BossIntro);
+    }
+
+    #[test]
+    fn boss_spawn_system_spawns_once_in_boss_active_phase() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsConfig::default());
+        world.insert_resource(CampaignSession {
+            active: true,
+            mission_index: 1,
+            map_scenario: SelectedScenario::Field,
+            wave_count: 1,
+            reward_ore: 20,
+            next_mission_id: Some(2),
+            run_counter: 1,
+        });
+        world.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::BossActive,
+            current_wave: 1,
+            total_waves: 1,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 0,
+            spawn_cooldown_secs: 0.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
+        });
+        world.spawn((
+            Player,
+            Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+        ));
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(campaign_boss_spawn_system);
+        schedule.run(&mut world);
+
+        let boss_count = world
+            .query_filtered::<Entity, With<crate::enemy::Boss>>()
+            .iter(&world)
+            .count();
+        assert_eq!(boss_count, 1);
+        assert!(world.resource::<CampaignWaveDirector>().boss_spawned);
+    }
+
+    #[test]
+    fn boss_defeat_transitions_to_outro_and_grants_reward() {
+        let mut world = World::new();
+        world.insert_resource(Time::<()>::default());
+        world.insert_resource(PhysicsConfig::default());
+        world.insert_resource(PlayerOre::default());
+        world.insert_resource(CampaignSession {
+            active: true,
+            mission_index: 1,
+            map_scenario: SelectedScenario::Field,
+            wave_count: 1,
+            reward_ore: 15,
+            next_mission_id: Some(2),
+            run_counter: 1,
+        });
+        world.insert_resource(CampaignWaveDirector {
+            phase: CampaignWavePhase::BossActive,
+            current_wave: 1,
+            total_waves: 1,
+            phase_timer_secs: 0.0,
+            target_spawns_this_wave: 0,
+            spawned_this_wave: 0,
+            max_concurrent_enemies: 0,
+            spawn_cooldown_secs: 0.0,
+            boss_spawned: true,
+            mission_reward_granted: false,
+        });
+
+        let mut schedule = Schedule::default();
+        schedule.add_systems(campaign_wave_director_system);
+        schedule.run(&mut world);
+
+        let director = world.resource::<CampaignWaveDirector>();
+        assert_eq!(director.phase, CampaignWavePhase::BossOutro);
+        assert!(director.mission_reward_granted);
+        assert_eq!(world.resource::<PlayerOre>().count, 15);
     }
 
     #[test]
@@ -573,6 +727,8 @@ mod tests {
             spawned_this_wave: 0,
             max_concurrent_enemies: 0,
             spawn_cooldown_secs: 0.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         });
         world.insert_resource(crate::enemy::EnemySpawnState::default());
         world.insert_resource(NextState::<GameState>::default());
@@ -627,6 +783,8 @@ mod tests {
             spawned_this_wave: 0,
             max_concurrent_enemies: 0,
             spawn_cooldown_secs: 0.0,
+            boss_spawned: false,
+            mission_reward_granted: false,
         });
         world.insert_resource(crate::enemy::EnemySpawnState::default());
         world.insert_resource(NextState::<GameState>::default());

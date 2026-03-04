@@ -524,6 +524,27 @@ pub fn setup_hud_score(
                         w.current_wave.max(1),
                         w.total_waves.max(1)
                     ),
+                    CampaignWavePhase::BossIntro => {
+                        format!(
+                            "WAVE {}/{} · BOSS INCOMING",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
+                    CampaignWavePhase::BossActive => {
+                        format!(
+                            "WAVE {}/{} · BOSS",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
+                    CampaignWavePhase::BossOutro => {
+                        format!(
+                            "WAVE {}/{} · BOSS DEFEATED",
+                            w.current_wave.max(1),
+                            w.total_waves.max(1)
+                        )
+                    }
                     CampaignWavePhase::Complete => "MISSION COMPLETE".to_string(),
                     CampaignWavePhase::Inactive => "WAVE 1/1".to_string(),
                 })

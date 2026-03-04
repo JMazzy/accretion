@@ -229,6 +229,14 @@ enemy_ore_drop_base = 1
 enemy_ore_drop_per_tier = 1
 enemy_ore_drop_per_wave = 1
 
+# Campaign boss framework defaults.
+boss_base_hp = 320.0
+boss_collider_radius = 24.0
+boss_weakpoint_open_secs = 2.2
+boss_weakpoint_closed_secs = 2.6
+boss_damage_from_player_projectile = 16.0
+boss_damage_from_player_missile = 56.0
+
 # ── Player: Combat ────────────────────────────────────────────────────────────
 
 # Projectile muzzle speed (u/s).

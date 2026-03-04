@@ -16,12 +16,7 @@ Last updated: March 4, 2026.
 
 ### Boss Progression
 
-- [ ] **Boss ships: framework**
-    - Add boss entity type, health model, and weak-point/damage-gating foundation.
-    - Add intro/outro flow and baseline reward integration.
-    - Acceptance: one boss can spawn and be defeated end-to-end in a campaign mission.
-
-- [ ] **Boss ships: attack pattern set** `depends on Boss ships: framework`
+- [ ] **Boss ships: attack pattern set**
     - Add at least two readable phases with telegraphed behavior changes.
     - Balance projectile density and survivability.
     - Acceptance: boss fight shows clear phase transitions and no soft-locks.
