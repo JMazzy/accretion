@@ -110,7 +110,7 @@
   - spending ore/upgrades happens in that intermission window,
   - closing the shop starts the next mission,
   - manual Tab shop access during active campaign combat is disabled.
-- Campaign slot saves now persist campaign weapon upgrade levels (`blaster`, `missile`, `ion`) alongside loadout, and those levels are reapplied when that slot is resumed.
+- Campaign slot saves now persist campaign weapon upgrade levels (`blaster_chip`, `blaster_destroy`, `missile`, `ion`) alongside loadout, and those levels are reapplied when that slot is resumed.
 - Campaign missions now include a boss-framework phase at mission end:
   - final wave clear transitions to **BOSS INCOMING** intro,
   - one campaign boss entity spawns with weakpoint-based damage gating,
@@ -168,20 +168,17 @@ Ore consumables and upgrades are purchased from the **Ore Shop** overlay (open w
 
 ### Primary Weapon Upgrades
 
-The primary projectile weapon can be upgraded up to **Level 10** using ore via the **Ore Shop** (open with **Tab** during gameplay or while paused).
+The primary projectile weapon now has two independent ore-upgrade tracks in the **Ore Shop** (open with **Tab** during gameplay or while paused), each up to **Level 10**:
 
-| Level | Fully destroys size… | Ore cost to reach |
-|-------|---------------------|-------------------|
-| 1 (default) | ≤ 1 | — |
-| 2 | ≤ 2 | 10 |
-| 3 | ≤ 3 | 15 |
-| … | … | … |
-| 10 | ≤ 10 | 55 |
+- **Destroy track** (`UPGRADE DESTROY`): increases the asteroid size threshold that is fully destroyed in one hit.
+- **Chip track** (`UPGRADE CHIP`): increases max chip strength used on targets above the destroy threshold.
 
-- **Above threshold**: any asteroid larger than the current destroy-size is *chipped* — one vertex is removed and a size-1 fragment is ejected. No single hit can destroy more than half the target.
-- **Ore reward scaling**: fully-destroying a size-N asteroid drops N ore (vs. 1 before), so higher-level play generates proportionally more upgrade fuel.
-- **Shop UI**: the Ore Shop overlay shows current level, size range, ore balance, and upgrade cost. The buy button greys out when unaffordable or at max level.
-- **Persistence**: weapon level is saved/restored in save slots.
+Both tracks use linear tier pricing (`base_cost × next_display_level`) and can be bought independently.
+
+- **Above threshold**: any asteroid larger than the current destroy-size is chipped according to the active chip track.
+- **Ore reward scaling**: fully-destroying a size-N asteroid drops N ore, so higher destroy levels generate proportionally more upgrade fuel.
+- **Shop UI**: the blaster card now shows separate chip/destroy levels, per-track status, and per-track upgrade affordability.
+- **Persistence**: both primary tracks are saved/restored in campaign slots.
 
 ### Secondary Weapon Upgrades (Missiles)
 

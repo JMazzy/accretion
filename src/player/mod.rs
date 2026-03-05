@@ -49,7 +49,7 @@ pub use rendering::{
 pub use state::{
     AimDirection, AimIdleTimer, CampaignLoadout, CampaignPrimaryWeapon, CampaignSecondaryWeapon,
     IonCannonLevel, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown, PlayerHealth,
-    PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponLevel,
+    PlayerIntent, PlayerLives, PlayerScore, PreferredGamepad, PrimaryWeaponUpgradeTracks,
     SecondaryWeaponLevel, TractorBeamLevel, TractorCaptureState, TractorHoldState,
     TractorThrowCooldown,
 };

@@ -14,7 +14,7 @@ fn spawn_ore_shop_overlay(
     heal_amount: f32,
     ammo: u32,
     ammo_max: u32,
-    weapon_level: &PrimaryWeaponLevel,
+    weapon_tracks: &PrimaryWeaponUpgradeTracks,
     missile_level: &SecondaryWeaponLevel,
     magnet_level: &OreAffinityLevel,
     tractor_level: &TractorBeamLevel,
@@ -219,53 +219,92 @@ fn spawn_ore_shop_overlay(
                                 BorderColor::all(Color::srgb(0.22, 0.22, 0.22)),
                             ))
                             .with_children(|card_col| {
-                                let can_upgrade =
-                                    !weapon_level.is_maxed() && weapon_level.can_afford_next(ore);
-                                let upg_btn_bg = if can_upgrade {
+                                let can_upgrade_destroy = !weapon_tracks.is_destroy_maxed()
+                                    && weapon_tracks.can_afford_next_destroy(ore);
+                                let can_upgrade_chip = !weapon_tracks.is_chip_maxed()
+                                    && weapon_tracks.can_afford_next_chip(ore);
+
+                                let destroy_btn_bg = if can_upgrade_destroy {
                                     shop_buy_bg()
                                 } else {
                                     Color::srgb(0.14, 0.14, 0.14)
                                 };
-                                let upg_btn_border = if can_upgrade {
+                                let destroy_btn_border = if can_upgrade_destroy {
                                     shop_buy_border()
                                 } else {
                                     Color::srgb(0.28, 0.28, 0.28)
                                 };
-                                let upg_btn_text_color = if can_upgrade {
+                                let destroy_btn_text_color = if can_upgrade_destroy {
                                     shop_buy_text()
                                 } else {
                                     Color::srgb(0.40, 0.40, 0.40)
                                 };
-                                let upg_label = if weapon_level.is_maxed() {
+                                let chip_btn_bg = if can_upgrade_chip {
+                                    shop_buy_bg()
+                                } else {
+                                    Color::srgb(0.14, 0.14, 0.14)
+                                };
+                                let chip_btn_border = if can_upgrade_chip {
+                                    shop_buy_border()
+                                } else {
+                                    Color::srgb(0.28, 0.28, 0.28)
+                                };
+                                let chip_btn_text_color = if can_upgrade_chip {
+                                    shop_buy_text()
+                                } else {
+                                    Color::srgb(0.40, 0.40, 0.40)
+                                };
+
+                                let destroy_upg_label = if weapon_tracks.is_destroy_maxed() {
                                     "— MAX LEVEL —".to_string()
                                 } else {
-                                    let cost = weapon_level.cost_for_next_level().unwrap_or(0);
-                                    format!("UPGRADE ({cost} 💎)")
+                                    let cost =
+                                        weapon_tracks.cost_for_next_destroy_level().unwrap_or(0);
+                                    format!("UPGRADE DESTROY ({cost} 💎)")
                                 };
-                                let cost_status = if weapon_level.is_maxed() {
-                                    "MAX LEVEL REACHED".to_string()
+                                let chip_upg_label = if weapon_tracks.is_chip_maxed() {
+                                    "— MAX LEVEL —".to_string()
                                 } else {
-                                    let cost = weapon_level.cost_for_next_level().unwrap_or(0);
-                                    if can_upgrade {
-                                        format!("Cost: {cost} 💎")
+                                    let cost =
+                                        weapon_tracks.cost_for_next_chip_level().unwrap_or(0);
+                                    format!("UPGRADE CHIP ({cost} 💎)")
+                                };
+
+                                let destroy_status = if weapon_tracks.is_destroy_maxed() {
+                                    "DESTROY TRACK: MAX LEVEL REACHED".to_string()
+                                } else {
+                                    let cost =
+                                        weapon_tracks.cost_for_next_destroy_level().unwrap_or(0);
+                                    if can_upgrade_destroy {
+                                        format!("Destroy cost: {cost} 💎")
                                     } else {
-                                        format!("Need {cost} 💎")
+                                        format!("Destroy needs {cost} 💎")
                                     }
                                 };
-                                let level_text = format!(
-                                    "Level {} / {}",
-                                    weapon_level.display_level(),
-                                    crate::constants::PRIMARY_WEAPON_MAX_LEVEL
-                                );
-                                let range_text = if weapon_level.is_maxed() {
-                                    format!("Destroy size: {}", weapon_level.max_destroy_size())
+                                let chip_status = if weapon_tracks.is_chip_maxed() {
+                                    "CHIP TRACK: MAX LEVEL REACHED".to_string()
                                 } else {
-                                    format!(
-                                        "Destroy size: {} -> {}",
-                                        weapon_level.max_destroy_size(),
-                                        weapon_level.max_destroy_size() + 1
-                                    )
+                                    let cost =
+                                        weapon_tracks.cost_for_next_chip_level().unwrap_or(0);
+                                    if can_upgrade_chip {
+                                        format!("Chip cost: {cost} 💎")
+                                    } else {
+                                        format!("Chip needs {cost} 💎")
+                                    }
                                 };
+
+                                let destroy_text = format!(
+                                    "Destroy Lv {} / {}  (size ≤ {})",
+                                    weapon_tracks.destroy_display_level(),
+                                    crate::constants::PRIMARY_WEAPON_MAX_LEVEL,
+                                    weapon_tracks.max_destroy_size()
+                                );
+                                let chip_text = format!(
+                                    "Chip Lv {} / {}  (max chip {})",
+                                    weapon_tracks.chip_display_level(),
+                                    crate::constants::PRIMARY_WEAPON_MAX_LEVEL,
+                                    weapon_tracks.max_chip_size()
+                                );
 
                                 card_col.spawn((
                                     Text::new("⛯ BLASTER ⛯"),
@@ -277,7 +316,7 @@ fn spawn_ore_shop_overlay(
                                     TextColor(Color::srgb(0.45, 0.45, 0.45)),
                                 ));
                                 card_col.spawn((
-                                    Text::new(level_text),
+                                    Text::new(destroy_text),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 15.0,
@@ -286,7 +325,7 @@ fn spawn_ore_shop_overlay(
                                     TextColor(Color::srgb(0.85, 0.85, 0.85)),
                                 ));
                                 card_col.spawn((
-                                    Text::new(range_text),
+                                    Text::new(chip_text),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 12.0,
@@ -295,15 +334,15 @@ fn spawn_ore_shop_overlay(
                                     TextColor(Color::srgb(0.55, 0.65, 0.60)),
                                 ));
                                 card_col.spawn((
-                                    Text::new(cost_status),
+                                    Text::new(destroy_status),
                                     TextFont {
                                         font: font.0.clone(),
                                         font_size: 13.0,
                                         ..default()
                                     },
-                                    TextColor(if weapon_level.is_maxed() {
+                                    TextColor(if weapon_tracks.is_destroy_maxed() {
                                         Color::srgb(0.90, 0.80, 0.30)
-                                    } else if can_upgrade {
+                                    } else if can_upgrade_destroy {
                                         Color::srgb(0.75, 0.90, 0.75)
                                     } else {
                                         Color::srgb(0.75, 0.40, 0.40)
@@ -320,19 +359,61 @@ fn spawn_ore_shop_overlay(
                                             border: UiRect::all(Val::Px(2.0)),
                                             ..default()
                                         },
-                                        BackgroundColor(upg_btn_bg),
-                                        BorderColor::all(upg_btn_border),
-                                        OreShopUpgradeButton,
+                                        BackgroundColor(destroy_btn_bg),
+                                        BorderColor::all(destroy_btn_border),
+                                        OreShopDestroyUpgradeButton,
                                     ))
                                     .with_children(|btn| {
                                         btn.spawn((
-                                            Text::new(upg_label),
+                                            Text::new(destroy_upg_label),
                                             TextFont {
                                                 font: font.0.clone(),
                                                 font_size: 14.0,
                                                 ..default()
                                             },
-                                            TextColor(upg_btn_text_color),
+                                            TextColor(destroy_btn_text_color),
+                                        ));
+                                    });
+
+                                card_col.spawn((
+                                    Text::new(chip_status),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(if weapon_tracks.is_chip_maxed() {
+                                        Color::srgb(0.90, 0.80, 0.30)
+                                    } else if can_upgrade_chip {
+                                        Color::srgb(0.75, 0.90, 0.75)
+                                    } else {
+                                        Color::srgb(0.75, 0.40, 0.40)
+                                    }),
+                                ));
+                                card_col
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            height: Val::Px(42.0),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            border: UiRect::all(Val::Px(2.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(chip_btn_bg),
+                                        BorderColor::all(chip_btn_border),
+                                        OreShopChipUpgradeButton,
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new(chip_upg_label),
+                                            TextFont {
+                                                font: font.0.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(chip_btn_text_color),
                                         ));
                                     });
                             });
@@ -942,7 +1023,7 @@ pub fn setup_ore_shop(
     q_health: Query<&PlayerHealth, With<Player>>,
     ammo: Res<MissileAmmo>,
     config: Res<PhysicsConfig>,
-    weapon_level: Res<PrimaryWeaponLevel>,
+    weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
     missile_level: Res<SecondaryWeaponLevel>,
     magnet_level: Res<OreAffinityLevel>,
     tractor_level: Res<TractorBeamLevel>,
@@ -962,7 +1043,7 @@ pub fn setup_ore_shop(
         config.ore_heal_amount,
         ammo.count,
         config.missile_ammo_max,
-        &weapon_level,
+        &weapon_tracks,
         &missile_level,
         &magnet_level,
         &tractor_level,
@@ -992,7 +1073,8 @@ pub fn ore_shop_button_system(
     missile_query: Query<&Interaction, (Changed<Interaction>, With<OreShopMissileButton>)>,
     close_query: Query<&Interaction, (Changed<Interaction>, With<OreShopCloseButton>)>,
     upgrade_queries: (
-        Query<&Interaction, (Changed<Interaction>, With<OreShopUpgradeButton>)>,
+        Query<&Interaction, (Changed<Interaction>, With<OreShopDestroyUpgradeButton>)>,
+        Query<&Interaction, (Changed<Interaction>, With<OreShopChipUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopMissileUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopMagnetUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopTractorUpgradeButton>)>,
@@ -1004,7 +1086,7 @@ pub fn ore_shop_button_system(
     mut ammo: ResMut<MissileAmmo>,
     config: Res<PhysicsConfig>,
     levels: (
-        ResMut<PrimaryWeaponLevel>,
+        ResMut<PrimaryWeaponUpgradeTracks>,
         ResMut<SecondaryWeaponLevel>,
         ResMut<OreAffinityLevel>,
         ResMut<TractorBeamLevel>,
@@ -1016,13 +1098,14 @@ pub fn ore_shop_button_system(
 ) {
     // Destructure tuple parameters
     let (
-        upgrade_query,
+        destroy_upgrade_query,
+        chip_upgrade_query,
         missile_upgrade_query,
         magnet_upgrade_query,
         tractor_upgrade_query,
         ion_upgrade_query,
     ) = upgrade_queries;
-    let (mut weapon_level, mut missile_level, mut magnet_level, mut tractor_level, mut ion_level) =
+    let (mut weapon_tracks, mut missile_level, mut magnet_level, mut tractor_level, mut ion_level) =
         levels;
 
     // ── Close (ESC / Tab / button) ────────────────────────────────────────────
@@ -1063,7 +1146,7 @@ pub fn ore_shop_button_system(
                     heal_amount,
                     ammo_count,
                     ammo_max,
-                    &weapon_level,
+                    &weapon_tracks,
                     &missile_level,
                     &magnet_level,
                     &tractor_level,
@@ -1100,7 +1183,7 @@ pub fn ore_shop_button_system(
             heal_amount,
             ammo_count,
             ammo_max,
-            &weapon_level,
+            &weapon_tracks,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1110,10 +1193,12 @@ pub fn ore_shop_button_system(
         return;
     }
 
-    // ── Weapon upgrade ────────────────────────────────────────────────────────
-    let upgrade_pressed = upgrade_query.iter().any(|i| *i == Interaction::Pressed);
-    if upgrade_pressed {
-        weapon_level.try_upgrade(&mut ore.count);
+    // ── Primary destroy-track upgrade ────────────────────────────────────────
+    let destroy_upgrade_pressed = destroy_upgrade_query
+        .iter()
+        .any(|i| *i == Interaction::Pressed);
+    if destroy_upgrade_pressed {
+        weapon_tracks.try_upgrade_destroy(&mut ore.count);
         let (hp, max_hp) = q_health
             .single()
             .map(|h| (h.hp, h.max_hp))
@@ -1134,7 +1219,43 @@ pub fn ore_shop_button_system(
             heal_amount,
             ammo_count,
             ammo_max,
-            &weapon_level,
+            &weapon_tracks,
+            &missile_level,
+            &magnet_level,
+            &tractor_level,
+            &ion_level,
+            &font,
+        );
+        return;
+    }
+
+    // ── Primary chip-track upgrade ───────────────────────────────────────────
+    let chip_upgrade_pressed = chip_upgrade_query
+        .iter()
+        .any(|i| *i == Interaction::Pressed);
+    if chip_upgrade_pressed {
+        weapon_tracks.try_upgrade_chip(&mut ore.count);
+        let (hp, max_hp) = q_health
+            .single()
+            .map(|h| (h.hp, h.max_hp))
+            .unwrap_or((config.player_max_hp, config.player_max_hp));
+        let ore_count = ore.count;
+        let ammo_count = ammo.count;
+        let heal_amount = config.ore_heal_amount;
+        let ammo_max = config.missile_ammo_max;
+        for entity in shop_root_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        spawn_ore_shop_overlay(
+            &mut commands,
+            &config,
+            ore_count,
+            hp,
+            max_hp,
+            heal_amount,
+            ammo_count,
+            ammo_max,
+            &weapon_tracks,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1169,7 +1290,7 @@ pub fn ore_shop_button_system(
             heal_amount,
             ammo_count,
             ammo_max,
-            &weapon_level,
+            &weapon_tracks,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1204,7 +1325,7 @@ pub fn ore_shop_button_system(
             heal_amount,
             ammo_count,
             ammo_max,
-            &weapon_level,
+            &weapon_tracks,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1239,7 +1360,7 @@ pub fn ore_shop_button_system(
             heal_amount,
             ammo_count,
             ammo_max,
-            &weapon_level,
+            &weapon_tracks,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1272,7 +1393,7 @@ pub fn ore_shop_button_system(
             heal_amount,
             ammo_count,
             ammo_max,
-            &weapon_level,
+            &weapon_tracks,
             &missile_level,
             &magnet_level,
             &tractor_level,

@@ -12,7 +12,20 @@ Last updated: March 4, 2026.
 
 ## P0 — Next Implementation Candidates
 
-- No open P0 items currently.
+- [ ] **Split primary: sub-chip fragmentation completion**
+    - Finish the remaining split-primary behavior rule: if destroy track is too low to convert a sub-chip-sized asteroid directly to ore, fragment it into multiple unit asteroids.
+    - Keep existing split-track progression and persistence behavior unchanged.
+    - Acceptance: sub-chip edge cases follow the new fragmentation rule without regressions in normal chip/destroy flow.
+
+- [ ] **Primary fire-rate upgrade track**
+    - Add fire-rate (inverse cooldown) as a separate upgradeable stat.
+    - Integrate fire-rate scaling with HUD, shop costs, and save schema.
+    - Acceptance: fire-rate can be upgraded independently and changes runtime primary cooldown behavior.
+
+- [ ] **Primary weapon roster framework (blaster/mining laser/plasma rifle) — foundation slice**
+    - Introduce primary-weapon type abstraction and runtime routing while keeping `blaster` as baseline.
+    - Keep behavior parity for existing blaster sessions.
+    - Acceptance: loadout/system can route by primary type with no regression for blaster-only play.
 
 ## P1 — Next Queue
 
@@ -20,20 +33,10 @@ Last updated: March 4, 2026.
 
 Priority order (high → low):
 
-- [ ] **Split primary upgrade tracks (chip vs destroy threshold)**
-    - Decouple primary progression so chip power and destroy threshold can be tuned independently.
-    - Keep existing balance defaults via migration mapping for old saves.
-    - Acceptance: two independently upgradable stats exist and are reflected in combat behavior.
-
-- [ ] **Primary fire-rate upgrade track** `depends on Split primary upgrade tracks (chip vs destroy threshold)`
-    - Add fire-rate (inverse cooldown) as a separate upgradeable stat.
-    - Ensure fire-rate scaling integrates with existing HUD, shop costs, and save schema.
-    - Acceptance: fire-rate can be upgraded independently and affects runtime cooldown behavior.
-
-- [ ] **Primary weapon roster framework (blaster/mining laser/plasma rifle)** `depends on Split primary upgrade tracks (chip vs destroy threshold); depends on Primary fire-rate upgrade track`
-    - Introduce primary-weapon type abstraction and selection wiring.
-    - Keep `blaster` behavior as baseline reference implementation.
-    - Acceptance: loadout/system can route behavior by primary type with no regression for blaster.
+- [ ] **Primary weapon roster framework (blaster/mining laser/plasma rifle) — full integration** `depends on Primary weapon roster framework (blaster/mining laser/plasma rifle) — foundation slice; depends on Primary fire-rate upgrade track`
+    - Complete selection wiring + full gameplay integration for primary type routing.
+    - Preserve blaster parity while unlocking additional primary types.
+    - Acceptance: weapon type routing is fully integrated across loadout, runtime systems, and persistence.
 
 - [ ] **Mining laser implementation** `depends on Primary weapon roster framework (blaster/mining laser/plasma rifle)`
     - Add ore-focused weapon behavior:

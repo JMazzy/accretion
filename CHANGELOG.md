@@ -1,5 +1,63 @@
 # Accretion Changelog
 
+## P0: Split Primary Tracks Wiring (Persistence + Ore Shop) — March 5, 2026
+
+### Added campaign persistence and split upgrade controls for primary destroy/chip tracks
+
+**What changed**:
+- Completed split-track persistence wiring in `src/save.rs`:
+  - `CampaignSaveSnapshot` / `ResourceSnapshot` now persist `primary_weapon_chip_level` and `primary_weapon_destroy_level`,
+  - migration now backfills split fields from legacy `primary_weapon_level` when loading older save data,
+  - save schemas are now version `2` and legacy `primary_weapon_level` is removed from persisted snapshot structs,
+  - apply/load/autosave flows now read/write split tracks directly.
+- Updated ore shop upgrade controls in `src/menu/ore_shop.rs` and marker types in `src/menu/types.rs`:
+  - replaced the single primary upgrade action with separate `UPGRADE DESTROY` and `UPGRADE CHIP` actions,
+  - blaster upgrade card now renders independent level/cost/status lines per track,
+  - button handling now upgrades either destroy or chip track independently and refreshes overlay state.
+- Migrated runtime blaster combat consumers to split tracks:
+  - `src/player/combat.rs` now uses `PrimaryWeaponUpgradeTracks` for asteroid destroy-threshold and chip-size scaling,
+  - `src/enemy.rs` now uses split tracks for projectile-vs-enemy damage scaling and enemy-projectile asteroid-hit behavior.
+- Narrowed legacy primary-level usage to compatibility-only consumers:
+  - `src/rendering.rs` blaster HUD row now reads split destroy track level directly,
+  - `src/save.rs` save/autosave systems now derive legacy `primary_weapon_level` from split tracks instead of reading a separate runtime primary-level resource.
+- Removed runtime legacy sync/resource wiring:
+  - `src/main.rs` no longer inserts `PrimaryWeaponLevel` or runs split→legacy sync systems,
+  - `src/save.rs` load-apply systems now only write split-track runtime resources,
+  - `src/menu/cleanup.rs` no longer resets legacy primary-level resource.
+- Wired split defaults/reset behavior:
+  - full main-menu cleanup resets `PrimaryWeaponUpgradeTracks`.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+- `cargo test primary_split_tracks -- --nocapture` ✅
+- `cargo test save_campaign_slot_ -- --nocapture` ✅
+- `cargo test apply_pending_loaded_campaign_overwrites_levels_and_loadout -- --nocapture` ✅
+- `cargo test player_weapon_damage_scales_with_levels -- --nocapture` ✅
+- `cargo test missile_damage_is_higher_than_projectile_damage -- --nocapture` ✅
+- `cargo test migrate_v1_ -- --nocapture` ✅
+
+**Impact**:
+- Players can now buy and persist primary destroy/chip upgrades independently, and existing v1 saves migrate forward to v2 without losing primary progression.
+
+## P0 Kickoff: Split Primary Tracks Foundation — March 4, 2026
+
+### Promoted split-primary groundwork to P0 and implemented data-layer slice
+
+**What changed**:
+- Promoted a scoped P0 backlog slice in `BACKLOG.md`:
+  - **Split primary upgrade tracks — foundation slice (schema + migration helpers + parity defaults)**.
+- Added split-track primary upgrade foundation model in `src/player/state.rs`:
+  - new `PrimaryWeaponUpgradeTracks { chip_level, destroy_level }`,
+  - legacy mapping helper (`from_legacy_level`).
+- Re-exported the new model from `src/player/mod.rs` (`PrimaryWeaponUpgradeTracks`).
+- Added focused tests in `src/player/state.rs` for legacy↔split parity and level clamping.
+
+**Impact**:
+- Begins the highest-priority P0 item with a safe, behavior-preserving foundation; runtime combat behavior remains unchanged in this slice.
+
 ## Campaign Play-Again Retry Reset Fix (P1) — March 4, 2026
 
 ### Fixed campaign Game Over retry path to start clean runs

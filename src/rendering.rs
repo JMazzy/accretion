@@ -48,8 +48,8 @@ use crate::player::state::MissileAmmo;
 use crate::player::Player;
 use crate::player::{
     CampaignLoadout, CampaignSecondaryWeapon, IonCannonCooldown, IonCannonLevel, PlayerLives,
-    PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel, TractorBeamLevel, TractorHoldState,
-    TractorThrowCooldown,
+    PlayerScore, PrimaryWeaponUpgradeTracks, SecondaryWeaponLevel, TractorBeamLevel,
+    TractorHoldState, TractorThrowCooldown,
 };
 use crate::simulation::{ProfilerStats, SimulationStats};
 use crate::spatial_partition::SpatialGrid;
@@ -1027,7 +1027,7 @@ pub fn sync_loadout_hud_visibility_system(
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn ore_hud_display_system(
     ore: Res<PlayerOre>,
-    weapon_level: Res<PrimaryWeaponLevel>,
+    weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
     missile_level: Res<SecondaryWeaponLevel>,
     magnet_level: Res<OreAffinityLevel>,
     tractor_level: Res<TractorBeamLevel>,
@@ -1048,7 +1048,7 @@ pub fn ore_hud_display_system(
     )>,
 ) {
     if !ore.is_changed()
-        && !weapon_level.is_changed()
+        && !weapon_tracks.is_changed()
         && !missile_level.is_changed()
         && !magnet_level.is_changed()
         && !tractor_level.is_changed()
@@ -1060,7 +1060,7 @@ pub fn ore_hud_display_system(
         return;
     }
 
-    let blaster_text = circled_number_level(weapon_level.display_level()).to_string();
+    let blaster_text = circled_number_level(weapon_tracks.destroy_display_level()).to_string();
     let missile_text = circled_number_level(missile_level.display_level()).to_string();
     let magnet_text = circled_number_level(magnet_level.display_level()).to_string();
     let tractor_level_text = circled_number_level(tractor_level.display_level()).to_string();

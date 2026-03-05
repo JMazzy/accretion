@@ -41,8 +41,8 @@ use crate::graphics::GameFont;
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::{
     state::{MissileAmmo, PlayerHealth},
-    IonCannonLevel, Player, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
-    TractorBeamLevel,
+    IonCannonLevel, Player, PlayerLives, PlayerScore, PrimaryWeaponUpgradeTracks,
+    SecondaryWeaponLevel, TractorBeamLevel,
 };
 use crate::save::{
     campaign_slot_metadata, ensure_campaign_slot, load_slot, save_campaign_slot_named,

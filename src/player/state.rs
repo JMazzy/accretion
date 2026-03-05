@@ -322,6 +322,7 @@ pub struct PrimaryWeaponLevel {
     pub level: u32,
 }
 
+#[allow(dead_code)]
 impl PrimaryWeaponLevel {
     /// Maximum internal level value (inclusive).
     pub const MAX: u32 = PRIMARY_WEAPON_MAX_LEVEL - 1;
@@ -371,6 +372,118 @@ impl PrimaryWeaponLevel {
         }
         *ore -= cost;
         self.level += 1;
+        Some(cost)
+    }
+}
+
+/// Primary weapon split-upgrade foundation model.
+///
+/// This is the data-layer slice for decoupling chip and destroy behavior.
+/// Runtime combat now consumes this split-track model; [`PrimaryWeaponLevel`]
+/// remains only for legacy serialization compatibility.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct PrimaryWeaponUpgradeTracks {
+    /// Internal 0-indexed level for chip power scaling.
+    pub chip_level: u32,
+    /// Internal 0-indexed level for full-destroy threshold scaling.
+    pub destroy_level: u32,
+}
+
+impl PrimaryWeaponUpgradeTracks {
+    /// Maximum internal level value (inclusive) for both tracks.
+    pub const MAX: u32 = PRIMARY_WEAPON_MAX_LEVEL - 1;
+
+    /// Build parity split-track values from legacy single-track progression.
+    #[inline]
+    pub fn from_legacy_level(level: u32) -> Self {
+        let clamped = level.min(Self::MAX);
+        Self {
+            chip_level: clamped,
+            destroy_level: clamped,
+        }
+    }
+
+    /// Human-readable chip-track level (1-indexed).
+    #[inline]
+    pub fn chip_display_level(&self) -> u32 {
+        self.chip_level.min(Self::MAX) + 1
+    }
+
+    /// Human-readable destroy-track level (1-indexed).
+    #[inline]
+    pub fn destroy_display_level(&self) -> u32 {
+        self.destroy_level.min(Self::MAX) + 1
+    }
+
+    /// Current chip-size cap (mass units removed in one chip event).
+    #[inline]
+    pub fn max_chip_size(&self) -> u32 {
+        self.chip_level.min(Self::MAX) + 1
+    }
+
+    /// Current full-destroy asteroid-size threshold.
+    #[inline]
+    pub fn max_destroy_size(&self) -> u32 {
+        self.destroy_level.min(Self::MAX) + 1
+    }
+
+    #[inline]
+    pub fn is_chip_maxed(&self) -> bool {
+        self.chip_level >= Self::MAX
+    }
+
+    #[inline]
+    pub fn is_destroy_maxed(&self) -> bool {
+        self.destroy_level >= Self::MAX
+    }
+
+    #[inline]
+    pub fn cost_for_next_chip_level(&self) -> Option<u32> {
+        if self.is_chip_maxed() {
+            None
+        } else {
+            Some(WEAPON_UPGRADE_BASE_COST * (self.chip_level + 2))
+        }
+    }
+
+    #[inline]
+    pub fn cost_for_next_destroy_level(&self) -> Option<u32> {
+        if self.is_destroy_maxed() {
+            None
+        } else {
+            Some(WEAPON_UPGRADE_BASE_COST * (self.destroy_level + 2))
+        }
+    }
+
+    #[inline]
+    pub fn can_afford_next_chip(&self, ore: u32) -> bool {
+        self.cost_for_next_chip_level()
+            .is_some_and(|cost| ore >= cost)
+    }
+
+    #[inline]
+    pub fn can_afford_next_destroy(&self, ore: u32) -> bool {
+        self.cost_for_next_destroy_level()
+            .is_some_and(|cost| ore >= cost)
+    }
+
+    pub fn try_upgrade_chip(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_chip_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.chip_level += 1;
+        Some(cost)
+    }
+
+    pub fn try_upgrade_destroy(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_destroy_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.destroy_level += 1;
         Some(cost)
     }
 }
@@ -661,6 +774,53 @@ mod tests {
         assert!(!level_one.can_fully_decompose_size(2));
         assert!(level_five.can_fully_decompose_size(5));
         assert!(!level_five.can_fully_decompose_size(6));
+    }
+
+    #[test]
+    fn primary_split_tracks_from_legacy_preserves_parity() {
+        let tracks = PrimaryWeaponUpgradeTracks::from_legacy_level(4);
+        assert_eq!(tracks.chip_level, 4);
+        assert_eq!(tracks.destroy_level, 4);
+        assert_eq!(tracks.max_chip_size(), 5);
+        assert_eq!(tracks.max_destroy_size(), 5);
+    }
+
+    #[test]
+    fn primary_split_tracks_clamp_to_max_level() {
+        let over = PrimaryWeaponUpgradeTracks::from_legacy_level(999);
+        assert_eq!(over.chip_level, PrimaryWeaponUpgradeTracks::MAX);
+        assert_eq!(over.destroy_level, PrimaryWeaponUpgradeTracks::MAX);
+    }
+
+    #[test]
+    fn primary_split_tracks_support_independent_values() {
+        let tracks = PrimaryWeaponUpgradeTracks {
+            chip_level: 2,
+            destroy_level: 6,
+        };
+        assert_eq!(tracks.chip_level, 2);
+        assert_eq!(tracks.destroy_level, 6);
+        assert_eq!(tracks.chip_display_level(), 3);
+        assert_eq!(tracks.destroy_display_level(), 7);
+    }
+
+    #[test]
+    fn primary_split_tracks_upgrade_helpers_spend_ore_per_track() {
+        let mut tracks = PrimaryWeaponUpgradeTracks {
+            chip_level: 0,
+            destroy_level: 0,
+        };
+        let mut ore = 10;
+
+        let chip_cost = tracks.try_upgrade_chip(&mut ore);
+        assert_eq!(chip_cost, Some(10));
+        assert_eq!(tracks.chip_level, 1);
+        assert_eq!(tracks.destroy_level, 0);
+        assert_eq!(ore, 0);
+
+        let destroy_cost = tracks.try_upgrade_destroy(&mut ore);
+        assert_eq!(destroy_cost, None);
+        assert_eq!(tracks.destroy_level, 0);
     }
 }
 

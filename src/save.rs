@@ -13,14 +13,14 @@ use crate::menu::{GameState, SelectedGameMode, SelectedScenario};
 use crate::mining::{OreAffinityLevel, PlayerOre};
 use crate::player::state::{
     CampaignLoadout, CampaignPrimaryWeapon, CampaignSecondaryWeapon, IonCannonLevel, MissileAmmo,
-    PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
+    PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponUpgradeTracks, SecondaryWeaponLevel,
     TractorBeamLevel,
 };
 use crate::player::Player;
 
 pub const SAVE_SLOT_COUNT: u8 = 3;
-const SAVE_VERSION: u32 = 1;
-const CAMPAIGN_SAVE_VERSION: u32 = 1;
+const SAVE_VERSION: u32 = 2;
+const CAMPAIGN_SAVE_VERSION: u32 = 2;
 
 #[derive(Debug, Clone)]
 pub struct SaveSlotMetadata {
@@ -134,7 +134,8 @@ pub struct CampaignSaveSnapshot {
     pub mission_index: u32,
     pub primary_weapon: CampaignPrimaryWeapon,
     pub secondary_weapon: CampaignSecondaryWeapon,
-    pub primary_weapon_level: u32,
+    pub primary_weapon_chip_level: u32,
+    pub primary_weapon_destroy_level: u32,
     pub secondary_weapon_level: u32,
     pub ion_cannon_level: u32,
 }
@@ -149,7 +150,8 @@ pub struct ResourceSnapshot {
     pub lives_respawn_timer: Option<f32>,
     pub ore_count: u32,
     pub missile_ammo: u32,
-    pub primary_weapon_level: u32,
+    pub primary_weapon_chip_level: u32,
+    pub primary_weapon_destroy_level: u32,
     pub secondary_weapon_level: u32,
     pub ore_affinity_level: u32,
     pub tractor_beam_level: u32,
@@ -375,12 +377,10 @@ fn migrate_snapshot_value(value: &mut toml::Value) -> Result<(), String> {
         .as_table_mut()
         .ok_or_else(|| "save file root must be a TOML table".to_string())?;
 
-    if !table.contains_key("version") {
-        table.insert(
-            "version".to_string(),
-            toml::Value::Integer(SAVE_VERSION as i64),
-        );
-    }
+    let version = table
+        .get("version")
+        .and_then(toml::Value::as_integer)
+        .unwrap_or(1);
 
     if !table.contains_key("saved_at_unix") {
         table.insert("saved_at_unix".to_string(), toml::Value::Integer(0));
@@ -390,17 +390,37 @@ fn migrate_snapshot_value(value: &mut toml::Value) -> Result<(), String> {
         .get_mut("resources")
         .and_then(toml::Value::as_table_mut)
     {
+        if !resources.contains_key("primary_weapon_chip_level") {
+            let legacy_level = resources
+                .get("primary_weapon_level")
+                .and_then(toml::Value::as_integer)
+                .unwrap_or(0);
+            resources.insert(
+                "primary_weapon_chip_level".to_string(),
+                toml::Value::Integer(legacy_level),
+            );
+        }
+        if !resources.contains_key("primary_weapon_destroy_level") {
+            let legacy_level = resources
+                .get("primary_weapon_level")
+                .and_then(toml::Value::as_integer)
+                .unwrap_or(0);
+            resources.insert(
+                "primary_weapon_destroy_level".to_string(),
+                toml::Value::Integer(legacy_level),
+            );
+        }
         if !resources.contains_key("tractor_beam_level") {
             resources.insert("tractor_beam_level".to_string(), toml::Value::Integer(0));
         }
     }
 
-    let version = table
-        .get("version")
-        .and_then(toml::Value::as_integer)
-        .ok_or_else(|| "save version is missing or invalid".to_string())?;
-
-    if version != SAVE_VERSION as i64 {
+    if version == 1 {
+        table.insert(
+            "version".to_string(),
+            toml::Value::Integer(SAVE_VERSION as i64),
+        );
+    } else if version != SAVE_VERSION as i64 {
         return Err(format!(
             "unsupported save version {} (expected {})",
             version, SAVE_VERSION
@@ -415,12 +435,10 @@ fn migrate_campaign_snapshot_value(value: &mut toml::Value) -> Result<(), String
         .as_table_mut()
         .ok_or_else(|| "campaign save root must be a TOML table".to_string())?;
 
-    if !table.contains_key("version") {
-        table.insert(
-            "version".to_string(),
-            toml::Value::Integer(CAMPAIGN_SAVE_VERSION as i64),
-        );
-    }
+    let version = table
+        .get("version")
+        .and_then(toml::Value::as_integer)
+        .unwrap_or(1);
     if !table.contains_key("saved_at_unix") {
         table.insert("saved_at_unix".to_string(), toml::Value::Integer(0));
     }
@@ -445,8 +463,25 @@ fn migrate_campaign_snapshot_value(value: &mut toml::Value) -> Result<(), String
             toml::Value::String("Missile".to_string()),
         );
     }
-    if !table.contains_key("primary_weapon_level") {
-        table.insert("primary_weapon_level".to_string(), toml::Value::Integer(0));
+    if !table.contains_key("primary_weapon_chip_level") {
+        let legacy_level = table
+            .get("primary_weapon_level")
+            .and_then(toml::Value::as_integer)
+            .unwrap_or(0);
+        table.insert(
+            "primary_weapon_chip_level".to_string(),
+            toml::Value::Integer(legacy_level),
+        );
+    }
+    if !table.contains_key("primary_weapon_destroy_level") {
+        let legacy_level = table
+            .get("primary_weapon_level")
+            .and_then(toml::Value::as_integer)
+            .unwrap_or(0);
+        table.insert(
+            "primary_weapon_destroy_level".to_string(),
+            toml::Value::Integer(legacy_level),
+        );
     }
     if !table.contains_key("secondary_weapon_level") {
         table.insert(
@@ -458,12 +493,12 @@ fn migrate_campaign_snapshot_value(value: &mut toml::Value) -> Result<(), String
         table.insert("ion_cannon_level".to_string(), toml::Value::Integer(0));
     }
 
-    let version = table
-        .get("version")
-        .and_then(toml::Value::as_integer)
-        .ok_or_else(|| "campaign save version is missing or invalid".to_string())?;
-
-    if version != CAMPAIGN_SAVE_VERSION as i64 {
+    if version == 1 {
+        table.insert(
+            "version".to_string(),
+            toml::Value::Integer(CAMPAIGN_SAVE_VERSION as i64),
+        );
+    } else if version != CAMPAIGN_SAVE_VERSION as i64 {
         return Err(format!(
             "unsupported campaign save version {} (expected {})",
             version, CAMPAIGN_SAVE_VERSION
@@ -513,7 +548,8 @@ pub fn ensure_campaign_slot(slot: u8) -> Result<CampaignSaveSnapshot, String> {
         mission_index: 1,
         primary_weapon: CampaignPrimaryWeapon::Blaster,
         secondary_weapon: CampaignSecondaryWeapon::Missile,
-        primary_weapon_level: 0,
+        primary_weapon_chip_level: 0,
+        primary_weapon_destroy_level: 0,
         secondary_weapon_level: 0,
         ion_cannon_level: 0,
     };
@@ -528,7 +564,8 @@ pub fn save_campaign_slot_progress(
     mission_index: u32,
     primary_weapon: CampaignPrimaryWeapon,
     secondary_weapon: CampaignSecondaryWeapon,
-    primary_weapon_level: u32,
+    primary_weapon_chip_level: u32,
+    primary_weapon_destroy_level: u32,
     secondary_weapon_level: u32,
     ion_cannon_level: u32,
 ) -> Result<(), String> {
@@ -539,7 +576,9 @@ pub fn save_campaign_slot_progress(
         mission_index: mission_index.max(1),
         primary_weapon,
         secondary_weapon,
-        primary_weapon_level: primary_weapon_level.min(PrimaryWeaponLevel::MAX),
+        primary_weapon_chip_level: primary_weapon_chip_level.min(PrimaryWeaponUpgradeTracks::MAX),
+        primary_weapon_destroy_level: primary_weapon_destroy_level
+            .min(PrimaryWeaponUpgradeTracks::MAX),
         secondary_weapon_level: secondary_weapon_level.min(SecondaryWeaponLevel::MAX),
         ion_cannon_level: ion_cannon_level.min(IonCannonLevel::MAX),
     };
@@ -560,7 +599,8 @@ pub fn save_campaign_slot_named(
         mission_index,
         primary_weapon,
         secondary_weapon,
-        existing.primary_weapon_level,
+        existing.primary_weapon_chip_level,
+        existing.primary_weapon_destroy_level,
         existing.secondary_weapon_level,
         existing.ion_cannon_level,
     )
@@ -574,7 +614,7 @@ pub fn handle_save_slot_requests_system(
     lives: Res<PlayerLives>,
     ore: Res<PlayerOre>,
     ammo: Res<MissileAmmo>,
-    primary_level: Res<PrimaryWeaponLevel>,
+    primary_tracks: Res<PrimaryWeaponUpgradeTracks>,
     secondary_level: Res<SecondaryWeaponLevel>,
     affinity_level: Res<OreAffinityLevel>,
     tractor_level: Res<TractorBeamLevel>,
@@ -623,7 +663,8 @@ pub fn handle_save_slot_requests_system(
                 lives_respawn_timer: lives.respawn_timer,
                 ore_count: ore.count,
                 missile_ammo: ammo.count,
-                primary_weapon_level: primary_level.level,
+                primary_weapon_chip_level: primary_tracks.chip_level,
+                primary_weapon_destroy_level: primary_tracks.destroy_level,
                 secondary_weapon_level: secondary_level.level,
                 ore_affinity_level: affinity_level.level,
                 tractor_beam_level: tractor_level.level,
@@ -651,7 +692,7 @@ pub fn apply_pending_loaded_snapshot_system(
     mut lives: ResMut<PlayerLives>,
     mut ore: ResMut<PlayerOre>,
     mut ammo: ResMut<MissileAmmo>,
-    mut primary_level: ResMut<PrimaryWeaponLevel>,
+    mut primary_tracks: ResMut<PrimaryWeaponUpgradeTracks>,
     mut secondary_level: ResMut<SecondaryWeaponLevel>,
     mut affinity_level: ResMut<OreAffinityLevel>,
     mut tractor_level: ResMut<TractorBeamLevel>,
@@ -677,10 +718,14 @@ pub fn apply_pending_loaded_snapshot_system(
         count: snapshot.resources.ore_count,
     };
     ammo.count = snapshot.resources.missile_ammo;
-    primary_level.level = snapshot
+    primary_tracks.chip_level = snapshot
         .resources
-        .primary_weapon_level
-        .min(PrimaryWeaponLevel::MAX);
+        .primary_weapon_chip_level
+        .min(PrimaryWeaponUpgradeTracks::MAX);
+    primary_tracks.destroy_level = snapshot
+        .resources
+        .primary_weapon_destroy_level
+        .min(PrimaryWeaponUpgradeTracks::MAX);
     secondary_level.level = snapshot
         .resources
         .secondary_weapon_level
@@ -777,7 +822,7 @@ pub fn apply_pending_loaded_campaign_system(
     mut autosave_state: ResMut<CampaignAutosaveState>,
     mut campaign_session: ResMut<CampaignSession>,
     mut campaign_loadout: ResMut<CampaignLoadout>,
-    mut primary_level: ResMut<PrimaryWeaponLevel>,
+    mut primary_tracks: ResMut<PrimaryWeaponUpgradeTracks>,
     mut secondary_level: ResMut<SecondaryWeaponLevel>,
     mut ion_level: ResMut<IonCannonLevel>,
 ) {
@@ -789,7 +834,12 @@ pub fn apply_pending_loaded_campaign_system(
     campaign_session.mission_index = snapshot.mission_index.max(1);
     campaign_loadout.primary = snapshot.primary_weapon;
     campaign_loadout.secondary = snapshot.secondary_weapon;
-    primary_level.level = snapshot.primary_weapon_level.min(PrimaryWeaponLevel::MAX);
+    primary_tracks.chip_level = snapshot
+        .primary_weapon_chip_level
+        .min(PrimaryWeaponUpgradeTracks::MAX);
+    primary_tracks.destroy_level = snapshot
+        .primary_weapon_destroy_level
+        .min(PrimaryWeaponUpgradeTracks::MAX);
     secondary_level.level = snapshot
         .secondary_weapon_level
         .min(SecondaryWeaponLevel::MAX);
@@ -803,7 +853,7 @@ pub fn autosave_campaign_progress_system(
     session: Res<CampaignSession>,
     active_slot: Res<ActiveCampaignSlot>,
     campaign_loadout: Res<CampaignLoadout>,
-    primary_level: Res<PrimaryWeaponLevel>,
+    primary_tracks: Res<PrimaryWeaponUpgradeTracks>,
     secondary_level: Res<SecondaryWeaponLevel>,
     ion_level: Res<IonCannonLevel>,
     mut autosave_state: ResMut<CampaignAutosaveState>,
@@ -825,7 +875,8 @@ pub fn autosave_campaign_progress_system(
         session.mission_index,
         campaign_loadout.primary,
         campaign_loadout.secondary,
-        primary_level.level,
+        primary_tracks.chip_level,
+        primary_tracks.destroy_level,
         secondary_level.level,
         ion_level.level,
     ) {
@@ -875,13 +926,15 @@ mod tests {
         assert_eq!(created.mission_index, 1);
         assert_eq!(created.primary_weapon, CampaignPrimaryWeapon::Blaster);
         assert_eq!(created.secondary_weapon, CampaignSecondaryWeapon::Missile);
-        assert_eq!(created.primary_weapon_level, 0);
+        assert_eq!(created.primary_weapon_chip_level, 0);
+        assert_eq!(created.primary_weapon_destroy_level, 0);
         assert_eq!(created.secondary_weapon_level, 0);
         assert_eq!(created.ion_cannon_level, 0);
         assert_eq!(loaded.mission_index, 1);
         assert_eq!(loaded.primary_weapon, CampaignPrimaryWeapon::Blaster);
         assert_eq!(loaded.secondary_weapon, CampaignSecondaryWeapon::Missile);
-        assert_eq!(loaded.primary_weapon_level, 0);
+        assert_eq!(loaded.primary_weapon_chip_level, 0);
+        assert_eq!(loaded.primary_weapon_destroy_level, 0);
         assert_eq!(loaded.secondary_weapon_level, 0);
         assert_eq!(loaded.ion_cannon_level, 0);
         assert!(loaded.name.contains("Campaign Slot"));
@@ -908,7 +961,8 @@ mod tests {
         assert_eq!(loaded.mission_index, 7);
         assert_eq!(loaded.primary_weapon, CampaignPrimaryWeapon::Blaster);
         assert_eq!(loaded.secondary_weapon, CampaignSecondaryWeapon::IonCannon);
-        assert_eq!(loaded.primary_weapon_level, 0);
+        assert_eq!(loaded.primary_weapon_chip_level, 0);
+        assert_eq!(loaded.primary_weapon_destroy_level, 0);
         assert_eq!(loaded.secondary_weapon_level, 0);
         assert_eq!(loaded.ion_cannon_level, 0);
 
@@ -926,7 +980,8 @@ mod tests {
             4,
             CampaignPrimaryWeapon::Blaster,
             CampaignSecondaryWeapon::Missile,
-            2,
+            5,
+            6,
             3,
             4,
         )
@@ -936,11 +991,63 @@ mod tests {
 
         assert_eq!(loaded.name, "Progress Test");
         assert_eq!(loaded.mission_index, 4);
-        assert_eq!(loaded.primary_weapon_level, 2);
+        assert_eq!(loaded.primary_weapon_chip_level, 5);
+        assert_eq!(loaded.primary_weapon_destroy_level, 6);
         assert_eq!(loaded.secondary_weapon_level, 3);
         assert_eq!(loaded.ion_cannon_level, 4);
 
         restore_campaign_slot(slot, backup);
+    }
+
+    #[test]
+    fn migrate_v1_snapshot_backfills_split_primary_levels() {
+        let v1 = r#"
+version = 1
+saved_at_unix = 123
+scenario = "Field"
+asteroids = []
+
+[resources]
+score_hits = 0
+score_destroyed = 0
+score_streak = 0
+score_points = 0
+lives_remaining = 3
+lives_respawn_timer = ""
+ore_count = 0
+missile_ammo = 5
+primary_weapon_level = 4
+secondary_weapon_level = 2
+ore_affinity_level = 1
+tractor_beam_level = 0
+"#
+        .replace("lives_respawn_timer = \"\"", "lives_respawn_timer = 0.0");
+
+        let migrated = parse_snapshot_with_migration(&v1).expect("v1 snapshot should migrate");
+        assert_eq!(migrated.version, SAVE_VERSION);
+        assert_eq!(migrated.resources.primary_weapon_chip_level, 4);
+        assert_eq!(migrated.resources.primary_weapon_destroy_level, 4);
+    }
+
+    #[test]
+    fn migrate_v1_campaign_snapshot_backfills_split_primary_levels() {
+        let v1 = r#"
+version = 1
+saved_at_unix = 123
+name = "Legacy Slot"
+mission_index = 5
+primary_weapon = "Blaster"
+secondary_weapon = "Missile"
+primary_weapon_level = 3
+secondary_weapon_level = 2
+ion_cannon_level = 1
+"#;
+
+        let migrated = parse_campaign_snapshot_with_migration(v1)
+            .expect("v1 campaign snapshot should migrate");
+        assert_eq!(migrated.version, CAMPAIGN_SAVE_VERSION);
+        assert_eq!(migrated.primary_weapon_chip_level, 3);
+        assert_eq!(migrated.primary_weapon_destroy_level, 3);
     }
 
     #[test]
@@ -953,7 +1060,8 @@ mod tests {
             mission_index: 3,
             primary_weapon: CampaignPrimaryWeapon::Blaster,
             secondary_weapon: CampaignSecondaryWeapon::Missile,
-            primary_weapon_level: 1,
+            primary_weapon_chip_level: 2,
+            primary_weapon_destroy_level: 3,
             secondary_weapon_level: 2,
             ion_cannon_level: 3,
         })));
@@ -971,7 +1079,7 @@ mod tests {
             primary: CampaignPrimaryWeapon::Blaster,
             secondary: CampaignSecondaryWeapon::IonCannon,
         });
-        world.insert_resource(PrimaryWeaponLevel { level: 9 });
+        world.insert_resource(PrimaryWeaponUpgradeTracks::from_legacy_level(9));
         world.insert_resource(SecondaryWeaponLevel { level: 9 });
         world.insert_resource(IonCannonLevel { level: 9 });
 
@@ -988,10 +1096,11 @@ mod tests {
         let loadout = world.resource::<CampaignLoadout>();
         assert_eq!(loadout.secondary, CampaignSecondaryWeapon::Missile);
 
-        let primary_level = world.resource::<PrimaryWeaponLevel>();
+        let primary_tracks = world.resource::<PrimaryWeaponUpgradeTracks>();
         let secondary_level = world.resource::<SecondaryWeaponLevel>();
         let ion_level = world.resource::<IonCannonLevel>();
-        assert_eq!(primary_level.level, 1);
+        assert_eq!(primary_tracks.chip_level, 2);
+        assert_eq!(primary_tracks.destroy_level, 3);
         assert_eq!(secondary_level.level, 2);
         assert_eq!(ion_level.level, 3);
     }

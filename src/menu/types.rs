@@ -240,9 +240,13 @@ pub struct OreShopHealText;
 #[derive(Component)]
 pub struct OreShopMissileText;
 
-/// Tags the "BUY UPGRADE" button inside the unified ore shop.
+/// Tags the primary chip-track upgrade button in the ore shop.
 #[derive(Component)]
-pub struct OreShopUpgradeButton;
+pub struct OreShopChipUpgradeButton;
+
+/// Tags the primary destroy-track upgrade button in the ore shop.
+#[derive(Component)]
+pub struct OreShopDestroyUpgradeButton;
 
 /// Tags the missile upgrade button in the ore shop.
 #[derive(Component)]

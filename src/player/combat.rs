@@ -12,8 +12,9 @@
 //!
 //! ## Chip fragment size (primary weapon only)
 //!
-//! A level-L primary weapon can chip off a fragment of size 1 through L on each
-//! hit.  The actual size is chosen uniformly at random in `[1, min(L, floor(n/2))]`
+//! The primary **chip track** level L can chip off a fragment of size 1 through L
+//! on each hit. The actual size is chosen uniformly at random in
+//! `[1, min(L, floor(n/2))]`
 //! so a chip can never remove more than half the target's mass.
 //!
 //! ## Mass → shape rules for split/chip fragments
@@ -31,7 +32,7 @@
 use super::state::{
     AimDirection, AimIdleTimer, CampaignLoadout, CampaignSecondaryWeapon, Missile, MissileAmmo,
     MissileCooldown, Player, PlayerFireCooldown, PlayerHealth, PlayerLives, PlayerScore,
-    PreferredGamepad, PrimaryWeaponLevel, Projectile,
+    PreferredGamepad, PrimaryWeaponUpgradeTracks, Projectile,
 };
 use crate::asteroid::{
     apply_crater_deformation, canonical_vertices_for_mass, rescale_vertices_to_area,
@@ -784,7 +785,7 @@ pub fn projectile_asteroid_hit_system(
     mut stats: ResMut<crate::simulation::SimulationStats>,
     mut score: ResMut<PlayerScore>,
     config: Res<PhysicsConfig>,
-    weapon_level: Res<PrimaryWeaponLevel>,
+    weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
 ) {
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
     let mut processed_projectiles: std::collections::HashSet<Entity> = Default::default();
@@ -853,7 +854,7 @@ pub fn projectile_asteroid_hit_system(
         // Unified impact direction for particle effects (projectile → asteroid).
         let impact_dir = (pos - proj_pos).normalize_or_zero();
 
-        let destroy_threshold = weapon_level.max_destroy_size();
+        let destroy_threshold = weapon_tracks.max_destroy_size();
 
         // ── Level-gated full destroy ──────────────────────────────────────────
         // The primary weapon fully eliminates asteroids up to `max_destroy_size`.
@@ -892,8 +893,8 @@ pub fn projectile_asteroid_hit_system(
             let chip_dir = (chip_pos - pos).normalize_or_zero();
             let mut rng = rand::thread_rng();
 
-            // Chip size scales with weapon level: level L can chip 1..=min(L, n/2).
-            let max_chip_size = weapon_level.display_level().min(n / 2).max(1);
+            // Chip size scales with chip-track level: level L can chip 1..=min(L, n/2).
+            let max_chip_size = weapon_tracks.max_chip_size().min(n / 2).max(1);
             let chip_size = if max_chip_size <= 1 {
                 1u32
             } else {

@@ -16,7 +16,8 @@ use crate::particles::{
 };
 use crate::player::state::{Missile, Projectile};
 use crate::player::{
-    Player, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponLevel, SecondaryWeaponLevel,
+    Player, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponUpgradeTracks,
+    SecondaryWeaponLevel,
 };
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -1162,8 +1163,8 @@ fn apply_enemy_damage(
     }
 }
 
-fn projectile_damage_vs_enemy(config: &PhysicsConfig, level: &PrimaryWeaponLevel) -> f32 {
-    config.enemy_damage_from_player_projectile * (1.0 + 0.35 * level.level as f32)
+fn projectile_damage_vs_enemy(config: &PhysicsConfig, tracks: &PrimaryWeaponUpgradeTracks) -> f32 {
+    config.enemy_damage_from_player_projectile * (1.0 + 0.35 * tracks.chip_level as f32)
 }
 
 fn missile_damage_vs_enemy(config: &PhysicsConfig, level: &SecondaryWeaponLevel) -> f32 {
@@ -1227,7 +1228,7 @@ fn apply_blaster_like_asteroid_hit(
     velocity: &Velocity,
     vertices: &Vertices,
     proj_pos: Vec2,
-    weapon_level: &PrimaryWeaponLevel,
+    weapon_tracks: &PrimaryWeaponUpgradeTracks,
     config: &PhysicsConfig,
     stats: &mut crate::simulation::SimulationStats,
 ) {
@@ -1244,7 +1245,7 @@ fn apply_blaster_like_asteroid_hit(
         .collect();
 
     let impact_dir = (pos - proj_pos).normalize_or_zero();
-    let destroy_threshold = weapon_level.max_destroy_size();
+    let destroy_threshold = weapon_tracks.max_destroy_size();
 
     if n <= destroy_threshold {
         commands.entity(asteroid_entity).despawn();
@@ -1277,7 +1278,7 @@ fn apply_blaster_like_asteroid_hit(
     let chip_dir = (chip_pos - pos).normalize_or_zero();
     let mut rng = rand::thread_rng();
 
-    let max_chip_size = weapon_level.display_level().min(n / 2).max(1);
+    let max_chip_size = weapon_tracks.max_chip_size().min(n / 2).max(1);
     let chip_size = if max_chip_size <= 1 {
         1u32
     } else {
@@ -1429,7 +1430,7 @@ fn enemy_damage_from_player_weapons_system(
     mut q_projectiles: Query<(&Transform, &mut Projectile)>,
     q_missiles: Query<&Transform, With<Missile>>,
     mut score: ResMut<PlayerScore>,
-    weapon_level: Res<PrimaryWeaponLevel>,
+    weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
     missile_level: Res<SecondaryWeaponLevel>,
     wave_director: Option<Res<CampaignWaveDirector>>,
     config: Res<PhysicsConfig>,
@@ -1459,7 +1460,7 @@ fn enemy_damage_from_player_weapons_system(
             let proj_pos = projectile_transform.translation.truncate();
             spawn_impact_particles(&mut commands, proj_pos, Vec2::ZERO, Vec2::ZERO);
             *damage_by_enemy.entry(enemy_entity).or_default() +=
-                projectile_damage_vs_enemy(&config, &weapon_level);
+                projectile_damage_vs_enemy(&config, &weapon_tracks);
             continue;
         }
 
@@ -1642,7 +1643,7 @@ fn enemy_projectile_hit_system(
     mut lives: ResMut<PlayerLives>,
     mut score: ResMut<PlayerScore>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
-    weapon_level: Res<PrimaryWeaponLevel>,
+    weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
     mut next_state: ResMut<NextState<GameState>>,
     config: Res<PhysicsConfig>,
 ) {
@@ -1696,7 +1697,7 @@ fn enemy_projectile_hit_system(
                 velocity,
                 vertices,
                 proj_pos,
-                &weapon_level,
+                &weapon_tracks,
                 &config,
                 &mut stats,
             );
@@ -1920,7 +1921,7 @@ mod tests {
         app.insert_resource(PhysicsConfig::default());
         app.insert_resource(PlayerScore::default());
         app.insert_resource(PlayerLives::default());
-        app.insert_resource(PrimaryWeaponLevel::default());
+        app.insert_resource(PrimaryWeaponUpgradeTracks::default());
         app.insert_resource(SecondaryWeaponLevel::default());
         app.insert_resource(SimulationStats::default());
         app
@@ -2206,7 +2207,10 @@ mod tests {
     #[test]
     fn missile_damage_is_higher_than_projectile_damage() {
         let cfg = PhysicsConfig::default();
-        let primary = PrimaryWeaponLevel { level: 0 };
+        let primary = PrimaryWeaponUpgradeTracks {
+            chip_level: 0,
+            destroy_level: 0,
+        };
         let secondary = SecondaryWeaponLevel { level: 0 };
         let proj = projectile_damage_vs_enemy(&cfg, &primary);
         let missile = missile_damage_vs_enemy(&cfg, &secondary);
@@ -2216,8 +2220,20 @@ mod tests {
     #[test]
     fn player_weapon_damage_scales_with_levels() {
         let cfg = PhysicsConfig::default();
-        let p0 = projectile_damage_vs_enemy(&cfg, &PrimaryWeaponLevel { level: 0 });
-        let p5 = projectile_damage_vs_enemy(&cfg, &PrimaryWeaponLevel { level: 5 });
+        let p0 = projectile_damage_vs_enemy(
+            &cfg,
+            &PrimaryWeaponUpgradeTracks {
+                chip_level: 0,
+                destroy_level: 0,
+            },
+        );
+        let p5 = projectile_damage_vs_enemy(
+            &cfg,
+            &PrimaryWeaponUpgradeTracks {
+                chip_level: 5,
+                destroy_level: 0,
+            },
+        );
         let m0 = missile_damage_vs_enemy(&cfg, &SecondaryWeaponLevel { level: 0 });
         let m5 = missile_damage_vs_enemy(&cfg, &SecondaryWeaponLevel { level: 5 });
 

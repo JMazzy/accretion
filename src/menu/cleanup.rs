@@ -89,7 +89,7 @@ pub fn cleanup_game_world(
     commands.insert_resource(crate::campaign::CampaignWaveDirector::default());
     commands.insert_resource(crate::campaign::CampaignProgressionState::default());
     // Reset upgrades so a new session starts fresh.
-    commands.insert_resource(PrimaryWeaponLevel::default());
+    commands.insert_resource(PrimaryWeaponUpgradeTracks::from_legacy_level(0));
     commands.insert_resource(SecondaryWeaponLevel::default());
     commands.insert_resource(OreAffinityLevel::default());
     commands.insert_resource(TractorBeamLevel::default());
