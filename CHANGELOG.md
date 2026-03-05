@@ -1,5 +1,41 @@
 # Accretion Changelog
 
+## P0 Completion: Sub-Chip Rule + Fire-Rate Track + Primary Roster Foundation — March 4, 2026
+
+### Completed all remaining P0 backlog items for primary weapon progression
+
+**What changed**:
+- Completed split-primary edge-case behavior in runtime hit systems:
+  - added sub-chip fragmentation rule in `src/player/combat.rs` and `src/enemy.rs` so asteroids above destroy threshold but within chip cap now fragment into unit asteroids instead of taking direct ore-conversion paths.
+- Added dedicated primary fire-rate upgrade track:
+  - new `PrimaryWeaponFireRateLevel` resource in `src/player/state.rs` with cost/upgrade helpers and cooldown scaling,
+  - `projectile_fire_system` now applies fire-rate scaling to primary cooldown,
+  - ore shop now includes `UPGRADE FIRE RATE` in `src/menu/ore_shop.rs`,
+  - HUD blaster row in `src/rendering.rs` now displays destroy/chip/fire-rate progression,
+  - persistence wired in `src/save.rs` (`primary_weapon_fire_rate_level`) across save/load, campaign slots, autosave, and migration.
+- Added primary weapon roster foundation routing:
+  - expanded `CampaignPrimaryWeapon` variants to `Blaster`, `MiningLaser`, and `PlasmaRifle` in `src/player/state.rs`,
+  - primary runtime consumers now route by selected primary type (with parity behavior preserved for blaster baseline).
+- Updated docs and planning artifacts:
+  - marked all P0 items complete in `BACKLOG.md`,
+  - updated `FEATURES.md` and `ARCHITECTURE.md` for new tracks/rules/schema.
+
+**Validation**:
+- `cargo fmt` ✅
+- `cargo check` ✅
+- `cargo clippy -- -D warnings` ✅
+- `cargo build` ✅
+- `cargo build --release` ✅
+- `cargo test primary_split_tracks -- --nocapture` ✅
+- `cargo test primary_fire_rate_level_scales_cooldown_and_cost -- --nocapture` ✅
+- `cargo test save_campaign_slot_ -- --nocapture` ✅
+- `cargo test migrate_v1_ -- --nocapture` ✅
+- `cargo test apply_pending_loaded_campaign_overwrites_levels_and_loadout -- --nocapture` ✅
+- `cargo test player_weapon_damage_scales_with_levels -- --nocapture` ✅
+
+**Impact**:
+- Primary progression now supports independent destroy/chip/fire-rate growth with persistence, sub-chip edge-case fragmentation behavior, and a routed primary-weapon foundation for upcoming weapon-specific implementations.
+
 ## P0: Split Primary Tracks Wiring (Persistence + Ore Shop) — March 5, 2026
 
 ### Added campaign persistence and split upgrade controls for primary destroy/chip tracks

@@ -15,6 +15,7 @@ fn spawn_ore_shop_overlay(
     ammo: u32,
     ammo_max: u32,
     weapon_tracks: &PrimaryWeaponUpgradeTracks,
+    fire_rate_level: &PrimaryWeaponFireRateLevel,
     missile_level: &SecondaryWeaponLevel,
     magnet_level: &OreAffinityLevel,
     tractor_level: &TractorBeamLevel,
@@ -223,6 +224,8 @@ fn spawn_ore_shop_overlay(
                                     && weapon_tracks.can_afford_next_destroy(ore);
                                 let can_upgrade_chip = !weapon_tracks.is_chip_maxed()
                                     && weapon_tracks.can_afford_next_chip(ore);
+                                let can_upgrade_rate = !fire_rate_level.is_maxed()
+                                    && fire_rate_level.can_afford_next(ore);
 
                                 let destroy_btn_bg = if can_upgrade_destroy {
                                     shop_buy_bg()
@@ -254,6 +257,21 @@ fn spawn_ore_shop_overlay(
                                 } else {
                                     Color::srgb(0.40, 0.40, 0.40)
                                 };
+                                let rate_btn_bg = if can_upgrade_rate {
+                                    shop_buy_bg()
+                                } else {
+                                    Color::srgb(0.14, 0.14, 0.14)
+                                };
+                                let rate_btn_border = if can_upgrade_rate {
+                                    shop_buy_border()
+                                } else {
+                                    Color::srgb(0.28, 0.28, 0.28)
+                                };
+                                let rate_btn_text_color = if can_upgrade_rate {
+                                    shop_buy_text()
+                                } else {
+                                    Color::srgb(0.40, 0.40, 0.40)
+                                };
 
                                 let destroy_upg_label = if weapon_tracks.is_destroy_maxed() {
                                     "— MAX LEVEL —".to_string()
@@ -268,6 +286,12 @@ fn spawn_ore_shop_overlay(
                                     let cost =
                                         weapon_tracks.cost_for_next_chip_level().unwrap_or(0);
                                     format!("UPGRADE CHIP ({cost} 💎)")
+                                };
+                                let rate_upg_label = if fire_rate_level.is_maxed() {
+                                    "— MAX LEVEL —".to_string()
+                                } else {
+                                    let cost = fire_rate_level.cost_for_next_level().unwrap_or(0);
+                                    format!("UPGRADE FIRE RATE ({cost} 💎)")
                                 };
 
                                 let destroy_status = if weapon_tracks.is_destroy_maxed() {
@@ -292,6 +316,16 @@ fn spawn_ore_shop_overlay(
                                         format!("Chip needs {cost} 💎")
                                     }
                                 };
+                                let rate_status = if fire_rate_level.is_maxed() {
+                                    "FIRE-RATE TRACK: MAX LEVEL REACHED".to_string()
+                                } else {
+                                    let cost = fire_rate_level.cost_for_next_level().unwrap_or(0);
+                                    if can_upgrade_rate {
+                                        format!("Fire-rate cost: {cost} 💎")
+                                    } else {
+                                        format!("Fire-rate needs {cost} 💎")
+                                    }
+                                };
 
                                 let destroy_text = format!(
                                     "Destroy Lv {} / {}  (size ≤ {})",
@@ -304,6 +338,12 @@ fn spawn_ore_shop_overlay(
                                     weapon_tracks.chip_display_level(),
                                     crate::constants::PRIMARY_WEAPON_MAX_LEVEL,
                                     weapon_tracks.max_chip_size()
+                                );
+                                let rate_text = format!(
+                                    "Rate Lv {} / {}  ({:.2}x)",
+                                    fire_rate_level.display_level(),
+                                    crate::constants::PRIMARY_WEAPON_MAX_LEVEL,
+                                    fire_rate_level.fire_rate_multiplier()
                                 );
 
                                 card_col.spawn((
@@ -332,6 +372,15 @@ fn spawn_ore_shop_overlay(
                                         ..default()
                                     },
                                     TextColor(Color::srgb(0.55, 0.65, 0.60)),
+                                ));
+                                card_col.spawn((
+                                    Text::new(rate_text),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 12.0,
+                                        ..default()
+                                    },
+                                    TextColor(Color::srgb(0.65, 0.60, 0.80)),
                                 ));
                                 card_col.spawn((
                                     Text::new(destroy_status),
@@ -414,6 +463,48 @@ fn spawn_ore_shop_overlay(
                                                 ..default()
                                             },
                                             TextColor(chip_btn_text_color),
+                                        ));
+                                    });
+
+                                card_col.spawn((
+                                    Text::new(rate_status),
+                                    TextFont {
+                                        font: font.0.clone(),
+                                        font_size: 13.0,
+                                        ..default()
+                                    },
+                                    TextColor(if fire_rate_level.is_maxed() {
+                                        Color::srgb(0.90, 0.80, 0.30)
+                                    } else if can_upgrade_rate {
+                                        Color::srgb(0.75, 0.90, 0.75)
+                                    } else {
+                                        Color::srgb(0.75, 0.40, 0.40)
+                                    }),
+                                ));
+                                card_col
+                                    .spawn((
+                                        Button,
+                                        Node {
+                                            width: Val::Percent(100.0),
+                                            height: Val::Px(42.0),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            border: UiRect::all(Val::Px(2.0)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(rate_btn_bg),
+                                        BorderColor::all(rate_btn_border),
+                                        OreShopFireRateUpgradeButton,
+                                    ))
+                                    .with_children(|btn| {
+                                        btn.spawn((
+                                            Text::new(rate_upg_label),
+                                            TextFont {
+                                                font: font.0.clone(),
+                                                font_size: 14.0,
+                                                ..default()
+                                            },
+                                            TextColor(rate_btn_text_color),
                                         ));
                                     });
                             });
@@ -1024,6 +1115,7 @@ pub fn setup_ore_shop(
     ammo: Res<MissileAmmo>,
     config: Res<PhysicsConfig>,
     weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
+    fire_rate_level: Res<PrimaryWeaponFireRateLevel>,
     missile_level: Res<SecondaryWeaponLevel>,
     magnet_level: Res<OreAffinityLevel>,
     tractor_level: Res<TractorBeamLevel>,
@@ -1044,6 +1136,7 @@ pub fn setup_ore_shop(
         ammo.count,
         config.missile_ammo_max,
         &weapon_tracks,
+        &fire_rate_level,
         &missile_level,
         &magnet_level,
         &tractor_level,
@@ -1075,6 +1168,7 @@ pub fn ore_shop_button_system(
     upgrade_queries: (
         Query<&Interaction, (Changed<Interaction>, With<OreShopDestroyUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopChipUpgradeButton>)>,
+        Query<&Interaction, (Changed<Interaction>, With<OreShopFireRateUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopMissileUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopMagnetUpgradeButton>)>,
         Query<&Interaction, (Changed<Interaction>, With<OreShopTractorUpgradeButton>)>,
@@ -1087,6 +1181,7 @@ pub fn ore_shop_button_system(
     config: Res<PhysicsConfig>,
     levels: (
         ResMut<PrimaryWeaponUpgradeTracks>,
+        ResMut<PrimaryWeaponFireRateLevel>,
         ResMut<SecondaryWeaponLevel>,
         ResMut<OreAffinityLevel>,
         ResMut<TractorBeamLevel>,
@@ -1100,13 +1195,20 @@ pub fn ore_shop_button_system(
     let (
         destroy_upgrade_query,
         chip_upgrade_query,
+        fire_rate_upgrade_query,
         missile_upgrade_query,
         magnet_upgrade_query,
         tractor_upgrade_query,
         ion_upgrade_query,
     ) = upgrade_queries;
-    let (mut weapon_tracks, mut missile_level, mut magnet_level, mut tractor_level, mut ion_level) =
-        levels;
+    let (
+        mut weapon_tracks,
+        mut fire_rate_level,
+        mut missile_level,
+        mut magnet_level,
+        mut tractor_level,
+        mut ion_level,
+    ) = levels;
 
     // ── Close (ESC / Tab / button) ────────────────────────────────────────────
     let wants_close = keys.just_pressed(KeyCode::Escape)
@@ -1147,6 +1249,7 @@ pub fn ore_shop_button_system(
                     ammo_count,
                     ammo_max,
                     &weapon_tracks,
+                    &fire_rate_level,
                     &missile_level,
                     &magnet_level,
                     &tractor_level,
@@ -1184,6 +1287,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_tracks,
+            &fire_rate_level,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1220,6 +1324,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_tracks,
+            &fire_rate_level,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1256,6 +1361,44 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_tracks,
+            &fire_rate_level,
+            &missile_level,
+            &magnet_level,
+            &tractor_level,
+            &ion_level,
+            &font,
+        );
+        return;
+    }
+
+    // ── Primary fire-rate upgrade ───────────────────────────────────────────
+    let fire_rate_upgrade_pressed = fire_rate_upgrade_query
+        .iter()
+        .any(|i| *i == Interaction::Pressed);
+    if fire_rate_upgrade_pressed {
+        fire_rate_level.try_upgrade(&mut ore.count);
+        let (hp, max_hp) = q_health
+            .single()
+            .map(|h| (h.hp, h.max_hp))
+            .unwrap_or((config.player_max_hp, config.player_max_hp));
+        let ore_count = ore.count;
+        let ammo_count = ammo.count;
+        let heal_amount = config.ore_heal_amount;
+        let ammo_max = config.missile_ammo_max;
+        for entity in shop_root_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        spawn_ore_shop_overlay(
+            &mut commands,
+            &config,
+            ore_count,
+            hp,
+            max_hp,
+            heal_amount,
+            ammo_count,
+            ammo_max,
+            &weapon_tracks,
+            &fire_rate_level,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1291,6 +1434,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_tracks,
+            &fire_rate_level,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1326,6 +1470,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_tracks,
+            &fire_rate_level,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1361,6 +1506,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_tracks,
+            &fire_rate_level,
             &missile_level,
             &magnet_level,
             &tractor_level,
@@ -1394,6 +1540,7 @@ pub fn ore_shop_button_system(
             ammo_count,
             ammo_max,
             &weapon_tracks,
+            &fire_rate_level,
             &missile_level,
             &magnet_level,
             &tractor_level,

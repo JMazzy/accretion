@@ -9,15 +9,15 @@ use crate::campaign::{
     campaign_progression_stage, CampaignSession, CampaignWaveDirector, CampaignWavePhase,
 };
 use crate::config::PhysicsConfig;
-use crate::menu::GameState;
+use crate::menu::{GameState, SelectedGameMode};
 use crate::mining::spawn_ore_drop;
 use crate::particles::{
     spawn_debris_particles, spawn_impact_particles, spawn_ship_thrust_particles,
 };
 use crate::player::state::{Missile, Projectile};
 use crate::player::{
-    Player, PlayerHealth, PlayerLives, PlayerScore, PrimaryWeaponUpgradeTracks,
-    SecondaryWeaponLevel,
+    CampaignLoadout, CampaignPrimaryWeapon, Player, PlayerHealth, PlayerLives, PlayerScore,
+    PrimaryWeaponUpgradeTracks, SecondaryWeaponLevel,
 };
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
@@ -1163,8 +1163,22 @@ fn apply_enemy_damage(
     }
 }
 
-fn projectile_damage_vs_enemy(config: &PhysicsConfig, tracks: &PrimaryWeaponUpgradeTracks) -> f32 {
-    config.enemy_damage_from_player_projectile * (1.0 + 0.35 * tracks.chip_level as f32)
+fn projectile_damage_vs_enemy(
+    config: &PhysicsConfig,
+    primary_weapon: CampaignPrimaryWeapon,
+    tracks: &PrimaryWeaponUpgradeTracks,
+) -> f32 {
+    match primary_weapon {
+        CampaignPrimaryWeapon::Blaster => {
+            config.enemy_damage_from_player_projectile * (1.0 + 0.35 * tracks.chip_level as f32)
+        }
+        CampaignPrimaryWeapon::MiningLaser => {
+            config.enemy_damage_from_player_projectile * (1.0 + 0.35 * tracks.chip_level as f32)
+        }
+        CampaignPrimaryWeapon::PlasmaRifle => {
+            config.enemy_damage_from_player_projectile * (1.0 + 0.35 * tracks.chip_level as f32)
+        }
+    }
 }
 
 fn missile_damage_vs_enemy(config: &PhysicsConfig, level: &SecondaryWeaponLevel) -> f32 {
@@ -1219,6 +1233,43 @@ fn spawn_fragment_of_mass(
     });
 }
 
+#[inline]
+fn active_primary_weapon(
+    mode: SelectedGameMode,
+    loadout: &CampaignLoadout,
+) -> CampaignPrimaryWeapon {
+    if mode == SelectedGameMode::Campaign {
+        loadout.primary
+    } else {
+        CampaignPrimaryWeapon::Blaster
+    }
+}
+
+#[inline]
+fn primary_destroy_threshold(
+    primary: CampaignPrimaryWeapon,
+    tracks: &PrimaryWeaponUpgradeTracks,
+) -> u32 {
+    match primary {
+        CampaignPrimaryWeapon::Blaster => tracks.max_destroy_size(),
+        CampaignPrimaryWeapon::MiningLaser => tracks.max_destroy_size(),
+        CampaignPrimaryWeapon::PlasmaRifle => tracks.max_destroy_size(),
+    }
+}
+
+#[inline]
+fn primary_max_chip_size(
+    primary: CampaignPrimaryWeapon,
+    tracks: &PrimaryWeaponUpgradeTracks,
+    target_mass: u32,
+) -> u32 {
+    match primary {
+        CampaignPrimaryWeapon::Blaster => tracks.max_chip_size().min(target_mass / 2).max(1),
+        CampaignPrimaryWeapon::MiningLaser => tracks.max_chip_size().min(target_mass / 2).max(1),
+        CampaignPrimaryWeapon::PlasmaRifle => tracks.max_chip_size().min(target_mass / 2).max(1),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn apply_blaster_like_asteroid_hit(
     commands: &mut Commands,
@@ -1228,6 +1279,7 @@ fn apply_blaster_like_asteroid_hit(
     velocity: &Velocity,
     vertices: &Vertices,
     proj_pos: Vec2,
+    primary_weapon: CampaignPrimaryWeapon,
     weapon_tracks: &PrimaryWeaponUpgradeTracks,
     config: &PhysicsConfig,
     stats: &mut crate::simulation::SimulationStats,
@@ -1245,7 +1297,7 @@ fn apply_blaster_like_asteroid_hit(
         .collect();
 
     let impact_dir = (pos - proj_pos).normalize_or_zero();
-    let destroy_threshold = weapon_tracks.max_destroy_size();
+    let destroy_threshold = primary_destroy_threshold(primary_weapon, weapon_tracks);
 
     if n <= destroy_threshold {
         commands.entity(asteroid_entity).despawn();
@@ -1259,6 +1311,29 @@ fn apply_blaster_like_asteroid_hit(
         }
         spawn_impact_particles(commands, proj_pos, impact_dir, vel);
         spawn_debris_particles(commands, pos, vel, n.max(1));
+        return;
+    }
+
+    if weapon_tracks.should_fragment_sub_chip_target(n) {
+        commands.entity(asteroid_entity).despawn();
+        stats.split_total += 1;
+
+        for i in 0..n {
+            let angle = std::f32::consts::TAU * (i as f32 / n as f32);
+            let dir = Vec2::new(angle.cos(), angle.sin());
+            let spawn_pos = pos + dir * 9.0;
+            let spawn_vel = vel + dir * 24.0;
+            spawn_fragment_of_mass(
+                commands,
+                spawn_pos,
+                spawn_vel,
+                ang_vel,
+                config.asteroid_density,
+                1,
+            );
+        }
+
+        spawn_debris_particles(commands, pos, vel, n.min(6));
         return;
     }
 
@@ -1278,7 +1353,7 @@ fn apply_blaster_like_asteroid_hit(
     let chip_dir = (chip_pos - pos).normalize_or_zero();
     let mut rng = rand::thread_rng();
 
-    let max_chip_size = weapon_tracks.max_chip_size().min(n / 2).max(1);
+    let max_chip_size = primary_max_chip_size(primary_weapon, weapon_tracks, n);
     let chip_size = if max_chip_size <= 1 {
         1u32
     } else {
@@ -1431,10 +1506,13 @@ fn enemy_damage_from_player_weapons_system(
     q_missiles: Query<&Transform, With<Missile>>,
     mut score: ResMut<PlayerScore>,
     weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
+    selected_mode: Res<SelectedGameMode>,
+    campaign_loadout: Res<CampaignLoadout>,
     missile_level: Res<SecondaryWeaponLevel>,
     wave_director: Option<Res<CampaignWaveDirector>>,
     config: Res<PhysicsConfig>,
 ) {
+    let primary_weapon = active_primary_weapon(*selected_mode, &campaign_loadout);
     let mut damage_by_enemy: HashMap<Entity, f32> = HashMap::default();
 
     for event in collision_events.read() {
@@ -1460,7 +1538,7 @@ fn enemy_damage_from_player_weapons_system(
             let proj_pos = projectile_transform.translation.truncate();
             spawn_impact_particles(&mut commands, proj_pos, Vec2::ZERO, Vec2::ZERO);
             *damage_by_enemy.entry(enemy_entity).or_default() +=
-                projectile_damage_vs_enemy(&config, &weapon_tracks);
+                projectile_damage_vs_enemy(&config, primary_weapon, &weapon_tracks);
             continue;
         }
 
@@ -1644,6 +1722,8 @@ fn enemy_projectile_hit_system(
     mut score: ResMut<PlayerScore>,
     mut stats: ResMut<crate::simulation::SimulationStats>,
     weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
+    selected_mode: Res<SelectedGameMode>,
+    campaign_loadout: Res<CampaignLoadout>,
     mut next_state: ResMut<NextState<GameState>>,
     config: Res<PhysicsConfig>,
 ) {
@@ -1653,6 +1733,7 @@ fn enemy_projectile_hit_system(
 
     let mut processed_projectiles: std::collections::HashSet<Entity> = Default::default();
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
+    let primary_weapon = active_primary_weapon(*selected_mode, &campaign_loadout);
 
     for event in collision_events.read() {
         let (e1, e2) = match event {
@@ -1697,6 +1778,7 @@ fn enemy_projectile_hit_system(
                 velocity,
                 vertices,
                 proj_pos,
+                primary_weapon,
                 &weapon_tracks,
                 &config,
                 &mut stats,
@@ -2212,7 +2294,7 @@ mod tests {
             destroy_level: 0,
         };
         let secondary = SecondaryWeaponLevel { level: 0 };
-        let proj = projectile_damage_vs_enemy(&cfg, &primary);
+        let proj = projectile_damage_vs_enemy(&cfg, CampaignPrimaryWeapon::Blaster, &primary);
         let missile = missile_damage_vs_enemy(&cfg, &secondary);
         assert!(missile > proj);
     }
@@ -2222,6 +2304,7 @@ mod tests {
         let cfg = PhysicsConfig::default();
         let p0 = projectile_damage_vs_enemy(
             &cfg,
+            CampaignPrimaryWeapon::Blaster,
             &PrimaryWeaponUpgradeTracks {
                 chip_level: 0,
                 destroy_level: 0,
@@ -2229,6 +2312,7 @@ mod tests {
         );
         let p5 = projectile_damage_vs_enemy(
             &cfg,
+            CampaignPrimaryWeapon::Blaster,
             &PrimaryWeaponUpgradeTracks {
                 chip_level: 5,
                 destroy_level: 0,

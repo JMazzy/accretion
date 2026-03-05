@@ -89,6 +89,8 @@ pub struct MissileAmmo {
 pub enum CampaignPrimaryWeapon {
     #[default]
     Blaster,
+    MiningLaser,
+    PlasmaRifle,
 }
 
 impl CampaignPrimaryWeapon {
@@ -96,6 +98,8 @@ impl CampaignPrimaryWeapon {
     pub fn label(self) -> &'static str {
         match self {
             Self::Blaster => "BLASTER",
+            Self::MiningLaser => "MINING LASER",
+            Self::PlasmaRifle => "PLASMA RIFLE",
         }
     }
 }
@@ -427,6 +431,15 @@ impl PrimaryWeaponUpgradeTracks {
         self.destroy_level.min(Self::MAX) + 1
     }
 
+    /// Returns `true` when a target should use the sub-chip fragmentation rule.
+    ///
+    /// This applies when the asteroid is too large for the destroy track but
+    /// still small enough to be fully consumed by the current chip track.
+    #[inline]
+    pub fn should_fragment_sub_chip_target(&self, size: u32) -> bool {
+        size > self.max_destroy_size() && size <= self.max_chip_size()
+    }
+
     #[inline]
     pub fn is_chip_maxed(&self) -> bool {
         self.chip_level >= Self::MAX
@@ -484,6 +497,68 @@ impl PrimaryWeaponUpgradeTracks {
         }
         *ore -= cost;
         self.destroy_level += 1;
+        Some(cost)
+    }
+}
+
+/// Primary weapon fire-rate upgrade level.
+///
+/// Level increases scale effective primary fire rate (inverse cooldown)
+/// independently from chip/destroy tracks.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct PrimaryWeaponFireRateLevel {
+    /// Internal 0-indexed level (0 = Level 1 / base, 9 = Level 10 / max).
+    pub level: u32,
+}
+
+impl PrimaryWeaponFireRateLevel {
+    /// Maximum internal level value (inclusive).
+    pub const MAX: u32 = PRIMARY_WEAPON_MAX_LEVEL - 1;
+
+    /// Human-readable display level (1-indexed).
+    #[inline]
+    pub fn display_level(&self) -> u32 {
+        self.level.min(Self::MAX) + 1
+    }
+
+    /// Multiplicative fire-rate factor (1.0 at base, +10% per level).
+    #[inline]
+    pub fn fire_rate_multiplier(&self) -> f32 {
+        1.0 + 0.10 * self.level.min(Self::MAX) as f32
+    }
+
+    /// Cooldown (seconds) after applying fire-rate scaling.
+    #[inline]
+    pub fn scaled_cooldown(&self, base_cooldown: f32) -> f32 {
+        base_cooldown / self.fire_rate_multiplier()
+    }
+
+    #[inline]
+    pub fn is_maxed(&self) -> bool {
+        self.level >= Self::MAX
+    }
+
+    #[inline]
+    pub fn cost_for_next_level(&self) -> Option<u32> {
+        if self.is_maxed() {
+            None
+        } else {
+            Some(WEAPON_UPGRADE_BASE_COST * (self.level + 2))
+        }
+    }
+
+    #[inline]
+    pub fn can_afford_next(&self, ore: u32) -> bool {
+        self.cost_for_next_level().is_some_and(|cost| ore >= cost)
+    }
+
+    pub fn try_upgrade(&mut self, ore: &mut u32) -> Option<u32> {
+        let cost = self.cost_for_next_level()?;
+        if *ore < cost {
+            return None;
+        }
+        *ore -= cost;
+        self.level += 1;
         Some(cost)
     }
 }
@@ -821,6 +896,31 @@ mod tests {
         let destroy_cost = tracks.try_upgrade_destroy(&mut ore);
         assert_eq!(destroy_cost, None);
         assert_eq!(tracks.destroy_level, 0);
+    }
+
+    #[test]
+    fn primary_split_tracks_sub_chip_fragment_rule_gates_correctly() {
+        let tracks = PrimaryWeaponUpgradeTracks {
+            chip_level: 4,
+            destroy_level: 0,
+        };
+
+        assert!(!tracks.should_fragment_sub_chip_target(1));
+        assert!(tracks.should_fragment_sub_chip_target(2));
+        assert!(tracks.should_fragment_sub_chip_target(5));
+        assert!(!tracks.should_fragment_sub_chip_target(6));
+    }
+
+    #[test]
+    fn primary_fire_rate_level_scales_cooldown_and_cost() {
+        let mut fire_rate = PrimaryWeaponFireRateLevel::default();
+        let base = 0.20;
+        assert!((fire_rate.scaled_cooldown(base) - base).abs() < 1e-6);
+        assert_eq!(fire_rate.cost_for_next_level(), Some(10));
+
+        fire_rate.level = 4;
+        assert!(fire_rate.scaled_cooldown(base) < base);
+        assert_eq!(fire_rate.display_level(), 5);
     }
 }
 

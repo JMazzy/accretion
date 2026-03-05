@@ -248,6 +248,10 @@ pub struct OreShopChipUpgradeButton;
 #[derive(Component)]
 pub struct OreShopDestroyUpgradeButton;
 
+/// Tags the primary fire-rate upgrade button in the ore shop.
+#[derive(Component)]
+pub struct OreShopFireRateUpgradeButton;
+
 /// Tags the missile upgrade button in the ore shop.
 #[derive(Component)]
 pub struct OreShopMissileUpgradeButton;

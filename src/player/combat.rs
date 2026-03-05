@@ -30,9 +30,10 @@
 //! | ≥ 6           | hexagon    | 6            |
 
 use super::state::{
-    AimDirection, AimIdleTimer, CampaignLoadout, CampaignSecondaryWeapon, Missile, MissileAmmo,
-    MissileCooldown, Player, PlayerFireCooldown, PlayerHealth, PlayerLives, PlayerScore,
-    PreferredGamepad, PrimaryWeaponUpgradeTracks, Projectile,
+    AimDirection, AimIdleTimer, CampaignLoadout, CampaignPrimaryWeapon, CampaignSecondaryWeapon,
+    Missile, MissileAmmo, MissileCooldown, Player, PlayerFireCooldown, PlayerHealth, PlayerLives,
+    PlayerScore, PreferredGamepad, PrimaryWeaponFireRateLevel, PrimaryWeaponUpgradeTracks,
+    Projectile,
 };
 use crate::asteroid::{
     apply_crater_deformation, canonical_vertices_for_mass, rescale_vertices_to_area,
@@ -59,6 +60,69 @@ use helpers::{
     normalized_fragment_hull, polygon_area, split_convex_polygon_world,
 };
 
+#[derive(Clone, Copy)]
+struct PrimaryProjectileProfile {
+    cooldown_secs: f32,
+    projectile_speed: f32,
+    projectile_collider_radius: f32,
+}
+
+#[inline]
+fn primary_projectile_profile(
+    primary: CampaignPrimaryWeapon,
+    config: &PhysicsConfig,
+    fire_rate_level: &PrimaryWeaponFireRateLevel,
+) -> PrimaryProjectileProfile {
+    let base_cooldown = match primary {
+        CampaignPrimaryWeapon::Blaster => config.fire_cooldown,
+        CampaignPrimaryWeapon::MiningLaser => config.fire_cooldown,
+        CampaignPrimaryWeapon::PlasmaRifle => config.fire_cooldown,
+    };
+
+    let cooldown_secs = fire_rate_level.scaled_cooldown(base_cooldown);
+    let projectile_speed = match primary {
+        CampaignPrimaryWeapon::Blaster => config.projectile_speed,
+        CampaignPrimaryWeapon::MiningLaser => config.projectile_speed,
+        CampaignPrimaryWeapon::PlasmaRifle => config.projectile_speed,
+    };
+    let projectile_collider_radius = match primary {
+        CampaignPrimaryWeapon::Blaster => config.projectile_collider_radius,
+        CampaignPrimaryWeapon::MiningLaser => config.projectile_collider_radius,
+        CampaignPrimaryWeapon::PlasmaRifle => config.projectile_collider_radius,
+    };
+
+    PrimaryProjectileProfile {
+        cooldown_secs,
+        projectile_speed,
+        projectile_collider_radius,
+    }
+}
+
+#[inline]
+fn primary_destroy_threshold(
+    primary: CampaignPrimaryWeapon,
+    tracks: &PrimaryWeaponUpgradeTracks,
+) -> u32 {
+    match primary {
+        CampaignPrimaryWeapon::Blaster => tracks.max_destroy_size(),
+        CampaignPrimaryWeapon::MiningLaser => tracks.max_destroy_size(),
+        CampaignPrimaryWeapon::PlasmaRifle => tracks.max_destroy_size(),
+    }
+}
+
+#[inline]
+fn primary_max_chip_size(
+    primary: CampaignPrimaryWeapon,
+    tracks: &PrimaryWeaponUpgradeTracks,
+    target_mass: u32,
+) -> u32 {
+    match primary {
+        CampaignPrimaryWeapon::Blaster => tracks.max_chip_size().min(target_mass / 2).max(1),
+        CampaignPrimaryWeapon::MiningLaser => tracks.max_chip_size().min(target_mass / 2).max(1),
+        CampaignPrimaryWeapon::PlasmaRifle => tracks.max_chip_size().min(target_mass / 2).max(1),
+    }
+}
+
 // ── Projectile firing ─────────────────────────────────────────────────────────
 
 /// Unified fire system: handles Space / left-click (keyboard+mouse) and the
@@ -76,7 +140,10 @@ pub fn projectile_fire_system(
     gamepads: Query<&Gamepad>,
     mut aim: ResMut<AimDirection>,
     mut cooldown: ResMut<PlayerFireCooldown>,
+    fire_rate_level: Res<PrimaryWeaponFireRateLevel>,
     mut idle: ResMut<AimIdleTimer>,
+    selected_mode: Res<SelectedGameMode>,
+    campaign_loadout: Res<CampaignLoadout>,
     time: Res<Time>,
     config: Res<PhysicsConfig>,
 ) {
@@ -111,7 +178,14 @@ pub fn projectile_fire_system(
     if !(kb_fire || mouse_fire || gamepad_wants_fire) || cooldown.timer > 0.0 {
         return;
     }
-    cooldown.timer = config.fire_cooldown;
+
+    let active_primary = if *selected_mode == SelectedGameMode::Campaign {
+        campaign_loadout.primary
+    } else {
+        CampaignPrimaryWeapon::Blaster
+    };
+    let profile = primary_projectile_profile(active_primary, &config, &fire_rate_level);
+    cooldown.timer = profile.cooldown_secs;
 
     let fire_dir = if aim.0.length_squared() > 0.01 {
         aim.0.normalize_or_zero()
@@ -131,10 +205,10 @@ pub fn projectile_fire_system(
         Visibility::default(),
         RigidBody::KinematicVelocityBased,
         Velocity {
-            linvel: fire_dir * config.projectile_speed,
+            linvel: fire_dir * profile.projectile_speed,
             angvel: 0.0,
         },
-        Collider::ball(config.projectile_collider_radius),
+        Collider::ball(profile.projectile_collider_radius),
         // Sensor: detects collision events for game logic but generates no contact
         // forces.  Without this, Rapier 0.22+ kinematic bodies push dynamic
         // asteroids — transferring significant momentum like a physical projectile
@@ -786,7 +860,15 @@ pub fn projectile_asteroid_hit_system(
     mut score: ResMut<PlayerScore>,
     config: Res<PhysicsConfig>,
     weapon_tracks: Res<PrimaryWeaponUpgradeTracks>,
+    selected_mode: Res<SelectedGameMode>,
+    campaign_loadout: Res<CampaignLoadout>,
 ) {
+    let active_primary = if *selected_mode == SelectedGameMode::Campaign {
+        campaign_loadout.primary
+    } else {
+        CampaignPrimaryWeapon::Blaster
+    };
+
     let mut processed_asteroids: std::collections::HashSet<Entity> = Default::default();
     let mut processed_projectiles: std::collections::HashSet<Entity> = Default::default();
 
@@ -854,7 +936,7 @@ pub fn projectile_asteroid_hit_system(
         // Unified impact direction for particle effects (projectile → asteroid).
         let impact_dir = (pos - proj_pos).normalize_or_zero();
 
-        let destroy_threshold = weapon_tracks.max_destroy_size();
+        let destroy_threshold = primary_destroy_threshold(active_primary, &weapon_tracks);
 
         // ── Level-gated full destroy ──────────────────────────────────────────
         // The primary weapon fully eliminates asteroids up to `max_destroy_size`.
@@ -876,6 +958,29 @@ pub fn projectile_asteroid_hit_system(
             spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
             spawn_debris_particles(&mut commands, pos, vel, n.max(1));
         } else {
+            if weapon_tracks.should_fragment_sub_chip_target(n) {
+                commands.entity(asteroid_entity).despawn();
+                stats.split_total += 1;
+
+                for i in 0..n {
+                    let angle = std::f32::consts::TAU * (i as f32 / n as f32);
+                    let dir = Vec2::new(angle.cos(), angle.sin());
+                    let spawn_pos = pos + dir * 9.0;
+                    let spawn_vel = vel + dir * 24.0;
+                    spawn_fragment_of_mass(
+                        &mut commands,
+                        spawn_pos,
+                        spawn_vel,
+                        ang_vel,
+                        config.asteroid_density,
+                        1,
+                    );
+                }
+
+                spawn_debris_particles(&mut commands, pos, vel, n.min(6));
+                continue;
+            }
+
             // ── Chip: spawn fragment + inward local deformation ───────────────
             spawn_impact_particles(&mut commands, proj_pos, impact_dir, vel);
             let closest_idx = world_verts
@@ -894,7 +999,7 @@ pub fn projectile_asteroid_hit_system(
             let mut rng = rand::thread_rng();
 
             // Chip size scales with chip-track level: level L can chip 1..=min(L, n/2).
-            let max_chip_size = weapon_tracks.max_chip_size().min(n / 2).max(1);
+            let max_chip_size = primary_max_chip_size(active_primary, &weapon_tracks, n);
             let chip_size = if max_chip_size <= 1 {
                 1u32
             } else {

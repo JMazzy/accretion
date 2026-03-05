@@ -168,17 +168,26 @@ Ore consumables and upgrades are purchased from the **Ore Shop** overlay (open w
 
 ### Primary Weapon Upgrades
 
-The primary projectile weapon now has two independent ore-upgrade tracks in the **Ore Shop** (open with **Tab** during gameplay or while paused), each up to **Level 10**:
+The primary projectile weapon now has three independent ore-upgrade tracks in the **Ore Shop** (open with **Tab** during gameplay or while paused), each up to **Level 10**:
 
 - **Destroy track** (`UPGRADE DESTROY`): increases the asteroid size threshold that is fully destroyed in one hit.
 - **Chip track** (`UPGRADE CHIP`): increases max chip strength used on targets above the destroy threshold.
+- **Fire-rate track** (`UPGRADE FIRE RATE`): increases shots/second by reducing primary cooldown using inverse-cooldown scaling.
 
 Both tracks use linear tier pricing (`base_cost × next_display_level`) and can be bought independently.
 
 - **Above threshold**: any asteroid larger than the current destroy-size is chipped according to the active chip track.
+- **Sub-chip edge rule**: if an asteroid is larger than destroy threshold but not larger than current max chip size, it fragments into unit asteroids instead of direct ore conversion.
 - **Ore reward scaling**: fully-destroying a size-N asteroid drops N ore, so higher destroy levels generate proportionally more upgrade fuel.
-- **Shop UI**: the blaster card now shows separate chip/destroy levels, per-track status, and per-track upgrade affordability.
-- **Persistence**: both primary tracks are saved/restored in campaign slots.
+- **Shop UI**: the blaster card now shows destroy/chip/fire-rate levels, per-track status, and per-track upgrade affordability.
+- **HUD**: blaster HUD row now displays destroy/chip/fire-rate progression together.
+- **Persistence**: all three primary tracks are saved/restored in save slots and campaign slots.
+
+### Primary Weapon Roster Foundation
+
+- Campaign primary loadout now supports routing through `BLASTER`, `MINING LASER`, and `PLASMA RIFLE` enum variants.
+- Current behavior remains parity with blaster for all variants in this foundation slice.
+- Runtime primary systems now route by selected primary type so future weapon-specific behavior can be added without replacing core flow.
 
 ### Secondary Weapon Upgrades (Missiles)
 

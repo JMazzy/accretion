@@ -12,27 +12,6 @@ Last updated: March 4, 2026.
 
 ## P0 — Next Implementation Candidates
 
-- [ ] **Split primary: sub-chip fragmentation completion**
-    - Finish the remaining split-primary behavior rule: if destroy track is too low to convert a sub-chip-sized asteroid directly to ore, fragment it into multiple unit asteroids.
-    - Keep existing split-track progression and persistence behavior unchanged.
-    - Acceptance: sub-chip edge cases follow the new fragmentation rule without regressions in normal chip/destroy flow.
-
-- [ ] **Primary fire-rate upgrade track**
-    - Add fire-rate (inverse cooldown) as a separate upgradeable stat.
-    - Integrate fire-rate scaling with HUD, shop costs, and save schema.
-    - Acceptance: fire-rate can be upgraded independently and changes runtime primary cooldown behavior.
-
-- [ ] **Primary weapon roster framework (blaster/mining laser/plasma rifle) — foundation slice**
-    - Introduce primary-weapon type abstraction and runtime routing while keeping `blaster` as baseline.
-    - Keep behavior parity for existing blaster sessions.
-    - Acceptance: loadout/system can route by primary type with no regression for blaster-only play.
-
-## P1 — Next Queue
-
-### Upgrade Enhancements
-
-Priority order (high → low):
-
 - [ ] **Primary weapon roster framework (blaster/mining laser/plasma rifle) — full integration** `depends on Primary weapon roster framework (blaster/mining laser/plasma rifle) — foundation slice; depends on Primary fire-rate upgrade track`
     - Complete selection wiring + full gameplay integration for primary type routing.
     - Preserve blaster parity while unlocking additional primary types.
@@ -62,6 +41,12 @@ Priority order (high → low):
     - Keep same-level overall DPS roughly comparable while preserving role tradeoffs.
     - Ensure DPS scales with upgrades.
     - Acceptance: weapon advantages/disadvantages remain clear without one type dominating all scenarios.
+
+## P1 — Next Queue
+
+### Upgrade Enhancements
+
+Priority order (high → low):
 
 - [ ] **Performance pass v2 (post-v1 hardening + scale test)**
     - Re-run profiling after v1 optimizations and target the next bottleneck at higher scale (e.g., larger asteroid counts / heavier contact density).

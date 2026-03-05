@@ -65,12 +65,16 @@ All asteroids in the simulation are unified entities with locally-stored vertice
 
 Upgrades are implemented as ECS resources and purchased in the unified ore shop (`GameState::OreShop` in `src/menu.rs`).
 
-- **Primary weapon upgrades** (`PrimaryWeaponLevel` in `src/player/state.rs`): raises projectile full-destroy threshold by level; larger asteroids are chipped.
+- **Primary weapon upgrades** (`PrimaryWeaponUpgradeTracks` + `PrimaryWeaponFireRateLevel` in `src/player/state.rs`):
+  - destroy track raises full-destroy threshold,
+  - chip track raises max chip mass,
+  - fire-rate track increases shots/second via inverse-cooldown scaling.
+  - sub-chip edge rule: targets above destroy threshold but within current chip cap fragment into unit asteroids rather than direct ore conversion.
 - **Secondary weapon upgrades** (`SecondaryWeaponLevel` in `src/player/state.rs`): raises missile full-destroy threshold and increases split fragment count (`pieces = display_level + 1`, clamped by `missile_split_max_pieces`) for targets above threshold. If `display_level >= asteroid_size`, impacts fully decompose into unit fragments. Split geometry is impact-weighted: center hits trend toward equal-area fragments, edge hits produce asymmetric mass distributions.
 - **Missile telemetry** (`MissileTelemetry` in `src/simulation.rs`): tracks shots/hits, outcome counts (destroy/split/decompose), and mass-based totals. Periodic frame logs expose outcome distribution and a simple `frames_per_kill` TTK proxy for balancing passes.
 - **Ore magnet upgrades** (`OreAffinityLevel` in `src/mining.rs`): increases ore magnet radius and pull strength per level via `radius_at_level()` and `strength_at_level()`.
 - **Tractor beam scaling** (`TractorBeamLevel` in `src/player/state.rs`): scales beam force/range plus max affected asteroid size/speed envelope.
-- **Campaign loadout selection** (`CampaignLoadout` in `src/player/state.rs`): stores selected campaign primary/secondary weapon (`Blaster` + `Missile`/`IonCannon`) and gates runtime fire systems/HUD rows so non-selected secondary systems are excluded in campaign mode.
+- **Campaign loadout selection** (`CampaignLoadout` in `src/player/state.rs`): stores selected campaign primary/secondary weapon (`Blaster` / `MiningLaser` / `PlasmaRifle` + `Missile`/`IonCannon`) and gates runtime fire systems/HUD rows so non-selected secondary systems are excluded in campaign mode. Primary runtime systems now route by selected primary type (foundation parity behavior remains blaster-equivalent).
 - **Economy coupling**: weapon/missile/magnet/tractor upgrades spend from shared `PlayerOre` and use `try_upgrade(&mut ore)` style resource methods.
 - **Campaign upgrade cadence**: practice mode keeps any-time `Tab` access to `OreShop`; campaign mode gates `OreShop` access to post-mission intermission only (opened by `campaign_progression_system`), and closing the shop advances to the queued next mission.
 
@@ -89,7 +93,7 @@ Upgrades are implemented as ECS resources and purchased in the unified ore shop 
 ### Campaign Slot Persistence
 
 - **Campaign slot format**: separate campaign progression snapshots under `saves/campaign_slot_N.toml` (`N = 1..3`).
-- **Campaign schema** (`src/save.rs`): `CampaignSaveSnapshot` includes slot id, slot name, mission index, selected campaign loadout (`primary_weapon`, `secondary_weapon`), campaign weapon levels (`primary_weapon_level`, `secondary_weapon_level`, `ion_cannon_level`), and updated-at metadata.
+- **Campaign schema** (`src/save.rs`): `CampaignSaveSnapshot` includes slot id, slot name, mission index, selected campaign loadout (`primary_weapon`, `secondary_weapon`), campaign weapon levels (`primary_weapon_chip_level`, `primary_weapon_destroy_level`, `primary_weapon_fire_rate_level`, `secondary_weapon_level`, `ion_cannon_level`), and updated-at metadata.
 - **UI flow**: main-menu `CAMPAIGN` transitions to `CampaignSelect`, where slot 1/2/3 can be selected, renamed, and started/resumed.
 - **Campaign load trigger**: `CampaignSelect` start/resume writes/ensures slot metadata (including loadout), populates `PendingLoadedCampaign`, and transitions to `Playing`.
 - **Campaign apply**: `apply_pending_loaded_campaign_system` initializes active slot, mission index, and `CampaignLoadout` before world spawn/bootstrap.

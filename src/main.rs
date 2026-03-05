@@ -150,6 +150,7 @@ fn main() {
     .insert_resource(ShopReturnState::default())
     .insert_resource(player::CampaignLoadout::default())
     .insert_resource(player::PrimaryWeaponUpgradeTracks::from_legacy_level(0))
+    .insert_resource(player::PrimaryWeaponFireRateLevel::default())
     .insert_resource(player::SecondaryWeaponLevel::default())
     .insert_resource(player::IonCannonLevel::default())
     .insert_resource(campaign::CampaignMissionCatalog::default())
